@@ -462,6 +462,46 @@ body {
     color: #3f3f3f;
   }
 
+  .dashboard-pipeline .pipeline-shell {
+    max-width: 1440px;
+  }
+
+  .dashboard-pipeline .pipeline-bar {
+    min-width: 1280px;
+  }
+
+  .dashboard-pipeline .pipeline-step {
+    @apply px-4 py-3 text-[10px] tracking-[0.16em] sm:px-5 sm:py-4 sm:text-[12px] sm:tracking-[0.18em];
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%, 18px 50%);
+    margin-left: -12px;
+  }
+
+  .dashboard-pipeline .pipeline-step:first-child {
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%);
+  }
+
+  .dashboard-pipeline .pipeline-step:last-child {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 18px 50%);
+  }
+
+  .dashboard-pipeline .pipeline-step-complete {
+    background: #046eaf;
+  }
+
+  .dashboard-pipeline .pipeline-step-active {
+    background: #0e4e78;
+  }
+
+  .dashboard-pipeline .pipeline-step-terminal {
+    background: #0e4e78;
+    color: #fff;
+  }
+
+  .dashboard-pipeline .pipeline-step-idle {
+    background: #046eaf;
+    color: #fff;
+  }
+
 
   .chat-resize-handle {
     @apply absolute left-2 top-1/2 z-10 hidden h-24 w-5 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-full border border-slate-200/70 bg-white/90 shadow-sm transition hover:border-tide/40 hover:bg-tide/5 lg:flex;

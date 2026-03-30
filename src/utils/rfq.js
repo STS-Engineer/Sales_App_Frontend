@@ -1,4 +1,27 @@
 const STATUS_MAP = {
+  DRAFT_GRP_1: "Potential",
+  DRAFT_GRP_2: "New RFQ",
+  DRAFT_GRP_3: "New RFQ",
+  PENDING_VALIDATION: "Validation",
+  IN_COSTING_FEASIBILITY: "Feasability",
+  IN_COSTING_PRICING: "Pricing",
+  OFFER_PREPARATION: "Offer preparation",
+  OFFER_VALIDATION: "Offer validation",
+  NEGOTIATION_GET_PO: "Get PO",
+  NEGOTIATION_PROTOTYPE_REQUESTED: "Get prototype orders",
+  NEGOTIATION_PROTOTYPE_ORDER: "Prototype ongoing",
+  NEGOTIATION_PROTO_ONGOING: "Prototype ongoing",
+  NEGOTIATION_PO_ACCEPTED: "PO accepted",
+  MISSION_PREPARATION: "Mission accepted",
+  PLANT_REVIEW: "Mission accepted",
+  MANAGED_BY_PLANTS: "Mission accepted",
+  PO_SECURED: "PO accepted",
+  REJECTED: "Mission not accepted",
+  LOST: "Lost",
+  CANCELLED: "Cancelled"
+};
+
+const PIPELINE_STAGE_MAP = {
   DRAFT_GRP_1: "RFQ",
   DRAFT_GRP_2: "RFQ",
   DRAFT_GRP_3: "RFQ",
@@ -21,8 +44,20 @@ const STATUS_MAP = {
   CANCELLED: "Cancelled"
 };
 
-export const mapBackendStatusToUi = (status) =>
-  STATUS_MAP[status] || "RFQ";
+const normalizeStatusValue = (status) =>
+  typeof status === "string" ? status : status?.value;
+
+export const mapBackendStatusToUi = (status) => {
+  const raw = normalizeStatusValue(status);
+  if (!raw) return "Potential";
+  return STATUS_MAP[raw] || raw;
+};
+
+export const mapBackendStatusToPipelineStage = (status) => {
+  const raw = normalizeStatusValue(status);
+  if (!raw) return "RFQ";
+  return PIPELINE_STAGE_MAP[raw] || raw;
+};
 
 export const mapRfqDataToForm = (rfq) => {
   const data = rfq?.rfq_data || {};

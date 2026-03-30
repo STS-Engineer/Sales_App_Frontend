@@ -2,12 +2,18 @@
 
 const statusStyles = {
   RFQ: "border-tide/30 bg-tide/10 text-tide",
+  Potential: "border-tide/30 bg-tide/10 text-tide",
+  "New RFQ": "border-tide/30 bg-tide/10 text-tide",
+  Validation: "border-tide/30 bg-tide/10 text-tide",
   "In costing": "border-sun/40 bg-sun/15 text-sun",
+  Feasability: "border-sun/40 bg-sun/15 text-sun",
+  Pricing: "border-sun/40 bg-sun/15 text-sun",
   "Offer preparation": "border-ink/25 bg-ink/10 text-ink",
   "Offer validation": "border-mint/40 bg-mint/15 text-mint",
   "Get PO": "border-sun/40 bg-sun/15 text-sun",
   "PO accepted": "border-mint/40 bg-mint/15 text-mint",
   "Mission accepted": "border-tide/30 bg-tide/10 text-tide",
+  "Mission status": "border-tide/30 bg-tide/10 text-tide",
   "Mission not accepted": "border-sun/40 bg-sun/15 text-sun",
   "Get prototype orders": "border-tide/30 bg-tide/10 text-tide",
   "Prototype ongoing": "border-ink/25 bg-ink/10 text-ink",

@@ -14,6 +14,7 @@ import {
 } from "../api";
 import {
   mapBackendStatusToUi,
+  mapBackendStatusToPipelineStage,
   mapChatHistory,
   mapRfqDataToForm
 } from "../utils/rfq.js";
@@ -449,7 +450,7 @@ export default function NewRfq() {
       id: rfq.rfq_id,
       status: mapBackendStatusToUi(rfq.status)
     }));
-    setActiveStage(mapBackendStatusToUi(rfq.status));
+    setActiveStage(mapBackendStatusToPipelineStage(rfq.status));
     const normalizedFiles = normalizeRfqFiles(rfq);
     setServerFiles(normalizedFiles);
     setLocalFiles((prev) =>
