@@ -1,0 +1,151 @@
+const STATUS_MAP = {
+  DRAFT_GRP_1: "RFQ",
+  DRAFT_GRP_2: "RFQ",
+  DRAFT_GRP_3: "RFQ",
+  PENDING_VALIDATION: "RFQ",
+  IN_COSTING_FEASIBILITY: "In costing",
+  IN_COSTING_PRICING: "In costing",
+  OFFER_PREPARATION: "Offer preparation",
+  OFFER_VALIDATION: "Offer validation",
+  NEGOTIATION_GET_PO: "Get PO",
+  NEGOTIATION_PROTOTYPE_REQUESTED: "Get prototype orders",
+  NEGOTIATION_PROTOTYPE_ORDER: "Prototype ongoing",
+  NEGOTIATION_PROTO_ONGOING: "Prototype ongoing",
+  NEGOTIATION_PO_ACCEPTED: "PO accepted",
+  MISSION_PREPARATION: "Mission accepted",
+  PLANT_REVIEW: "Mission accepted",
+  MANAGED_BY_PLANTS: "Mission accepted",
+  PO_SECURED: "PO accepted",
+  REJECTED: "Mission not accepted",
+  LOST: "Lost",
+  CANCELLED: "Cancelled"
+};
+
+export const mapBackendStatusToUi = (status) =>
+  STATUS_MAP[status] || "RFQ";
+
+export const mapRfqDataToForm = (rfq) => {
+  const data = rfq?.rfq_data || {};
+  const pickValue = (value) => {
+    if (value === 0 || value === false) return value;
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  };
+  const pickFirst = (...values) => {
+    for (const value of values) {
+      const picked = pickValue(value);
+      if (picked !== undefined) return picked;
+    }
+    return undefined;
+  };
+
+  return {
+    id: rfq?.rfq_id || "",
+    status: mapBackendStatusToUi(rfq?.status),
+    customer: pickFirst(data.customer_name, data.customer, data.client),
+    application: pickFirst(data.application),
+    productName: pickFirst(data.product_name, data.product_line_acronym),
+    productLine: pickFirst(data.product_line_acronym, data.product_name),
+    costingData: pickFirst(data.costing_data, data.costingData),
+    customerPn: pickFirst(data.customer_pn, data.customerPn),
+    revisionLevel: pickFirst(data.revision_level, data.revisionLevel),
+    deliveryZone: pickFirst(data.delivery_zone, data.deliveryZone),
+    plant: pickFirst(data.delivery_plant, data.plant),
+    country: pickFirst(data.country),
+    sop: pickFirst(data.sop_year, data.sop),
+    qtyPerYear: pickFirst(data.annual_volume, data.qty_per_year, data.qtyPerYear),
+    rfqReceptionDate: pickFirst(data.rfq_reception_date, data.rfqReceptionDate),
+    expectedQuotationDate: pickFirst(
+      data.quotation_expected_date,
+      data.expectedQuotationDate
+    ),
+    contactName: pickFirst(data.contact_name, data.contact_first_name, data.contactName),
+    contactFunction: pickFirst(data.contact_role, data.contactFunction),
+    contactPhone: pickFirst(data.contact_phone, data.contactPhone),
+    contactEmail: pickFirst(data.contact_email, data.contactEmail),
+    targetPrice: pickFirst(data.target_price_eur, data.targetPrice),
+    expectedDeliveryConditions: pickFirst(
+      data.expected_delivery_conditions,
+      data.expectedDeliveryConditions
+    ),
+    expectedPaymentTerms: pickFirst(
+      data.expected_payment_terms,
+      data.expectedPaymentTerms
+    ),
+    businessTrigger: pickFirst(data.business_trigger, data.businessTrigger),
+    customerToolingConditions: pickFirst(
+      data.customer_tooling_conditions,
+      data.customerToolingConditions
+    ),
+    entryBarriers: pickFirst(data.entry_barriers, data.entryBarriers),
+    designResponsible: pickFirst(
+      data.responsibility_design,
+      data.design_responsible,
+      data.designResponsible
+    ),
+    validationResponsible: pickFirst(
+      data.responsibility_validation,
+      data.validation_responsible,
+      data.validationResponsible
+    ),
+    designOwner: pickFirst(
+      data.product_ownership,
+      data.design_owner,
+      data.designOwner
+    ),
+    developmentCosts: pickFirst(
+      data.pays_for_development,
+      data.development_costs,
+      data.developmentCosts
+    ),
+    technicalCapacity: pickFirst(
+      data.capacity_available,
+      data.technical_capacity,
+      data.technicalCapacity
+    ),
+    scope: pickFirst(data.scope),
+    customerStatus: pickFirst(data.customer_status, data.customerStatus),
+    strategicNote: pickFirst(data.strategic_note, data.strategicNote),
+    finalRecommendation: pickFirst(
+      data.is_feasible,
+      data.final_recommendation,
+      data.finalRecommendation
+    ),
+    toTotal: pickFirst(data.to_total, data.toTotal),
+    validatorEmail: pickFirst(data.validator_email, data.validatorEmail)
+  };
+};
+
+export const mapRfqToRow = (rfq) => {
+  const data = rfq?.rfq_data || {};
+  const toTotalRaw = data.to_total;
+  const toTotal =
+    typeof toTotalRaw === "string" && toTotalRaw.trim() !== ""
+      ? Number(toTotalRaw)
+      : toTotalRaw;
+
+  return {
+    id: rfq?.rfq_id,
+    customer: data.customer_name,
+    client: data.customer_name,
+    productName: data.product_name || data.product_line_acronym,
+    productLine: data.product_line_acronym || data.product_name,
+    item: data.product_name || data.product_line_acronym,
+    application: data.application,
+    deliveryZone: data.delivery_zone,
+    location: data.delivery_zone,
+    toTotal: Number.isFinite(toTotal) ? toTotal : toTotalRaw,
+    status: mapBackendStatusToUi(rfq?.status)
+  };
+};
+
+export const mapChatHistory = (history = []) =>
+  history
+    .filter(
+      (entry) =>
+        (entry?.role === "assistant" || entry?.role === "user") &&
+        typeof entry?.content === "string" &&
+        entry.content.trim() !== ""
+    )
+    .map((entry) => ({ role: entry.role, content: entry.content }));
