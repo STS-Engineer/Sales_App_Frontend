@@ -4,7 +4,7 @@ import TopBar from "../components/TopBar.jsx";
 import { getRfq, validateRfq } from "../api";
 import { mapBackendStatusToUi } from "../utils/rfq.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL;
 
 const resolveFileUrl = (url) => {
   if (!url) return "";
