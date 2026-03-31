@@ -1,8 +1,8 @@
 import { getToken, setToken } from "./utils/session.js";
-
+ 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 15000;
-
+ 
 async function handleJson(response) {
   if (!response.ok) {
     const text = await response.text();
@@ -24,7 +24,7 @@ async function handleJson(response) {
   }
   return response.json();
 }
-
+ 
 async function request(
   path,
   { method = "GET", body, headers, auth = true, isForm = false } = {}
@@ -60,7 +60,7 @@ async function request(
     clearTimeout(timeoutId);
   }
 }
-
+ 
 export async function login(payload) {
   const data = await request("/api/auth/login", {
     method: "POST",
@@ -72,7 +72,7 @@ export async function login(payload) {
   }
   return data;
 }
-
+ 
 export async function register(payload) {
   return request("/api/auth/register", {
     method: "POST",
@@ -80,43 +80,43 @@ export async function register(payload) {
     auth: false
   });
 }
-
+ 
 export async function getMe() {
   return request("/api/auth/me");
 }
-
+ 
 export async function listRfqs() {
   return request("/api/rfq");
 }
-
+ 
 export async function getRfq(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}`);
 }
-
-export async function createRfq() {
-  return request("/api/rfq", { method: "POST" });
+ 
+export async function createRfq(payload = {}) {
+  return request("/api/rfq", { method: "POST", body: payload });
 }
-
+ 
 export async function submitRfq(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/submit`, {
     method: "POST"
   });
 }
-
+ 
 export async function validateRfq(rfqId, payload) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/validate`, {
     method: "POST",
     body: payload
   });
 }
-
-export async function sendChat(rfqId, message) {
+ 
+export async function sendChat(rfqId, message, chatMode = "rfq") {
   return request("/api/chat", {
     method: "POST",
-    body: { rfq_id: rfqId, message }
+    body: { rfq_id: rfqId, message, chat_mode: chatMode }
   });
 }
-
+ 
 export async function uploadRfqFile(rfqId, file) {
   const formData = new FormData();
   formData.append("file", file);
@@ -126,7 +126,7 @@ export async function uploadRfqFile(rfqId, file) {
     isForm: true
   });
 }
-
+ 
 export async function deleteRfqFile(rfqId, fileId, fileName) {
   if (fileId) {
     return request(
@@ -139,32 +139,34 @@ export async function deleteRfqFile(rfqId, fileId, fileName) {
     body: { filename: fileName }
   });
 }
-
+ 
 export async function listPendingUsers() {
   return request("/api/users/pending");
 }
-
+ 
 export async function updateUserRole(userId, role) {
   return request(`/api/users/${encodeURIComponent(userId)}/role`, {
     method: "PUT",
     body: { role }
   });
 }
-
+ 
 export async function listAllUsers() {
   return request("/api/owner/users");
 }
-
+ 
 export async function listProducts(productName = "") {
   const query = productName
     ? `?productName=${encodeURIComponent(productName)}`
     : "";
   return request(`/api/products${query}`, { auth: false });
 }
-
+ 
 export async function getProductLine(productLineId) {
   return request(
     `/api/product-lines?productLineId=${encodeURIComponent(productLineId)}`,
     { auth: false }
   );
 }
+ 
+ 

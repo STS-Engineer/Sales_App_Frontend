@@ -9,8 +9,8 @@ const PHASES = [
   {
     key: "RFQ",
     label: "RFQ",
-    statuses: ["Potential", "New RFQ", "Validation"],
-    subPhases: ["Potential", "New RFQ", "Validation"]
+    statuses: ["Potential", "New RFQ", "Validation", "Cancelled"],
+    subPhases: ["RFQ form", "Validation"]
   },
   {
     key: "In costing",
@@ -35,14 +35,36 @@ const PHASES = [
     label: "Prototype",
     statuses: ["Get prototype orders", "Prototype ongoing"],
     subPhases: ["Get prototype orders", "Prototype ongoing"]
-  }
+  },
 ];
 
 const phaseKeys = PHASES.map((phase) => phase.key);
 const knownStatuses = new Set(PHASES.flatMap((phase) => phase.statuses));
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
-const EXCLUDED_STATUSES = new Set(["Lost", "Cancelled"]);
+const EXCLUDED_STATUSES = new Set(["Lost"]);
 const DEFAULT_SUBPHASE_STATUS = "Potential";
+const FILTER_STATUS_LABELS = {
+  Validation: "Pending for validation"
+};
+
+const mapStatusToProgressSubPhase = (phaseKey, status) => {
+  if (phaseKey === "RFQ") {
+    if (status === "Potential" || status === "New RFQ") {
+      return "RFQ form";
+    }
+    if (status === "Validation") {
+      return "Validation";
+    }
+  }
+
+  if (phaseKey === "PO") {
+    if (status === "Mission accepted" || status === "Mission not accepted") {
+      return "Mission status";
+    }
+  }
+
+  return status;
+};
 
 const normalizeStatus = (status) => {
   if (EXCLUDED_STATUSES.has(status)) return "";
@@ -234,10 +256,14 @@ export default function Dashboard() {
                                 />
                                 <div className="flex items-start justify-between gap-2">
                                   {phase.subPhases.map((subPhase) => {
+                                    const progressSubPhase = mapStatusToProgressSubPhase(
+                                      phase.key,
+                                      activeSubStatus
+                                    );
                                     const isSubActive =
                                       activeStatus === phase.key &&
                                       activeSubStatus !== "all" &&
-                                      subPhase === activeSubStatus;
+                                      subPhase === progressSubPhase;
                                     const dotClass = isSubActive
                                       ? "h-3 w-3 rounded-full bg-white shadow-[0_0_0_4px_rgba(56,189,248,0.45)]"
                                       : "h-2 w-2 rounded-full bg-white/70";
@@ -309,8 +335,8 @@ export default function Dashboard() {
                       >
                         <option value="all">All</option>
                         {subStatusOptions.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
+                        <option key={status} value={status}>
+                            {FILTER_STATUS_LABELS[status] || status}
                           </option>
                         ))}
                       </select>

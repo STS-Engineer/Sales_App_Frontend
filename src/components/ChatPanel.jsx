@@ -169,7 +169,12 @@ const renderMessageContent = (content, keyPrefix) => {
   );
 };
 
-export default function ChatPanel({ messages = [], onSend, onCollapse }) {
+export default function ChatPanel({
+  messages = [],
+  onSend,
+  onCollapse,
+  readOnly = false
+}) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
@@ -180,7 +185,10 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
   const attachmentsRef = useRef([]);
   const messagesEndRef = useRef(null);
 
-  const canSend = (input.trim().length > 0 || attachments.length > 0) && !busy;
+  const canSend =
+    !readOnly &&
+    (input.trim().length > 0 || attachments.length > 0) &&
+    !busy;
 
   const speechAvailable = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -213,6 +221,9 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
   };
 
   const handleStartListening = () => {
+    if (readOnly) {
+      return;
+    }
     if (!speechAvailable) {
       return;
     }
@@ -235,6 +246,10 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
   };
 
   const handleAttach = (event) => {
+    if (readOnly) {
+      event.target.value = "";
+      return;
+    }
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
     const next = files.map((file) => ({
@@ -365,6 +380,28 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
   }, [attachments]);
 
   useEffect(() => {
+    if (!readOnly) return;
+    setInput("");
+    setListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // Ignore SpeechRecognition stop errors when already idle.
+      }
+    }
+    setAttachments((prev) => {
+      prev.forEach((attachment) => {
+        URL.revokeObjectURL(attachment.url);
+      });
+      return [];
+    });
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [readOnly]);
+
+  useEffect(() => {
     return () => {
       attachmentsRef.current.forEach((attachment) => {
         URL.revokeObjectURL(attachment.url);
@@ -472,11 +509,18 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
           <div className="relative">
             <textarea
               rows={1}
-              className="chat-input-textarea w-full resize-none py-3 pl-12 pr-20"
+              className={`chat-input-textarea w-full resize-none py-3 pl-12 pr-20 ${
+                readOnly ? "cursor-not-allowed bg-slate-100 text-slate-400" : ""
+              }`}
               placeholder="Type your message"
               value={input}
+              readOnly={readOnly}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
+                if (readOnly) {
+                  event.preventDefault();
+                  return;
+                }
                 if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
                   event.preventDefault();
                   handleSend();
@@ -489,12 +533,14 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
               multiple
               className="hidden"
               onChange={handleAttach}
+              disabled={readOnly}
             />
             <div className="absolute left-3 top-1/2 -translate-y-1/2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide"
+                disabled={readOnly}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
                 title="Attach files"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
@@ -506,7 +552,8 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
               <button
                 type="button"
                 onClick={handleStartListening}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide"
+                disabled={readOnly}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
                 title={listening ? "Listening..." : "Speak"}
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">

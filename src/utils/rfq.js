@@ -3,62 +3,102 @@ const STATUS_MAP = {
   DRAFT_GRP_2: "New RFQ",
   DRAFT_GRP_3: "New RFQ",
   PENDING_VALIDATION: "Validation",
+  POTENTIAL: "Potential",
+  NEW_RFQ: "New RFQ",
+  PENDING_FOR_VALIDATION: "Validation",
   IN_COSTING_FEASIBILITY: "Feasability",
   IN_COSTING_PRICING: "Pricing",
+  FEASIBILITY: "Feasability",
+  PRICING: "Pricing",
   OFFER_PREPARATION: "Offer preparation",
   OFFER_VALIDATION: "Offer validation",
+  PREPARATION: "Offer preparation",
+  VALIDATION: "Offer validation",
   NEGOTIATION_GET_PO: "Get PO",
   NEGOTIATION_PROTOTYPE_REQUESTED: "Get prototype orders",
   NEGOTIATION_PROTOTYPE_ORDER: "Prototype ongoing",
   NEGOTIATION_PROTO_ONGOING: "Prototype ongoing",
+  GET_PO: "Get PO",
+  GET_PROTOTYPE: "Get prototype orders",
+  PROTOTYPE_ONGOING: "Prototype ongoing",
   NEGOTIATION_PO_ACCEPTED: "PO accepted",
+  PO_ACCEPTED: "PO accepted",
   MISSION_PREPARATION: "Mission accepted",
   PLANT_REVIEW: "Mission accepted",
   MANAGED_BY_PLANTS: "Mission accepted",
+  MISSION_ACCEPTED: "Mission accepted",
+  MISSION_NOT_ACCEPTED: "Mission not accepted",
   PO_SECURED: "PO accepted",
   REJECTED: "Mission not accepted",
   LOST: "Lost",
+  CANCELED: "Cancelled",
   CANCELLED: "Cancelled"
 };
-
+ 
 const PIPELINE_STAGE_MAP = {
   DRAFT_GRP_1: "RFQ",
   DRAFT_GRP_2: "RFQ",
   DRAFT_GRP_3: "RFQ",
   PENDING_VALIDATION: "RFQ",
+  POTENTIAL: "RFQ",
+  NEW_RFQ: "RFQ",
+  PENDING_FOR_VALIDATION: "RFQ",
   IN_COSTING_FEASIBILITY: "In costing",
   IN_COSTING_PRICING: "In costing",
+  FEASIBILITY: "In costing",
+  PRICING: "In costing",
   OFFER_PREPARATION: "Offer preparation",
   OFFER_VALIDATION: "Offer validation",
+  PREPARATION: "Offer preparation",
+  VALIDATION: "Offer validation",
   NEGOTIATION_GET_PO: "Get PO",
   NEGOTIATION_PROTOTYPE_REQUESTED: "Get prototype orders",
   NEGOTIATION_PROTOTYPE_ORDER: "Prototype ongoing",
   NEGOTIATION_PROTO_ONGOING: "Prototype ongoing",
+  GET_PO: "Get PO",
+  GET_PROTOTYPE: "Get prototype orders",
+  PROTOTYPE_ONGOING: "Prototype ongoing",
   NEGOTIATION_PO_ACCEPTED: "PO accepted",
+  PO_ACCEPTED: "PO accepted",
   MISSION_PREPARATION: "Mission accepted",
   PLANT_REVIEW: "Mission accepted",
   MANAGED_BY_PLANTS: "Mission accepted",
+  MISSION_ACCEPTED: "Mission accepted",
+  MISSION_NOT_ACCEPTED: "Mission not accepted",
   PO_SECURED: "PO accepted",
   REJECTED: "Mission not accepted",
   LOST: "Lost",
+  CANCELED: "Cancelled",
   CANCELLED: "Cancelled"
 };
-
-const normalizeStatusValue = (status) =>
-  typeof status === "string" ? status : status?.value;
-
-export const mapBackendStatusToUi = (status) => {
-  const raw = normalizeStatusValue(status);
+ 
+const normalizeStatusValue = (value) =>
+  typeof value === "string" ? value : value?.value;
+ 
+const resolveBackendStateKey = (rfqOrStatus) => {
+  if (!rfqOrStatus) return "";
+  if (typeof rfqOrStatus === "string") {
+    return normalizeStatusValue(rfqOrStatus);
+  }
+  return (
+    normalizeStatusValue(rfqOrStatus.sub_status) ||
+    normalizeStatusValue(rfqOrStatus.status) ||
+    ""
+  );
+};
+ 
+export const mapBackendStatusToUi = (rfqOrStatus) => {
+  const raw = resolveBackendStateKey(rfqOrStatus);
   if (!raw) return "Potential";
   return STATUS_MAP[raw] || raw;
 };
-
-export const mapBackendStatusToPipelineStage = (status) => {
-  const raw = normalizeStatusValue(status);
+ 
+export const mapBackendStatusToPipelineStage = (rfqOrStatus) => {
+  const raw = resolveBackendStateKey(rfqOrStatus);
   if (!raw) return "RFQ";
   return PIPELINE_STAGE_MAP[raw] || raw;
 };
-
+ 
 export const mapRfqDataToForm = (rfq) => {
   const data = rfq?.rfq_data || {};
   const pickValue = (value) => {
@@ -74,10 +114,10 @@ export const mapRfqDataToForm = (rfq) => {
     }
     return undefined;
   };
-
+ 
   return {
     id: rfq?.rfq_id || "",
-    status: mapBackendStatusToUi(rfq?.status),
+    status: mapBackendStatusToUi(rfq),
     customer: pickFirst(data.customer_name, data.customer, data.client),
     application: pickFirst(data.application),
     productName: pickFirst(data.product_name, data.product_line_acronym),
@@ -156,7 +196,7 @@ export const mapRfqDataToForm = (rfq) => {
     )
   };
 };
-
+ 
 export const mapRfqToRow = (rfq) => {
   const data = rfq?.rfq_data || {};
   const toTotalRaw = data.to_total;
@@ -164,9 +204,10 @@ export const mapRfqToRow = (rfq) => {
     typeof toTotalRaw === "string" && toTotalRaw.trim() !== ""
       ? Number(toTotalRaw)
       : toTotalRaw;
-
+ 
   return {
     id: rfq?.rfq_id,
+    displayId: data.systematic_rfq_id || "Draft - Pending",
     customer: data.customer_name,
     client: data.customer_name,
     productName: data.product_name || data.product_line_acronym,
@@ -176,10 +217,10 @@ export const mapRfqToRow = (rfq) => {
     deliveryZone: data.delivery_zone,
     location: data.delivery_zone,
     toTotal: Number.isFinite(toTotal) ? toTotal : toTotalRaw,
-    status: mapBackendStatusToUi(rfq?.status)
+    status: mapBackendStatusToUi(rfq)
   };
 };
-
+ 
 export const mapChatHistory = (history = []) =>
   history
     .filter(
@@ -189,3 +230,5 @@ export const mapChatHistory = (history = []) =>
         entry.content.trim() !== ""
     )
     .map((entry) => ({ role: entry.role, content: entry.content }));
+ 
+ 

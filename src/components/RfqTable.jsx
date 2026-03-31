@@ -1,5 +1,5 @@
 ﻿import { Link } from "react-router-dom";
-
+ 
 const statusStyles = {
   RFQ: "border-tide/30 bg-tide/10 text-tide",
   Potential: "border-tide/30 bg-tide/10 text-tide",
@@ -23,6 +23,10 @@ const statusStyles = {
   New: "border-slate-300 bg-slate-100 text-slate-600",
   Negotiation: "border-sun/40 bg-sun/15 text-sun",
   Prepared: "border-mint/40 bg-mint/15 text-mint"
+};
+
+const statusLabels = {
+  Validation: "Pending for validation"
 };
 
 export default function RfqTable({ rows, footer }) {
@@ -49,7 +53,9 @@ export default function RfqTable({ rows, footer }) {
                 key={row.id}
                 className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
               >
-                <td className="px-6 py-4 font-semibold text-ink">{row.id}</td>
+                <td className="px-6 py-4 font-semibold text-ink">
+                  {row.displayId || row.id}
+                </td>
                 <td className="px-6 py-4 font-medium text-slate-700">
                   {row.customer || row.client || "—"}
                 </td>
@@ -66,7 +72,7 @@ export default function RfqTable({ rows, footer }) {
                 </td>
                 <td className="px-6 py-4">
                   <span className={`badge ${statusStyles[row.status] || "border-slate-300 bg-slate-100 text-slate-600"}`}>
-                    {row.status}
+                    {statusLabels[row.status] || row.status}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">
@@ -91,3 +97,4 @@ export default function RfqTable({ rows, footer }) {
     </div>
   );
 }
+ 

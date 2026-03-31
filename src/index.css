@@ -250,7 +250,8 @@ body {
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  border-radius: 20px;
+  overflow: hidden;
+  border-radius: 24px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
 }
@@ -460,6 +461,14 @@ body {
   .pipeline-step-idle {
     background: #bfc2c5;
     color: #3f3f3f;
+  }
+
+  .newrfq-pipeline .pipeline-bar {
+    min-width: 960px;
+  }
+
+  .newrfq-pipeline .pipeline-step-expanded {
+    flex: 1.35 1 0%;
   }
 
   .dashboard-pipeline .pipeline-shell {

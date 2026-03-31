@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
 import { getRfq, validateRfq } from "../api";
+import { mapBackendStatusToUi } from "../utils/rfq.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -101,7 +102,7 @@ export default function ValidateRfq() {
   const legacyStatusValue =
     typeof rfq?.status === "string" ? rfq?.status : rfq?.status?.value;
   const statusValue = subStatusValue || legacyStatusValue;
-  const statusLabel = formatStatus(statusValue);
+  const statusLabel = rfq ? mapBackendStatusToUi(rfq) : "—";
   const canValidate =
     statusValue === "PENDING_VALIDATION" ||
     (phaseValue === "RFQ" && subStatusValue === "IN_VALIDATION");
