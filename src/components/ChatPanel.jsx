@@ -178,6 +178,7 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
   const recognitionRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachmentsRef = useRef([]);
+  const messagesEndRef = useRef(null);
 
   const canSend = (input.trim().length > 0 || attachments.length > 0) && !busy;
 
@@ -384,6 +385,10 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
     };
   }, [previewAttachment]);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, busy]);
+
   return (
     <div className="card flex h-full min-h-0 flex-col pt-6 pb-2 px-6 md:pt-7 md:pb-2 md:px-7">
       <div className="flex items-center justify-between border-slate-200/70">
@@ -458,6 +463,7 @@ export default function ChatPanel({ messages = [], onSend, onCollapse }) {
             </div>
           </div>
         ) : null}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="mt-5 space-y-3">

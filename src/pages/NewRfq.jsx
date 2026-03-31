@@ -378,7 +378,8 @@ export default function NewRfq() {
     return [
       {
         role: "assistant",
-        content: "Hi! Start by telling me the customer name so I can build the RFQ."
+        content:
+          "Please select your preferred language.\n1- English\n2- Français\n3- 中文\n4- Español\n5- Deutsch\n6- हिन्दी"
       }
     ];
   }, [loadingRfq]);
@@ -744,6 +745,7 @@ export default function NewRfq() {
         design_owner: "designOwner",
         pays_for_development: "developmentCosts",
         development_costs: "developmentCosts",
+        zone_manager_email: "validatorEmail",
         capacity_available: "technicalCapacity",
         technical_capacity: "technicalCapacity",
         customer_status: "customerStatus",
@@ -1436,7 +1438,7 @@ export default function NewRfq() {
                             <FormField label="Design responsible" name="designResponsible" value={form.designResponsible} onChange={handleChange} readOnly={isChatOnly} />
                             <FormField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} onChange={handleChange} readOnly={isChatOnly} />
                             <FormField label="Design owner" name="designOwner" value={form.designOwner} onChange={handleChange} readOnly={isChatOnly} />
-                            <FormField label="Development costs" name="developmentCosts" type="number" value={form.developmentCosts} onChange={handleChange} readOnly={isChatOnly} />
+                            <FormField label="Development costs" name="developmentCosts" value={form.developmentCosts} onChange={handleChange} readOnly={isChatOnly} />
                             <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={isChatOnly} />
                             <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={isChatOnly} />
                             <FormField label="Customer status" name="customerStatus" value={form.customerStatus} onChange={handleChange} readOnly={isChatOnly} />
@@ -1453,7 +1455,7 @@ export default function NewRfq() {
                         >
                           <div className="grid gap-4 md:grid-cols-2">
                             <FormField label="TO total" name="toTotal" type="number" value={form.toTotal} onChange={handleChange} readOnly={isChatOnly} />
-                            <FormField label="Validator email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={isChatOnly} />
+                            <FormField label="Zone Manager email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={isChatOnly} />
                           </div>
                         </div>
                       ) : null}

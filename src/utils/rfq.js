@@ -148,7 +148,12 @@ export const mapRfqDataToForm = (rfq) => {
       data.finalRecommendation
     ),
     toTotal: pickFirst(data.to_total, data.toTotal),
-    validatorEmail: pickFirst(data.validator_email, data.validatorEmail)
+    validatorEmail: pickFirst(
+      data.zone_manager_email,
+      rfq?.zone_manager_email,
+      data.validator_email,
+      data.validatorEmail
+    )
   };
 };
 

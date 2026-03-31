@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
 import { register } from "../api";
 
@@ -20,6 +20,7 @@ const EyeIcon = ({ open }) => (
 );
 
 export default function Register() {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -48,11 +49,14 @@ export default function Register() {
     setLoading(true);
     try {
       await register({ email: form.email, password: form.password });
-      setStatus({
-        type: "success",
-        message:
-          "Account created. Your access is pending owner approval before you can log in."
+      navigate("/", {
+        replace: true,
+        state: {
+          registrationMessage:
+            "Account created. Your access is pending owner approval before you can log in."
+        }
       });
+      return;
     } catch (error) {
       const message =
         error?.status === 400
@@ -164,5 +168,4 @@ export default function Register() {
     </AuthLayout>
   );
 }
-
 

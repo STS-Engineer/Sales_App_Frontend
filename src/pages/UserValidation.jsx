@@ -6,7 +6,7 @@ import { getUserProfile } from "../utils/session.js";
 
 const ROLE_OPTIONS = [
   { value: "COMMERCIAL", label: "Commercial" },
-  { value: "VALIDATOR", label: "Validator" },
+  { value: "ZONE_MANAGER", label: "Zone Manager" },
   { value: "COSTING_TEAM", label: "Costing team" },
   { value: "PLANT_MANAGER", label: "Plant manager" },
   { value: "PLM", label: "PLM" },

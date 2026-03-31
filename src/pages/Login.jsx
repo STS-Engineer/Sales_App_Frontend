@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
 import { getMe, login } from "../api";
 import { setUserProfile, setCurrentUserRole } from "../utils/session.js";
@@ -22,10 +22,18 @@ const EyeIcon = ({ open }) => (
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState(location.state?.registrationMessage || "");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (!location.state?.registrationMessage) return;
+    setNotice(location.state.registrationMessage);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
 
   const handleChange = (event) => {
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
@@ -98,6 +106,11 @@ export default function Login() {
             </button>
           </div>
         </label>
+        {notice ? (
+          <div className="rounded-2xl border border-mint/30 bg-mint/10 px-4 py-3 text-sm text-mint">
+            {notice}
+          </div>
+        ) : null}
         {error ? <p className="text-sm text-coral">{error}</p> : null}
         <button
           type="submit"
@@ -118,4 +131,3 @@ export default function Login() {
     </AuthLayout>
   );
 }
-

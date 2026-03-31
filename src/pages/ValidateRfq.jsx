@@ -23,6 +23,11 @@ const formatStatus = (status) => {
 
 const normalizeFiles = (rfq) => {
   const data = rfq?.rfq_data || {};
+  const validatorEmail =
+    data.zone_manager_email ||
+    rfq?.zone_manager_email ||
+    data.validator_email ||
+    "—";
   const raw =
     data.rfq_files ||
     data.files ||
@@ -89,10 +94,22 @@ export default function ValidateRfq() {
   }, [id]);
 
   const data = rfq?.rfq_data || {};
-  const statusValue =
+  const phaseValue =
+    typeof rfq?.phase === "string" ? rfq?.phase : rfq?.phase?.value;
+  const subStatusValue =
+    typeof rfq?.sub_status === "string" ? rfq?.sub_status : rfq?.sub_status?.value;
+  const legacyStatusValue =
     typeof rfq?.status === "string" ? rfq?.status : rfq?.status?.value;
+  const statusValue = subStatusValue || legacyStatusValue;
   const statusLabel = formatStatus(statusValue);
-  const canValidate = statusValue === "PENDING_VALIDATION";
+  const canValidate =
+    statusValue === "PENDING_VALIDATION" ||
+    (phaseValue === "RFQ" && subStatusValue === "IN_VALIDATION");
+  const validatorEmail =
+    data.zone_manager_email ||
+    rfq?.zone_manager_email ||
+    data.validator_email ||
+    "—";
 
   const infoItems = useMemo(
     () => [
@@ -108,9 +125,9 @@ export default function ValidateRfq() {
       { label: "Country", value: data.country || "—" },
       { label: "Annual volume", value: data.annual_volume || "—" },
       { label: "TO Total (K€)", value: data.to_total || "—" },
-      { label: "Validator", value: data.validator_email || "—" }
+      { label: "Zone Manager", value: validatorEmail }
     ],
-    [data, rfq?.rfq_id]
+    [data, rfq?.rfq_id, rfq?.zone_manager_email, validatorEmail]
   );
 
   const files = useMemo(() => normalizeFiles(rfq), [rfq]);
@@ -122,10 +139,19 @@ export default function ValidateRfq() {
     setSuccess("");
     try {
       await validateRfq(id, { approved: true });
-      setSuccess("RFQ validated successfully.");
-      setRfq((prev) => (prev ? { ...prev, status: "IN_COSTING_FEASIBILITY" } : prev));
+      setSuccess("RFQ accepted successfully.");
+      setRfq((prev) =>
+        prev
+          ? {
+              ...prev,
+              phase: "COSTING",
+              sub_status: "FEASIBILITY",
+              status: "IN_COSTING_FEASIBILITY"
+            }
+          : prev
+      );
     } catch (err) {
-      setError(err?.message || "Unable to validate this RFQ.");
+      setError(err?.message || "Unable to accept this RFQ.");
       setErrorStatus(err?.status || null);
     } finally {
       setSubmitting(false);
@@ -147,7 +173,16 @@ export default function ValidateRfq() {
         rejection_reason: rejectionReason.trim()
       });
       setSuccess("RFQ rejected. The requester has been notified.");
-      setRfq((prev) => (prev ? { ...prev, status: "REJECTED" } : prev));
+      setRfq((prev) =>
+        prev
+          ? {
+              ...prev,
+              phase: "CLOSED",
+              sub_status: "LOST",
+              status: "REJECTED"
+            }
+          : prev
+      );
     } catch (err) {
       setError(err?.message || "Unable to reject this RFQ.");
       setErrorStatus(err?.status || null);
@@ -259,7 +294,7 @@ export default function ValidateRfq() {
                         Decision
                       </p>
                       <h3 className="mt-2 font-display text-2xl text-ink">
-                        Approve or Reject
+                        Accept or Reject
                       </h3>
                     </div>
 
@@ -286,7 +321,7 @@ export default function ValidateRfq() {
                             onClick={handleApprove}
                             disabled={submitting}
                           >
-                            Approve RFQ
+                            Accept RFQ
                           </button>
                           <button
                             type="button"
