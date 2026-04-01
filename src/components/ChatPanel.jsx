@@ -186,9 +186,7 @@ export default function ChatPanel({
   const messagesEndRef = useRef(null);
 
   const canSend =
-    !readOnly &&
-    (input.trim().length > 0 || attachments.length > 0) &&
-    !busy;
+    !readOnly && (input.trim().length > 0 || attachments.length > 0) && !busy;
 
   const speechAvailable = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -221,10 +219,7 @@ export default function ChatPanel({
   };
 
   const handleStartListening = () => {
-    if (readOnly) {
-      return;
-    }
-    if (!speechAvailable) {
+    if (!speechAvailable || readOnly) {
       return;
     }
     if (!recognitionRef.current) {
@@ -381,15 +376,11 @@ export default function ChatPanel({
 
   useEffect(() => {
     if (!readOnly) return;
-    setInput("");
-    setListening(false);
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // Ignore SpeechRecognition stop errors when already idle.
-      }
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
     }
+    setListening(false);
+    setInput("");
     setAttachments((prev) => {
       prev.forEach((attachment) => {
         URL.revokeObjectURL(attachment.url);
@@ -399,7 +390,7 @@ export default function ChatPanel({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [readOnly]);
+  }, [readOnly, listening]);
 
   useEffect(() => {
     return () => {
@@ -509,12 +500,15 @@ export default function ChatPanel({
           <div className="relative">
             <textarea
               rows={1}
-              className={`chat-input-textarea w-full resize-none py-3 pl-12 pr-20 ${
-                readOnly ? "cursor-not-allowed bg-slate-100 text-slate-400" : ""
-              }`}
-              placeholder="Type your message"
+              className="chat-input-textarea w-full resize-none py-3 pl-12 pr-20"
+              placeholder={
+                readOnly
+                  ? "Chat is locked once the RFQ reaches validation"
+                  : "Type your message"
+              }
               value={input}
               readOnly={readOnly}
+              disabled={readOnly}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
                 if (readOnly) {
@@ -533,7 +527,6 @@ export default function ChatPanel({
               multiple
               className="hidden"
               onChange={handleAttach}
-              disabled={readOnly}
             />
             <div className="absolute left-3 top-1/2 -translate-y-1/2">
               <button
@@ -554,7 +547,7 @@ export default function ChatPanel({
                 onClick={handleStartListening}
                 disabled={readOnly}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
-                title={listening ? "Listening..." : "Speak"}
+                title={readOnly ? "Chat is locked" : listening ? "Listening..." : "Speak"}
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -578,6 +571,11 @@ export default function ChatPanel({
             </div>
           </div>
         </div>
+        {readOnly ? (
+          <p className="px-1 text-xs font-medium text-slate-400">
+            The chatbot is locked because this RFQ is in validation.
+          </p>
+        ) : null}
       </div>
 
       {previewAttachment ? (

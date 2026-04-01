@@ -310,7 +310,7 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 
 const canUseStorage = () => typeof window !== "undefined";
 
@@ -396,6 +396,7 @@ export default function NewRfq() {
   const minChatWidth = 320;
   const maxChatWidth = 620;
   const stepIds = STEPS.map((step) => step.id);
+  const lastStepIndex = Math.max(stepIds.length - 1, 0);
   const stepIndex = stepIds.indexOf(activeStep);
   const isFirstStep = stepIndex <= 0;
   const isLastStep = stepIndex === stepIds.length - 1;
@@ -467,20 +468,36 @@ export default function NewRfq() {
     setFulfilledSteps({});
   }, [rfqId]);
 
+  const highestCompletedStepIndex = useMemo(() => {
+    let highestIndex = -1;
+    STEPS.forEach((step, index) => {
+      if (stepCompletion[step.id] || fulfilledSteps[step.id]) {
+        highestIndex = index;
+      }
+    });
+    return highestIndex;
+  }, [stepCompletion, fulfilledSteps]);
+
+  const reviewNavigationUnlocked =
+    isRfqStage &&
+    (activeSubPhase === "Validation" || rfqValidationReached || selectedSubPhase === "Validation");
+
+  const highestUnlockedStepIndex = useMemo(() => {
+    if (reviewNavigationUnlocked) {
+      return lastStepIndex;
+    }
+    return Math.min(lastStepIndex, Math.max(0, highestCompletedStepIndex + 1));
+  }, [reviewNavigationUnlocked, lastStepIndex, highestCompletedStepIndex]);
+
   const stepStates = useMemo(() => {
     const entries = STEPS.map((step, index) => {
-      const prevStep = STEPS[index - 1];
-      const prevComplete =
-        index === 0
-          ? true
-          : Boolean(stepCompletion[prevStep.id] || fulfilledSteps[prevStep.id]);
-      const isLocked = !prevComplete;
+      const isLocked = index > highestUnlockedStepIndex;
       const isComplete = Boolean(stepCompletion[step.id] || fulfilledSteps[step.id]);
       const statusType = isLocked ? "locked" : isComplete ? "fulfilled" : "draft";
       return [step.id, { isLocked, isComplete, statusType }];
     });
     return Object.fromEntries(entries);
-  }, [stepCompletion, fulfilledSteps]);
+  }, [stepCompletion, fulfilledSteps, highestUnlockedStepIndex]);
   const allStepsComplete = useMemo(
     () => STEPS.every((step) => stepStates[step.id]?.isComplete),
     [stepStates]
@@ -501,8 +518,30 @@ export default function NewRfq() {
     isRfqStage && rfqDisplaySubPhase === "Validation";
   const isRfqFormReadOnly =
     (activeSubPhase === "Validation" || rfqValidationReached) && !rfqFormEditEnabled;
+  const isChatLocked =
+    isChatOnly || activeSubPhase === "Validation" || rfqValidationReached;
   const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = Boolean(rfqId) && !saving && !isRfqFormReadOnly;
+  const showRfqStepNavigation =
+    activeRfqTab === "new" && isRfqStage && isRfqFormView;
+  const getNextStepId = (stepId) => {
+    const currentIndex = stepIds.indexOf(stepId);
+    if (currentIndex < 0 || currentIndex >= stepIds.length - 1) {
+      return "";
+    }
+    return stepIds[currentIndex + 1];
+  };
+  const handleStepViewChange = (stepId) => {
+    const targetIndex = stepIds.indexOf(stepId);
+    if (targetIndex < 0 || targetIndex > highestUnlockedStepIndex) {
+      return;
+    }
+    setActiveStep(stepId);
+    if (isRfqValidationView) {
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("RFQ form");
+    }
+  };
 
   useEffect(() => {
     const nextSelectedStage = normalizePipelineStageKey(activeStage);
@@ -530,11 +569,50 @@ export default function NewRfq() {
     }
   }, [activeSubPhase]);
 
-  const activeStepState = stepStates[activeStep] || {};
-  const canLeaveActiveStep = Boolean(activeStepState.isComplete);
+  useEffect(() => {
+    if (activeRfqTab !== "new" || !isRfqFormView || isRfqFormReadOnly) {
+      return;
+    }
+
+    if (!stepCompletion[activeStep]) {
+      return;
+    }
+
+    const shouldAutoAdvance =
+      stepIndex >= 0 && stepIndex === Math.max(0, highestUnlockedStepIndex - 1);
+    const nextStepId = getNextStepId(activeStep);
+    if (nextStepId && shouldAutoAdvance) {
+      setActiveStep(nextStepId);
+      return;
+    }
+
+    if (
+      allStepsComplete &&
+      stepIndex === lastStepIndex &&
+      selectedStage === "RFQ" &&
+      rfqDisplaySubPhase === "RFQ form"
+    ) {
+      setSelectedSubPhase("Validation");
+      setRfqValidationReached(true);
+      setRfqFormEditEnabled(false);
+    }
+  }, [
+    activeRfqTab,
+    isRfqFormView,
+    isRfqFormReadOnly,
+    stepCompletion,
+    activeStep,
+    stepIndex,
+    highestUnlockedStepIndex,
+    allStepsComplete,
+    selectedStage,
+    rfqDisplaySubPhase,
+    lastStepIndex
+  ]);
+
+  const canGoNext = Boolean(!isLastStep && stepIndex < highestUnlockedStepIndex);
   const prevStepId = stepIndex > 0 ? stepIds[stepIndex - 1] : "";
-  const prevStepState = prevStepId ? stepStates[prevStepId] || {} : {};
-  const canGoPrev = Boolean(prevStepId && prevStepState.isComplete);
+  const canGoPrev = Boolean(prevStepId);
 
   const applyRfq = (rfq, { syncChat = true } = {}) => {
     if (!rfq) return;
@@ -1003,19 +1081,20 @@ export default function NewRfq() {
       return;
     }
 
+    let shouldAutoRedirect = false;
     try {
       const reply = await sendChat(
         currentRfqId,
         payloadMessage,
         activeRfqTab === "potential" ? "potential" : "rfq"
       );
+      shouldAutoRedirect = Boolean(reply?.auto_redirect);
       if (reply?.response) {
         setChatMessages((prev) => [
           ...prev,
           { role: "assistant", content: reply.response }
         ]);
       }
-      await syncRfq(currentRfqId);
     } catch {
       setChatMessages((prev) => [
         ...prev,
@@ -1026,6 +1105,9 @@ export default function NewRfq() {
       ]);
     } finally {
       await syncRfq(currentRfqId);
+      if (shouldAutoRedirect) {
+        navigate(`/rfqs/new?id=${encodeURIComponent(currentRfqId)}`);
+      }
     }
   };
 
@@ -1148,11 +1230,9 @@ export default function NewRfq() {
                           return (
                             <div
                               key={stage.key}
-                              className={`pipeline-step flex flex-col ${
-                                isExpanded ? "justify-start" : "justify-center"
-                              } ${stepState} ${
-                                isNextPreview ? "cursor-not-allowed opacity-70" : ""
-                              } ${isExpanded ? "pipeline-step-expanded" : ""}`}
+                              className={`pipeline-step flex flex-col ${isExpanded ? "justify-start" : "justify-center"
+                                } ${stepState} ${isNextPreview ? "cursor-not-allowed opacity-70" : ""
+                                } ${isExpanded ? "pipeline-step-expanded" : ""}`}
                               aria-current={isSelected ? "step" : undefined}
                               aria-disabled={isNextPreview || undefined}
                               title={
@@ -1167,9 +1247,8 @@ export default function NewRfq() {
                                   isNextPreview ? undefined : () => handleStageChange(stage.key)
                                 }
                                 disabled={isNextPreview}
-                                className={`flex w-full flex-col items-center border-0 bg-transparent disabled:cursor-not-allowed ${
-                                  isExpanded ? "" : "flex-1 justify-center"
-                                }`}
+                                className={`flex w-full flex-col items-center border-0 bg-transparent disabled:cursor-not-allowed ${isExpanded ? "" : "flex-1 justify-center"
+                                  }`}
                                 aria-pressed={isSelected}
                               >
                                 <span className="pipeline-step-title text-[11px] font-semibold tracking-[0.16em] sm:text-[13px]">
@@ -1231,11 +1310,9 @@ export default function NewRfq() {
                                             type="button"
                                             onClick={() => handleSubPhaseChange(stage.key, subPhase)}
                                             disabled={isSubDisabled}
-                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-1 py-1 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${
-                                              isSubSelected ? "bg-white/10" : ""
-                                            } ${
-                                              isSubDisabled ? "" : "hover:bg-white/10"
-                                            }`}
+                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-1 py-1 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${isSubSelected ? "bg-white/10" : ""
+                                              } ${isSubDisabled ? "" : "hover:bg-white/10"
+                                              }`}
                                             aria-pressed={isSubSelected}
                                             aria-disabled={isSubDisabled || undefined}
                                             title={
@@ -1284,22 +1361,20 @@ export default function NewRfq() {
                     <button
                       type="button"
                       onClick={() => setActiveRfqTab("potential")}
-                      className={`pb-3 transition ${
-                        activeRfqTab === "potential"
+                      className={`pb-3 transition ${activeRfqTab === "potential"
                           ? "border-b-2 border-tide text-ink"
                           : "hover:text-ink"
-                      }`}
+                        }`}
                     >
                       Potential
                     </button>
                     <button
                       type="button"
                       onClick={() => setActiveRfqTab("new")}
-                      className={`pb-3 transition ${
-                        activeRfqTab === "new"
+                      className={`pb-3 transition ${activeRfqTab === "new"
                           ? "border-b-2 border-tide text-ink"
                           : "hover:text-ink"
-                      }`}
+                        }`}
                     >
                       New RFQ
                     </button>
@@ -1380,11 +1455,10 @@ export default function NewRfq() {
                   </form>
                 ) : null}
 
-                {isRfqFormView && activeRfqTab === "new" ? (
+                {showRfqStepNavigation ? (
                   <aside
-                    className={`card flex flex-col ${
-                      navCollapsed ? "p-3 sm:p-4" : "px-4 pt-4 pb-0 sm:px-6 sm:pt-6 sm:pb-0"
-                    } lg:sticky lg:top-0 lg:h-full lg:min-h-0`}
+                    className={`card flex flex-col ${navCollapsed ? "p-3 sm:p-4" : "px-4 pt-4 pb-0 sm:px-6 sm:pt-6 sm:pb-0"
+                      } lg:sticky lg:top-0 lg:h-full lg:min-h-0`}
                   >
                     <div className={`flex items-center ${navCollapsed ? "justify-center" : "justify-between"}`}>
                       {!navCollapsed ? (
@@ -1422,18 +1496,14 @@ export default function NewRfq() {
                             <button
                               key={step.id}
                               type="button"
-                              onClick={() => {
-                                if (isLocked) return;
-                                setActiveStep(step.id);
-                              }}
+                              onClick={() => handleStepViewChange(step.id)}
                               disabled={isLocked}
-                              className={`flex h-9 w-9 items-center justify-center rounded-2xl border text-sm font-semibold transition sm:h-10 sm:w-10 ${
-                                isActive
+                              className={`flex h-9 w-9 items-center justify-center rounded-2xl border text-sm font-semibold transition sm:h-10 sm:w-10 ${isActive
                                   ? "border-tide/40 bg-tide/10 text-tide"
                                   : isLocked
                                     ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300"
                                     : "border-slate-200 bg-white text-slate-500 hover:border-tide/40 hover:text-tide"
-                              }`}
+                                }`}
                               aria-label={`Step ${index + 1}`}
                               aria-disabled={isLocked || undefined}
                             >
@@ -1509,29 +1579,24 @@ export default function NewRfq() {
                             <button
                               key={step.id}
                               type="button"
-                              onClick={() => {
-                                if (isLocked) return;
-                                setActiveStep(step.id);
-                              }}
+                              onClick={() => handleStepViewChange(step.id)}
                               disabled={isLocked}
                               aria-pressed={isActive}
                               aria-disabled={isLocked || undefined}
-                              className={`group flex w-full gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition lg:px-3 lg:py-2 lg:text-[13px] ${
-                                isActive
+                              className={`group flex w-full gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition lg:px-3 lg:py-2 lg:text-[13px] ${isActive
                                   ? `${style.ring} ${style.bg} shadow-soft`
                                   : isLocked
                                     ? "cursor-not-allowed border-slate-200/70 bg-slate-50 text-slate-300"
                                     : "border-slate-200/70 bg-white/80 hover:border-tide/40 hover:shadow-soft"
-                              }`}
+                                }`}
                             >
                               <span className={`mt-1 h-full w-1 rounded-full lg:mt-0.5 ${style.bar}`} />
-                              <span className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border bg-white text-xs font-semibold text-slate-500 transition lg:mt-0 ${
-                                isActive
+                              <span className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border bg-white text-xs font-semibold text-slate-500 transition lg:mt-0 ${isActive
                                   ? "border-tide/40 text-tide"
                                   : isLocked
                                     ? "border-slate-200 text-slate-300"
                                     : "border-slate-200 group-hover:border-tide/40 group-hover:text-tide"
-                              }`}>
+                                }`}>
                                 {index + 1}
                               </span>
                               <span className="flex flex-1 items-center justify-between gap-3">
@@ -1582,7 +1647,7 @@ export default function NewRfq() {
                           <button
                             type="button"
                             className="prev-button disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setActiveStep(stepIds[stepIndex - 1])}
+                            onClick={() => handleStepViewChange(stepIds[stepIndex - 1])}
                             disabled={isFirstStep || !canGoPrev}
                           >
                             <span className="text-base">←</span>
@@ -1591,8 +1656,8 @@ export default function NewRfq() {
                           <button
                             type="button"
                             className="next-button disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setActiveStep(stepIds[stepIndex + 1])}
-                            disabled={isLastStep || !canLeaveActiveStep}
+                            onClick={() => handleStepViewChange(stepIds[stepIndex + 1])}
+                            disabled={isLastStep || !canGoNext}
                           >
                             Next
                             <span className="text-base">→</span>
@@ -1655,9 +1720,8 @@ export default function NewRfq() {
                                           >
                                             <button
                                               type="button"
-                                              className={`inline-flex items-center gap-2 truncate text-left ${
-                                                canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"
-                                              }`}
+                                              className={`inline-flex items-center gap-2 truncate text-left ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"
+                                                }`}
                                               onClick={() => handlePreviewFile(file)}
                                               disabled={!canPreview || isPreviewing}
                                             >
@@ -1711,7 +1775,7 @@ export default function NewRfq() {
                                 <FormField label="Plant" name="plant" value={form.plant} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Country" name="country" value={form.country} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="SOP year" name="sop" type="number" value={form.sop} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Quantity per year" name="qtyPerYear" type="number" value={form.qtyPerYear} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                                <FormField label="Quantity per year" name="qtyPerYear" type="text" value={form.qtyPerYear} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="RFQ reception date" name="rfqReceptionDate" type="date" value={form.rfqReceptionDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                               </div>
@@ -1772,7 +1836,7 @@ export default function NewRfq() {
                         >
                           <div className="grid gap-4 md:grid-cols-2">
                             <FormField label="TO total" name="toTotal" type="number" value={form.toTotal} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Zone Manager email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                           </div>
                         </div>
                       ) : null}
@@ -1783,7 +1847,7 @@ export default function NewRfq() {
                 {isRfqValidationView ? (
                   <form
                     onSubmit={handleSubmit}
-                    className="card col-span-full flex min-h-0 flex-col gap-6 overflow-y-visible p-5 sm:p-7 md:p-8 lg:h-full lg:min-h-0 lg:overflow-y-auto"
+                    className={`card flex min-h-0 flex-col gap-6 overflow-y-visible p-5 sm:p-7 md:p-8 lg:h-full lg:min-h-0 lg:overflow-y-auto ${showRfqStepNavigation ? "md:col-span-1 lg:col-span-2" : "col-span-full"}`}
                   >
                     {validationSuccess ? (
                       <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -1807,9 +1871,11 @@ export default function NewRfq() {
                         {STEPS.map((step, index) => {
                           const complete = Boolean(stepStates[step.id]?.isComplete);
                           return (
-                            <div
+                            <button
                               key={step.id}
-                              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-3"
+                              type="button"
+                              onClick={() => handleStepViewChange(step.id)}
+                              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-3 text-left transition hover:border-tide/40 hover:bg-white"
                             >
                               <div>
                                 <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
@@ -1820,15 +1886,14 @@ export default function NewRfq() {
                                 </p>
                               </div>
                               <span
-                                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                                  complete
+                                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${complete
                                     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                     : "border-sun/30 bg-sun/10 text-sun"
-                                }`}
+                                  }`}
                               >
                                 {complete ? "Completed" : "Pending"}
                               </span>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>
@@ -1899,7 +1964,7 @@ export default function NewRfq() {
                         <ChatPanel
                           messages={chatFeed}
                           onSend={handleChatSend}
-                          readOnly={isRfqFormReadOnly}
+                          readOnly={isChatLocked}
                           onCollapse={() => setChatCollapsed(true)}
                         />
                       </div>
