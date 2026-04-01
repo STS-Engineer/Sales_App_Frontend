@@ -74,6 +74,25 @@ const PIPELINE_STAGE_MAP = {
  
 const normalizeStatusValue = (value) =>
   typeof value === "string" ? value : value?.value;
+
+const normalizeDateInputValue = (value) => {
+  if (value === null || value === undefined) return undefined;
+  const text = String(value).trim();
+  if (!text) return undefined;
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const slashMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  return text;
+};
  
 const resolveBackendStateKey = (rfqOrStatus) => {
   if (!rfqOrStatus) return "";
@@ -130,10 +149,11 @@ export const mapRfqDataToForm = (rfq) => {
     country: pickFirst(data.country),
     sop: pickFirst(data.sop_year, data.sop),
     qtyPerYear: pickFirst(data.annual_volume, data.qty_per_year, data.qtyPerYear),
-    rfqReceptionDate: pickFirst(data.rfq_reception_date, data.rfqReceptionDate),
-    expectedQuotationDate: pickFirst(
-      data.quotation_expected_date,
-      data.expectedQuotationDate
+    rfqReceptionDate: normalizeDateInputValue(
+      pickFirst(data.rfq_reception_date, data.rfqReceptionDate)
+    ),
+    expectedQuotationDate: normalizeDateInputValue(
+      pickFirst(data.quotation_expected_date, data.expectedQuotationDate)
     ),
     contactName: pickFirst(data.contact_name, data.contact_first_name, data.contactName),
     contactFunction: pickFirst(data.contact_role, data.contactFunction),
