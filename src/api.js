@@ -1,6 +1,6 @@
 import { getToken, setToken } from "./utils/session.js";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://sales-app-backend.azurewebsites.net";
 const REQUEST_TIMEOUT_MS = 15000;
 
 async function handleJson(response) {
