@@ -500,6 +500,10 @@ body {
     min-width: 960px;
   }
 
+  .newrfq-pipeline .pipeline-step {
+    @apply py-1.5 sm:py-2;
+  }
+
   .newrfq-pipeline .pipeline-step-expanded {
     flex: 1.35 1 0%;
   }

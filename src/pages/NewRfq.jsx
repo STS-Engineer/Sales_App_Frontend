@@ -486,10 +486,15 @@ export default function NewRfq() {
     });
     return highestIndex;
   }, [stepCompletion, fulfilledSteps]);
+  const hasWorkflowMovedBeyondRfq = Boolean(activeStage && activeStage !== "RFQ");
+  const hasValidationLock =
+    activeSubPhase === "Validation" ||
+    rfqValidationReached ||
+    hasWorkflowMovedBeyondRfq;
 
   const reviewNavigationUnlocked =
     isRfqStage &&
-    (activeSubPhase === "Validation" || rfqValidationReached || selectedSubPhase === "Validation");
+    (hasValidationLock || selectedSubPhase === "Validation");
 
   const highestUnlockedStepIndex = useMemo(() => {
     if (reviewNavigationUnlocked) {
@@ -512,7 +517,7 @@ export default function NewRfq() {
     [stepStates]
   );
   const canOpenRfqValidation =
-    activeSubPhase === "Validation" || rfqValidationReached;
+    hasValidationLock;
   const getActiveDisplaySubPhase = (stageKey) => {
     if (stageKey !== groupedActiveStage) return "";
     return activeSubPhase;
@@ -524,9 +529,9 @@ export default function NewRfq() {
   const isRfqValidationView =
     isRfqStage && rfqDisplaySubPhase === "Validation";
   const isRfqFormReadOnly =
-    (activeSubPhase === "Validation" || rfqValidationReached) && !rfqFormEditEnabled;
+    hasValidationLock && !rfqFormEditEnabled;
   const isChatLocked =
-    isChatOnly || activeSubPhase === "Validation" || rfqValidationReached;
+    isChatOnly || hasValidationLock;
   const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = Boolean(rfqId) && !saving && !isRfqFormReadOnly;
   const showRfqStepNavigation =
@@ -1214,7 +1219,7 @@ export default function NewRfq() {
       <div className="flex flex-1 min-h-0 flex-col pt-4 pb-0 sm:pt-6 lg:pt-1 overflow-visible lg:overflow-hidden">
         <div className="w-full flex flex-1 min-h-0 flex-col overflow-visible lg:overflow-hidden">
           <div className="app-shell w-full flex flex-1 min-h-0 flex-col rounded-none border border-slate-200/70 shadow-card overflow-visible lg:overflow-hidden">
-            <div className="flex flex-1 min-h-0 flex-col gap-8 lg:gap-3 overflow-visible lg:overflow-hidden">
+            <div className="flex flex-1 min-h-0 flex-col gap-6 lg:gap-2 overflow-visible lg:overflow-hidden">
               <div className="px-4 pt-4 sm:px-6 sm:pt-6 lg:pt-1">
                 <div className="flex flex-wrap items-center gap-4">
                   <button
@@ -1280,11 +1285,11 @@ export default function NewRfq() {
                               </button>
                               {isExpanded && stage.subPhases?.length ? (
                                 <div
-                                  className="pipeline-subphases mt-2 w-full px-2"
+                                  className="pipeline-subphases mt-1.5 w-full px-1.5"
                                   aria-hidden={!isExpanded}
                                 >
-                                  <div className="relative min-h-[40px]">
-                                    <div className="flex items-center gap-2 px-1">
+                                  <div className="relative min-h-[34px]">
+                                    <div className="flex items-center gap-1.5 px-0.5">
                                       {stage.subPhases.map((subPhase, subIndex) => {
                                         const isSubComplete =
                                           isExpanded &&
@@ -1294,14 +1299,14 @@ export default function NewRfq() {
                                           <span
                                             key={`segment-${subPhase}`}
                                             className={[
-                                              "h-1.5 flex-1 rounded-full",
+                                              "h-1 flex-1 rounded-full",
                                               isSubComplete ? "bg-emerald-400" : "bg-white/25"
                                             ].join(" ")}
                                           />
                                         );
                                       })}
                                     </div>
-                                    <div className="mt-2 flex items-start justify-between gap-2">
+                                    <div className="mt-1.5 flex items-start justify-between gap-1.5">
                                       {stage.subPhases.map((subPhase) => {
                                         const isSubActive = effectiveSubPhase === subPhase;
                                         const isSubSelected =
@@ -1317,15 +1322,15 @@ export default function NewRfq() {
                                           subPhaseIndex >= 0 &&
                                           currentSubPhaseIndex < subPhaseIndex;
                                         const dotClass = isSubActive
-                                          ? "h-2.5 w-2.5 rounded-full bg-white shadow-[0_0_0_3px_rgba(255,255,255,0.35)]"
+                                          ? "h-2 w-2 rounded-full bg-white shadow-[0_0_0_2px_rgba(255,255,255,0.35)]"
                                           : isSubComplete
-                                            ? "h-2.5 w-2.5 rounded-full bg-emerald-300"
-                                            : "h-2 w-2 rounded-full bg-white/70";
+                                            ? "h-2 w-2 rounded-full bg-emerald-300"
+                                            : "h-1.5 w-1.5 rounded-full bg-white/70";
                                         const labelClass = isSubActive
-                                          ? "mt-1 max-w-[120px] text-center font-semibold leading-tight text-white"
+                                          ? "mt-0.5 max-w-[120px] text-center font-semibold leading-tight text-white"
                                           : isSubComplete
-                                            ? "mt-1 max-w-[120px] text-center leading-tight text-emerald-50"
-                                            : "mt-1 max-w-[120px] text-center leading-tight text-white/85";
+                                            ? "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50"
+                                            : "mt-0.5 max-w-[120px] text-center leading-tight text-white/85";
 
                                         return (
                                           <button
@@ -1333,7 +1338,7 @@ export default function NewRfq() {
                                             type="button"
                                             onClick={() => handleSubPhaseChange(stage.key, subPhase)}
                                             disabled={isSubDisabled}
-                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-1 py-1 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${isSubSelected ? "bg-white/10" : ""
+                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-0.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${isSubSelected ? "bg-white/10" : ""
                                               } ${isSubDisabled ? "" : "hover:bg-white/10"
                                               }`}
                                             aria-pressed={isSubSelected}
@@ -1392,7 +1397,7 @@ export default function NewRfq() {
                     <button
                       type="button"
                       onClick={() => setActiveRfqTab("potential")}
-                      className={`pb-3 transition ${activeRfqTab === "potential"
+                      className={`pb-1 transition ${activeRfqTab === "potential"
                         ? "border-b-2 border-tide text-ink"
                         : "hover:text-ink"
                         }`}
@@ -1402,7 +1407,7 @@ export default function NewRfq() {
                     <button
                       type="button"
                       onClick={() => setActiveRfqTab("new")}
-                      className={`pb-3 transition ${activeRfqTab === "new"
+                      className={`pb-1 transition ${activeRfqTab === "new"
                         ? "border-b-2 border-tide text-ink"
                         : "hover:text-ink"
                         }`}
@@ -1457,8 +1462,8 @@ export default function NewRfq() {
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                           <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                         </div>
                       </section>
 
@@ -1708,10 +1713,10 @@ export default function NewRfq() {
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
                               <div className="mt-4 grid gap-4 md:grid-cols-2">
                                 <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                                <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
 
                                 <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
                                   <span>RFQ Files</span>
@@ -1778,7 +1783,7 @@ export default function NewRfq() {
                                                 aria-label="Delete file"
                                                 title={
                                                   isRfqFormReadOnly
-                                                    ? "Read only in validation"
+                                                    ? "Read only once validation starts"
                                                     : isDeleting
                                                       ? "Removing..."
                                                       : "Delete"
@@ -1802,7 +1807,7 @@ export default function NewRfq() {
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
                               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                <FormField label="Delivery zone" name="deliveryZone" value={form.deliveryZone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                                <FormField label="Delivery zone" name="deliveryZone" value={form.deliveryZone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Plant" name="plant" value={form.plant} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Country" name="country" value={form.country} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="SOP year" name="sop" type="number" value={form.sop} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
@@ -1832,11 +1837,11 @@ export default function NewRfq() {
                         >
                           <div className="grid gap-4 md:grid-cols-2">
                             <FormField label="Target Price" name="targetPrice" type="number" value={form.targetPrice} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                           </div>
                         </div>
                       ) : null}
@@ -1851,11 +1856,11 @@ export default function NewRfq() {
                             <FormField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                             <FormField label="Design owner" name="designOwner" value={form.designOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                             <FormField label="Development costs" name="developmentCosts" value={form.developmentCosts} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Customer status" name="customerStatus" value={form.customerStatus} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Customer status" name="customerStatus" value={form.customerStatus} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                           </div>
                         </div>
                       ) : null}

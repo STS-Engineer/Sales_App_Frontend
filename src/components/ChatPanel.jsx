@@ -441,60 +441,64 @@ export default function ChatPanel({
         </div>
       </div>
 
-      <div className="mt-3 flex-1 space-y-3 overflow-y-auto rounded-2xl border border-slate-200/70 bg-white/70 p-2">
-        {messages.map((message, index) => {
-          const hasContent = Boolean(message.content && String(message.content).trim());
-          return (
-            <div
-              key={`${message.role}-${index}`}
-              className={`flex items-end gap-2 ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              {message.role !== "user" ? (
+      <div className="mt-3 flex-1 overflow-y-auto rounded-2xl border border-slate-200/70 bg-white/70 px-2 pt-2 pb-2">
+        <div className="flex min-h-full flex-col justify-end">
+          <div className="space-y-3">
+            {messages.map((message, index) => {
+              const hasContent = Boolean(message.content && String(message.content).trim());
+              return (
+                <div
+                  key={`${message.role}-${index}`}
+                  className={`flex items-end gap-2 ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  {message.role !== "user" ? (
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm">
+                      <Bot className="h-4 w-4" />
+                    </span>
+                  ) : null}
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-3 py-3 text-sm shadow-sm ${
+                      message.role === "user" ? "chat-bubble-user" : "chat-bubble-bot"
+                    }`}
+                  >
+                    {hasContent ? renderMessageContent(message.content, `${message.role}-${index}`) : null}
+                    {message.attachments?.length
+                      ? renderAttachmentChips(
+                          message.attachments,
+                          hasContent ? "message" : "message-compact"
+                        )
+                      : null}
+                  </div>
+                  {message.role === "user" ? (
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-tide/30 bg-tide/10 text-tide shadow-sm">
+                      <User className="h-4 w-4" />
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+            {busy ? (
+              <div className="flex items-end gap-2 justify-start">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm">
                   <Bot className="h-4 w-4" />
                 </span>
-              ) : null}
-              <div
-                className={`max-w-[80%] rounded-2xl px-3 py-3 text-sm shadow-sm ${
-                  message.role === "user" ? "chat-bubble-user" : "chat-bubble-bot"
-                }`}
-              >
-                {hasContent ? renderMessageContent(message.content, `${message.role}-${index}`) : null}
-                {message.attachments?.length
-                  ? renderAttachmentChips(
-                      message.attachments,
-                      hasContent ? "message" : "message-compact"
-                    )
-                  : null}
+                <div className="max-w-[60%] rounded-2xl px-4 py-3 text-sm shadow-sm chat-bubble-bot">
+                  <span className="typing-dots" aria-label="Assistant is typing">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </div>
               </div>
-              {message.role === "user" ? (
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-tide/30 bg-tide/10 text-tide shadow-sm">
-                  <User className="h-4 w-4" />
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
-        {busy ? (
-          <div className="flex items-end gap-2 justify-start">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm">
-              <Bot className="h-4 w-4" />
-            </span>
-            <div className="max-w-[60%] rounded-2xl px-4 py-3 text-sm shadow-sm chat-bubble-bot">
-              <span className="typing-dots" aria-label="Assistant is typing">
-                <span />
-                <span />
-                <span />
-              </span>
-            </div>
+            ) : null}
           </div>
-        ) : null}
-        <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-0" />
+        </div>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-2 space-y-3">
         <div className="chat-input-shell">
           {renderAttachmentChips(attachments, "input")}
           <div className="relative">
@@ -503,7 +507,7 @@ export default function ChatPanel({
               className="chat-input-textarea w-full resize-none py-3 pl-12 pr-20"
               placeholder={
                 readOnly
-                  ? "Chat is locked once the RFQ reaches validation"
+                  ? "Chat is locked once the RFQ enters validation"
                   : "Type your message"
               }
               value={input}
@@ -571,11 +575,6 @@ export default function ChatPanel({
             </div>
           </div>
         </div>
-        {readOnly ? (
-          <p className="px-1 text-xs font-medium text-slate-400">
-            The chatbot is locked because this RFQ is in validation.
-          </p>
-        ) : null}
       </div>
 
       {previewAttachment ? (

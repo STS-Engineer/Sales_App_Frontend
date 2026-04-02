@@ -55,7 +55,7 @@ export default function TopBar({ title, action }) {
 
   return (
     <div className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/85 backdrop-blur">
-      <div className="flex w-full flex-wrap items-center justify-between gap-4 px-10 py-3">
+      <div className="flex w-full flex-wrap items-center justify-between gap-4 px-10 py-2">
         <div className="flex items-center gap-4">
           <Link
             to="/dashboard"
@@ -79,9 +79,9 @@ export default function TopBar({ title, action }) {
               ref={triggerRef}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[280px] sm:w-auto"
+              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[280px] sm:w-auto"
             >
-              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-tide/10 text-xs font-bold text-tide">
+              <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-tide/10 text-xs font-bold text-tide">
                 {initials || "U"}
                 <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-mint" />
               </span>
