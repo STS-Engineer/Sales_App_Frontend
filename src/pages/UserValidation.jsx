@@ -98,7 +98,7 @@ export default function UserValidation() {
     () =>
       pendingUsers.map((user) => ({
         ...user,
-        displayName: user.email,
+        displayName: user.full_name || user.email,
         requestedAtLabel: user.created_at
           ? new Date(user.created_at).toLocaleString()
           : "N/A"

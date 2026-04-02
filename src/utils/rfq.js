@@ -246,6 +246,7 @@ export const mapChatHistory = (history = []) =>
     .filter(
       (entry) =>
         (entry?.role === "assistant" || entry?.role === "user") &&
+        !(entry?.role === "assistant" && Array.isArray(entry?.tool_calls) && entry.tool_calls.length > 0) &&
         typeof entry?.content === "string" &&
         entry.content.trim() !== ""
     )

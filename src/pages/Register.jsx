@@ -22,7 +22,7 @@ const EyeIcon = ({ open }) => (
 export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: "",
+    full_name: "",
     email: "",
     password: "",
     confirmPassword: ""
@@ -48,7 +48,11 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await register({ email: form.email, password: form.password });
+      await register({
+        full_name: form.full_name.trim(),
+        email: form.email.trim(),
+        password: form.password
+      });
       navigate("/", {
         replace: true,
         state: {
@@ -75,8 +79,8 @@ export default function Register() {
           <input
             className="input-field"
             type="text"
-            name="name"
-            value={form.name}
+            name="full_name"
+            value={form.full_name}
             onChange={handleChange}
             placeholder="Enter your name"
             required

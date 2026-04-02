@@ -581,7 +581,7 @@ export default function ChatPanel({
       {previewAttachment ? (
         <div className="chat-modal-backdrop" onClick={handleClosePreview} role="presentation">
           <div
-            className="chat-modal"
+            className="chat-modal chat-modal--preview"
             role="dialog"
             aria-modal="true"
             aria-label={getAttachmentName(previewAttachment)}

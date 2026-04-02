@@ -310,7 +310,9 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const CHATBOT_INITIAL_GREETING =
+  "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
 
 const canUseStorage = () => typeof window !== "undefined";
 
@@ -435,7 +437,9 @@ export default function NewRfq() {
     ];
   }, [loadingRfq]);
 
-  const chatFeed = chatMessages.length ? chatMessages : chatFallback;
+  const chatFeed = chatMessages.length
+    ? chatMessages
+    : [{ role: "assistant", content: CHATBOT_INITIAL_GREETING }];
   const stepCompletion = useMemo(() => {
     const isFilled = (value) => {
       if (value === 0) return true;
@@ -664,13 +668,15 @@ export default function NewRfq() {
 
   const syncRfq = async (targetId) => {
     const idToLoad = targetId || rfqId;
-    if (!idToLoad) return;
+    if (!idToLoad) return false;
     setRfqError("");
     try {
       const rfq = await getRfq(idToLoad);
       applyRfq(rfq);
+      return true;
     } catch (error) {
       setRfqError("Unable to refresh this RFQ. Please try again.");
+      return false;
     }
   };
 
@@ -831,6 +837,10 @@ export default function NewRfq() {
     }
     const resolvedUrl = resolveFileUrl(file.url);
     if (!resolvedUrl) return;
+    if (/^https?:\/\//i.test(resolvedUrl)) {
+      setFilePreview({ ...file, previewUrl: resolvedUrl });
+      return;
+    }
     setFilePreviewLoadingId(file.id);
     try {
       const token = getToken();
@@ -1093,6 +1103,7 @@ export default function NewRfq() {
     }
 
     let shouldAutoRedirect = false;
+    let finalAssistantResponse = "";
     try {
       const reply = await sendChat(
         currentRfqId,
@@ -1100,12 +1111,7 @@ export default function NewRfq() {
         activeRfqTab === "potential" ? "potential" : "rfq"
       );
       shouldAutoRedirect = Boolean(reply?.auto_redirect);
-      if (reply?.response) {
-        setChatMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: reply.response }
-        ]);
-      }
+      finalAssistantResponse = String(reply?.response || "");
     } catch {
       setChatMessages((prev) => [
         ...prev,
@@ -1115,7 +1121,13 @@ export default function NewRfq() {
         }
       ]);
     } finally {
-      await syncRfq(currentRfqId);
+      const synced = await syncRfq(currentRfqId);
+      if (!synced && finalAssistantResponse) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: finalAssistantResponse }
+        ]);
+      }
       if (shouldAutoRedirect) {
         navigate(`/rfqs/new?id=${encodeURIComponent(currentRfqId)}`);
       }
@@ -1993,7 +2005,7 @@ export default function NewRfq() {
       {filePreview ? (
         <div className="chat-modal-backdrop" onClick={() => setFilePreview(null)} role="presentation">
           <div
-            className="chat-modal"
+            className="chat-modal chat-modal--preview"
             role="dialog"
             aria-modal="true"
             aria-label={filePreview.name}

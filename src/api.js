@@ -1,6 +1,6 @@
 import { getToken, setToken } from "./utils/session.js";
 
-const API_BASE = "https://sales-app-backend.azurewebsites.net";
+const API_BASE = "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 15000;
 
 async function handleJson(response) {
@@ -145,8 +145,8 @@ export async function listPendingUsers() {
 }
 
 export async function updateUserRole(userId, role) {
-  return request(`/api/users/${encodeURIComponent(userId)}/role`, {
-    method: "PUT",
+  return request(`/api/owner/users/${encodeURIComponent(userId)}/approve`, {
+    method: "POST",
     body: { role }
   });
 }
