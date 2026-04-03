@@ -1,20 +1,25 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
+import { useToast } from "../components/ToastProvider.jsx";
 
 export default function ForgotPassword() {
+  const { showToast } = useToast();
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState("");
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setError("");
     if (!email.trim()) {
-      setError("Please enter a valid email.");
+      showToast("Please enter a valid email.", {
+        type: "error",
+        title: "Reset unavailable"
+      });
       return;
     }
-    setSent(true);
+    showToast("Password reset is not available yet. Please contact the owner.", {
+      type: "info",
+      title: "Reset unavailable"
+    });
   };
 
   return (
@@ -37,14 +42,6 @@ export default function ForgotPassword() {
         >
           Send reset link
         </button>
-        {error ? (
-          <div className="text-center text-xs text-coral">{error}</div>
-        ) : null}
-        <div className="text-center text-xs text-slate-500">
-          {sent
-            ? "Password reset is not available yet. Please contact the owner."
-            : ""}
-        </div>
         <div className="text-center text-xs text-slate-500">
           <Link className="font-semibold text-tide" to="/">
             Back to sign in

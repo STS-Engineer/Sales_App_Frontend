@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
+import { useToast } from "../components/ToastProvider.jsx";
 import { getMe, login } from "../api";
 import { setUserProfile, setCurrentUserRole } from "../utils/session.js";
 
@@ -23,17 +24,23 @@ const EyeIcon = ({ open }) => (
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showToast } = useToast();
   const [form, setForm] = useState({ email: "", password: "" });
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState(location.state?.registrationMessage || "");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const registrationToastRef = useRef("");
 
   useEffect(() => {
-    if (!location.state?.registrationMessage) return;
-    setNotice(location.state.registrationMessage);
+    const registrationMessage = location.state?.registrationMessage;
+    if (!registrationMessage) return;
+    if (registrationToastRef.current === registrationMessage) return;
+    registrationToastRef.current = registrationMessage;
+    showToast(registrationMessage, {
+      type: "success",
+      title: "Account created"
+    });
     navigate(location.pathname, { replace: true, state: {} });
-  }, [location.pathname, location.state, navigate]);
+  }, [location.pathname, location.state, navigate, showToast]);
 
   const handleChange = (event) => {
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
@@ -41,7 +48,6 @@ export default function Login() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setError("");
     setLoading(true);
     try {
       await login(form);
@@ -54,15 +60,19 @@ export default function Login() {
       setCurrentUserRole(profile.role);
       navigate("/dashboard");
     } catch (err) {
+      let message = "Login failed. Please try again.";
+      let title = "Sign in failed";
+      let type = "error";
       if (err?.status === 403) {
-        setError("Your account is pending owner approval.");
+        message = "Your account is pending owner approval.";
+        title = "Approval pending";
+        type = "info";
       } else if (err?.status === 401) {
-        setError("Login failed. Please check your credentials and try again.");
+        message = "Login failed. Please check your credentials and try again.";
       } else if (err?.status === 408) {
-        setError("Login timed out. Please try again.");
-      } else {
-        setError("Login failed. Please try again.");
+        message = "Login timed out. Please try again.";
       }
+      showToast(message, { type, title });
     } finally {
       setLoading(false);
     }
@@ -106,12 +116,6 @@ export default function Login() {
             </button>
           </div>
         </label>
-        {notice ? (
-          <div className="rounded-2xl border border-mint/30 bg-mint/10 px-4 py-3 text-sm text-mint">
-            {notice}
-          </div>
-        ) : null}
-        {error ? <p className="text-sm text-coral">{error}</p> : null}
         <button
           type="submit"
           className="gradient-button w-full rounded-xl px-4 py-3 text-sm font-semibold shadow-soft"

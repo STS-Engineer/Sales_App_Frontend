@@ -5,9 +5,11 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import ChatPanel from "../components/ChatPanel.jsx";
 import FormField from "../components/FormField.jsx";
 import TopBar from "../components/TopBar.jsx";
+import { useToast } from "../components/ToastProvider.jsx";
 import {
   createRfq,
   deleteRfqFile,
+  getRfqAuditLogs,
   getRfq,
   sendChat,
   validateRfq,
@@ -68,7 +70,25 @@ const initialForm = {
   status: "RFQ",
   owner: "",
   notes: "",
-  location: ""
+  location: "",
+  potentialCustomerLocation: "",
+  potentialIndustry: "",
+  potentialProductType: "",
+  potentialEngagementReason: "",
+  potentialIdeaOwner: "",
+  potentialCurrentSupplier: "",
+  potentialWinReason: "",
+  potentialWinDetails: "",
+  potentialTechnicalCapability: "",
+  potentialStrategyFit: "",
+  potentialStrategyFitDetails: "",
+  potentialBusinessSalesKeur: "",
+  potentialBusinessMarginPercent: "",
+  potentialStartOfProduction: "",
+  potentialDevelopmentEffort: "",
+  potentialSideEffects: "",
+  potentialRiskDoAssessment: "",
+  potentialRiskNotDoAssessment: ""
 };
 
 const STEPS = [
@@ -227,6 +247,108 @@ const STATUS_CHOICES = [
   "Cancelled"
 ];
 
+const normalizeAssessmentValue = (value) => {
+  if (value === null || value === undefined) return undefined;
+  const text = String(value).trim();
+  return text ? text : undefined;
+};
+
+const collectAssessmentValues = (source, keys = []) =>
+  keys
+    .map((key) => normalizeAssessmentValue(source?.[key]))
+    .filter((value) => value !== undefined);
+
+const pickAssessmentArray = (source, keys = []) => {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (!Array.isArray(value)) continue;
+    const normalized = value
+      .map((item) => normalizeAssessmentValue(item))
+      .filter((item) => item !== undefined);
+    if (normalized.length) {
+      return normalized;
+    }
+  }
+  return [];
+};
+
+const resolveAssessmentValue = (rfqData, { directKeys, arrayKeys, numberedKeys, legacyKeys }) => {
+  const directValue = collectAssessmentValues(rfqData, directKeys)[0];
+  if (directValue) return directValue;
+
+  const fromArray = pickAssessmentArray(rfqData, arrayKeys);
+  if (fromArray.length) return fromArray.join("\n\n");
+
+  const fromNumbered = collectAssessmentValues(rfqData, numberedKeys);
+  if (fromNumbered.length) return fromNumbered.join("\n\n");
+
+  return collectAssessmentValues(rfqData, legacyKeys).join("\n\n");
+};
+
+const extractPotentialAssessmentFields = (rfqData = {}) => {
+  return {
+    potentialRiskDoAssessment: resolveAssessmentValue(rfqData, {
+      directKeys: ["potential_risk_do_assessment", "potentialRiskDoAssessment"],
+      arrayKeys: ["potential_risk_do_assessments", "potentialRiskDoAssessments"],
+      numberedKeys: [
+        "potential_risk_do_assessment_1",
+        "potentialRiskDoAssessment1",
+        "potential_risk_do_assessment_2",
+        "potentialRiskDoAssessment2",
+        "potential_risk_do_assessment_3",
+        "potentialRiskDoAssessment3"
+      ],
+      legacyKeys: [
+        "potentialRiskDoIpLoss",
+        "potentialRiskDoWasteMoneyTime",
+        "potentialRiskDoCompetitionWar",
+        "potentialRiskDoNoFutureProject",
+        "potentialRiskDoLowProfitability",
+        "potentialRiskDoLargeCustomerExposure",
+        "potentialRiskDoPriceReductionPressure",
+        "potentialRiskDoOther"
+      ]
+    }),
+    potentialRiskNotDoAssessment: resolveAssessmentValue(rfqData, {
+      directKeys: [
+        "potential_risk_not_do_assessment",
+        "potentialRiskNotDoAssessment"
+      ],
+      arrayKeys: [
+        "potential_risk_not_do_assessments",
+        "potentialRiskNotDoAssessments"
+      ],
+      numberedKeys: [
+        "potential_risk_not_do_assessment_1",
+        "potentialRiskNotDoAssessment1",
+        "potential_risk_not_do_assessment_2",
+        "potentialRiskNotDoAssessment2",
+        "potential_risk_not_do_assessment_3",
+        "potentialRiskNotDoAssessment3"
+      ],
+      legacyKeys: [
+        "potentialRiskNotDoActivityOpportunity",
+        "potentialRiskNotDoMarketReference",
+        "potentialRiskNotDoGrowthFuel"
+      ]
+    })
+  };
+};
+
+const calculatePotentialMarginKeur = (salesKeur, marginPercent) => {
+  const rawSales = String(salesKeur ?? "").trim();
+  const rawMargin = String(marginPercent ?? "").trim();
+  if (!rawSales || !rawMargin) return "";
+
+  const sales = Number(rawSales.replace(",", "."));
+  const margin = Number(rawMargin.replace(",", "."));
+  if (!Number.isFinite(sales) || !Number.isFinite(margin)) return "";
+
+  const computed = (sales * margin) / 100;
+  if (!Number.isFinite(computed)) return "";
+  return computed.toFixed(2).replace(/\.?0+$/, "");
+};
+
 const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   if (!prevMessages.length) return serverMessages;
   const pending = prevMessages.filter(
@@ -380,10 +502,66 @@ const resolveFileUrl = (url) => {
   return `${API_BASE}/${url}`;
 };
 
+const createEmptyValidationAudit = () => ({
+  approvedAt: "",
+  approvedBy: "",
+  rejectedAt: "",
+  rejectedBy: "",
+  rejectionReason: ""
+});
+
+const normalizeAuditValue = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const extractValidationAudit = (rfq, auditLogs = []) => {
+  const approvedLog = auditLogs.find(
+    (entry) =>
+      typeof entry?.action === "string" && entry.action.includes("Validator approved")
+  );
+  const rejectedLog = auditLogs.find(
+    (entry) =>
+      typeof entry?.action === "string" && entry.action.includes("Validator rejected")
+  );
+
+  return {
+    approvedAt: normalizeAuditValue(rfq?.approved_at),
+    approvedBy: normalizeAuditValue(approvedLog?.performed_by),
+    rejectedAt: normalizeAuditValue(rfq?.rejected_at),
+    rejectedBy: normalizeAuditValue(rejectedLog?.performed_by),
+    rejectionReason: normalizeAuditValue(rfq?.rejection_reason)
+  };
+};
+
+const formatValidationAuditValue = (value) => {
+  const text = normalizeAuditValue(value);
+  return text || "Not available";
+};
+
+const formatValidationAuditDate = (value) => {
+  const text = normalizeAuditValue(value);
+  if (!text) return "Not available";
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    return text;
+  }
+  return parsed.toLocaleString();
+};
+
+const loadRfqSnapshot = async (targetId) => {
+  const [rfq, auditLogs] = await Promise.all([
+    getRfq(targetId),
+    getRfqAuditLogs(targetId).catch(() => [])
+  ]);
+  return { rfq, auditLogs };
+};
+
 const normalizePipelineStageKey = (stage) => GROUPED_PIPELINE_STAGE_MAP[stage] || "";
 
 export default function NewRfq() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
   const [form, setForm] = useState(initialForm);
@@ -413,6 +591,8 @@ export default function NewRfq() {
   const [rejectReason, setRejectReason] = useState("");
   const [rfqFormEditEnabled, setRfqFormEditEnabled] = useState(false);
   const [rfqValidationReached, setRfqValidationReached] = useState(false);
+  const [validationAudit, setValidationAudit] = useState(createEmptyValidationAudit);
+  const [persistValidationView, setPersistValidationView] = useState(false);
   const rfqFileInputRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
@@ -444,6 +624,21 @@ export default function NewRfq() {
   const mergedFiles = useMemo(
     () => [...serverFiles, ...localFiles],
     [serverFiles, localFiles]
+  );
+  const potentialMarginKeur = useMemo(
+    () =>
+      calculatePotentialMarginKeur(
+        form.potentialBusinessSalesKeur,
+        form.potentialBusinessMarginPercent
+      ),
+    [form.potentialBusinessSalesKeur, form.potentialBusinessMarginPercent]
+  );
+  const hasRecordedValidationDecision = Boolean(
+    validationAudit.approvedAt || validationAudit.rejectedAt
+  );
+  const isValidationRejected = Boolean(validationAudit.rejectedAt);
+  const validationButtonsDisabled = Boolean(
+    validationActionId || hasRecordedValidationDecision
   );
 
   const chatFallback = useMemo(() => {
@@ -496,6 +691,18 @@ export default function NewRfq() {
   useEffect(() => {
     previousStepCompletionRef.current = {};
   }, [rfqId]);
+
+  useEffect(() => {
+    if (!rfqError) return;
+    showToast(rfqError, { type: "error", title: "RFQ update failed" });
+    setRfqError("");
+  }, [rfqError, showToast]);
+
+  useEffect(() => {
+    if (!validationSuccess) return;
+    showToast(validationSuccess, { type: "success", title: "RFQ updated" });
+    setValidationSuccess("");
+  }, [validationSuccess, showToast]);
 
   const highestCompletedStepIndex = useMemo(() => {
     let highestIndex = -1;
@@ -578,10 +785,13 @@ export default function NewRfq() {
   useEffect(() => {
     const nextSelectedStage = normalizePipelineStageKey(activeStage);
     if (nextSelectedStage) {
+      if (persistValidationView) {
+        return;
+      }
       setSelectedStage(nextSelectedStage);
       setSelectedSubPhase(getActiveDisplaySubPhase(nextSelectedStage));
     }
-  }, [activeStage]);
+  }, [activeStage, hasRecordedValidationDecision, persistValidationView]);
 
   useEffect(() => {
     const nextSelectedStage = normalizePipelineStageKey(activeStage);
@@ -593,6 +803,7 @@ export default function NewRfq() {
   useEffect(() => {
     setRfqFormEditEnabled(false);
     setRfqValidationReached(false);
+    setPersistValidationView(false);
   }, [rfqId]);
 
   useEffect(() => {
@@ -645,14 +856,18 @@ export default function NewRfq() {
   const prevStepId = stepIndex > 0 ? stepIds[stepIndex - 1] : "";
   const canGoPrev = Boolean(prevStepId);
 
-  const applyRfq = (rfq, { syncChat = true } = {}) => {
+  const applyRfq = (rfq, { syncChat = true, auditLogs = [] } = {}) => {
     if (!rfq) return;
-    const mappedFields = mapRfqDataToForm(rfq);
+    const mappedFields = {
+      ...mapRfqDataToForm(rfq),
+      ...extractPotentialAssessmentFields(rfq?.rfq_data)
+    };
     const nextUiStatus = mapBackendStatusToUi(rfq);
     const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
     handleMergeFields(mappedFields);
+    setValidationAudit(extractValidationAudit(rfq, auditLogs));
     setForm((prev) => ({
       ...prev,
       id: rfq.rfq_id,
@@ -696,8 +911,8 @@ export default function NewRfq() {
     if (!idToLoad) return false;
     setRfqError("");
     try {
-      const rfq = await getRfq(idToLoad);
-      applyRfq(rfq);
+      const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
+      applyRfq(rfq, { auditLogs });
       return true;
     } catch (error) {
       setRfqError("Unable to refresh this RFQ. Please try again.");
@@ -756,18 +971,20 @@ export default function NewRfq() {
           setServerFiles([]);
           setLocalFiles([]);
           setValidationSuccess("");
+          setValidationAudit(createEmptyValidationAudit());
           setRejectModalOpen(false);
           setRejectReason("");
           setRfqFormEditEnabled(false);
           setRfqValidationReached(false);
+          setPersistValidationView(false);
           return;
         }
 
-        const rfq = await getRfq(rfqIdParam);
+        const { rfq, auditLogs } = await loadRfqSnapshot(rfqIdParam);
 
         if (!alive) return;
         setRfqId(rfq.rfq_id);
-        applyRfq(rfq);
+        applyRfq(rfq, { auditLogs });
       } catch {
         if (!alive) return;
         setRfqError("Unable to load the RFQ. Please try again.");
@@ -991,8 +1208,12 @@ export default function NewRfq() {
       };
 
       Object.entries(fields || {}).forEach(([key, value]) => {
+        const targetKey = aliasMap[key] || key;
+        if (Array.isArray(value)) {
+          next[targetKey] = value;
+          return;
+        }
         if (value !== null && value !== undefined && String(value).trim() !== "") {
-          const targetKey = aliasMap[key] || key;
           next[targetKey] = value;
         }
       });
@@ -1002,6 +1223,7 @@ export default function NewRfq() {
   };
 
   const handleStageChange = (stageKey) => {
+    setPersistValidationView(false);
     setSelectedStage(stageKey);
     const stage = PIPELINE_STAGES.find((entry) => entry.key === stageKey);
     setSelectedSubPhase(
@@ -1012,6 +1234,7 @@ export default function NewRfq() {
   };
 
   const handleSubPhaseChange = (stageKey, subPhase) => {
+    setPersistValidationView(false);
     if (
       stageKey === "RFQ" &&
       subPhase === "Validation" &&
@@ -1174,6 +1397,7 @@ export default function NewRfq() {
     setValidationSuccess("RFQ returned to the RFQ form for updates.");
     setRfqError("");
     setRfqFormEditEnabled(true);
+    setPersistValidationView(false);
     setActiveRfqTab("new");
     handleSubPhaseChange("RFQ", "RFQ form");
   };
@@ -1186,6 +1410,9 @@ export default function NewRfq() {
     try {
       await validateRfq(rfqId, { approved: true });
       await syncRfq(rfqId);
+      setPersistValidationView(true);
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("Validation");
       setValidationSuccess("RFQ approved successfully.");
     } catch (error) {
       setRfqError(error?.message || "Unable to approve this RFQ.");
@@ -1222,6 +1449,9 @@ export default function NewRfq() {
         rejection_reason: String(rejectReason).trim()
       });
       await syncRfq(rfqId);
+      setPersistValidationView(true);
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("Validation");
       setRejectModalOpen(false);
       setRejectReason("");
       setValidationSuccess("RFQ rejected successfully.");
@@ -1387,30 +1617,6 @@ export default function NewRfq() {
                 </div>
               </div>
 
-              {rfqError ? (
-                <div className="px-4 sm:px-6">
-                  <div className="rounded-2xl border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">
-                    {rfqError}
-                  </div>
-                </div>
-              ) : null}
-
-              {validationSuccess ? (
-                <div className="px-4 sm:px-6">
-                  <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                    {validationSuccess}
-                  </div>
-                </div>
-              ) : null}
-
-              {loadingRfq ? (
-                <div className="px-4 sm:px-6">
-                  <div className="rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-3 text-sm text-slate-500">
-                    Loading RFQ...
-                  </div>
-                </div>
-              ) : null}
-
               {isRfqStage && isRfqFormView ? (
                 <div className="px-4 sm:px-6">
                   <div className="flex items-center gap-6 border-b border-slate-200/70 text-sm font-semibold text-slate-500">
@@ -1473,17 +1679,19 @@ export default function NewRfq() {
                             01
                           </span>
                           <div>
-                            <h3 className="font-display text-xl text-ink">Customer information</h3>
+                            <h3 className="font-display text-xl text-ink">Opportunity overview</h3>
                             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                              Core business details
+                              Core context for the potential RFQ
                             </p>
                           </div>
                         </div>
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                           <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                          <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          <FormField label="Customer location" name="potentialCustomerLocation" value={form.potentialCustomerLocation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          <FormField label="Industry served" name="potentialIndustry" value={form.potentialIndustry} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Planned product type" name="potentialProductType" value={form.potentialProductType} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                         </div>
                       </section>
 
@@ -1491,6 +1699,116 @@ export default function NewRfq() {
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sun/10 text-sm font-semibold text-sun">
                             02
+                          </span>
+                          <div>
+                            <h3 className="font-display text-xl text-ink">Strategic rationale</h3>
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                              Why we should engage and why we can win
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <div className="md:col-span-2">
+                            <FormField label="Engagement reasons" name="potentialEngagementReason" value={form.potentialEngagementReason} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          </div>
+                          <FormField label="Idea source" name="potentialIdeaOwner" value={form.potentialIdeaOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Current supplier" name="potentialCurrentSupplier" value={form.potentialCurrentSupplier} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          <FormField label="Main win reason" name="potentialWinReason" value={form.potentialWinReason} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <div className="md:col-span-2">
+                            <FormField label="Win rationale details" name="potentialWinDetails" value={form.potentialWinDetails} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          </div>
+                          <FormField label="Technical capabilities" name="potentialTechnicalCapability" value={form.potentialTechnicalCapability} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Strategic fit" name="potentialStrategyFit" value={form.potentialStrategyFit} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <div className="md:col-span-2">
+                            <FormField label="Strategic fit details" name="potentialStrategyFitDetails" value={form.potentialStrategyFitDetails} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-mint/10 text-sm font-semibold text-mint">
+                            03
+                          </span>
+                          <div>
+                            <h3 className="font-display text-xl text-ink">Business outlook</h3>
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                              Perspectives, effort, and side effects
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                          <FormField label="Sales (kEUR)" name="potentialBusinessSalesKeur" type="number" value={form.potentialBusinessSalesKeur} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Margin (%)" name="potentialBusinessMarginPercent" type="number" value={form.potentialBusinessMarginPercent} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Margin (kEUR)" name="potentialBusinessMarginKeur" value={potentialMarginKeur} readOnly />
+                          <FormField label="Start of production" name="potentialStartOfProduction" value={form.potentialStartOfProduction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Development effort" name="potentialDevelopmentEffort" value={form.potentialDevelopmentEffort} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <div className="xl:col-span-3">
+                            <FormField label="Side effects of engagement" name="potentialSideEffects" value={form.potentialSideEffects} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-coral/10 text-sm font-semibold text-coral">
+                            04
+                          </span>
+                          <div>
+                            <h3 className="font-display text-xl text-ink">Risks if we do</h3>
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                              Be specific for each risk
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+                            <FormField
+                              label="Assessment"
+                              name="potentialRiskDoAssessment"
+                              value={form.potentialRiskDoAssessment}
+                              onChange={handleChange}
+                              readOnly={rfqFormFieldReadOnly}
+                              autoExpand
+                            />
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/5 text-sm font-semibold text-ink">
+                            05
+                          </span>
+                          <div>
+                            <h3 className="font-display text-xl text-ink">Risks if we do not</h3>
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                              Missed opportunities and market impact
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+                            <FormField
+                              label="Assessment"
+                              name="potentialRiskNotDoAssessment"
+                              value={form.potentialRiskNotDoAssessment}
+                              onChange={handleChange}
+                              readOnly={rfqFormFieldReadOnly}
+                              autoExpand
+                            />
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-sm font-semibold text-slate-600">
+                            06
                           </span>
                           <div>
                             <h3 className="font-display text-xl text-ink">Contact information</h3>
@@ -1905,7 +2223,7 @@ export default function NewRfq() {
                     onSubmit={handleSubmit}
                     className={`card flex min-h-0 flex-col gap-6 overflow-y-visible p-5 sm:p-7 md:p-8 lg:h-full lg:min-h-0 lg:overflow-y-auto ${showRfqStepNavigation ? "md:col-span-1 lg:col-span-2" : "col-span-full"}`}
                   >
-                    <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
+                    <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -1949,12 +2267,12 @@ export default function NewRfq() {
                       </div>
                     </section>
 
-                    <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-2">
+                    <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-2">
                       <button
                         type="button"
                         className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={handleValidationUpdate}
-                        disabled={Boolean(validationActionId)}
+                        disabled={validationButtonsDisabled}
                       >
                         <Pencil className="h-4 w-4" />
                         Update
@@ -1963,7 +2281,7 @@ export default function NewRfq() {
                         type="button"
                         className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={handleRejectValidation}
-                        disabled={Boolean(validationActionId)}
+                        disabled={validationButtonsDisabled}
                       >
                         <X className="h-4 w-4" />
                         {validationActionId === "reject" ? "Rejecting..." : "Reject"}
@@ -1972,12 +2290,99 @@ export default function NewRfq() {
                         type="button"
                         className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={handleApproveValidation}
-                        disabled={Boolean(validationActionId)}
+                        disabled={validationButtonsDisabled}
                       >
                         <Check className="h-4 w-4" />
                         {validationActionId === "approve" ? "Approving..." : "Approve"}
                       </button>
                     </div>
+
+                    {hasRecordedValidationDecision ? (
+                      <section
+                        className={`shrink-0 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isValidationRejected
+                          ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
+                          : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
+                          }`}
+                      >
+                        <div
+                          className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isValidationRejected ? "border-red-100/80" : "border-emerald-100/80"
+                            }`}
+                        >
+                          <div className="space-y-2">
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                              Validation audit
+                            </p>
+                            <div>
+                              <h4 className="text-lg font-semibold text-ink">
+                                Decision recorded
+                              </h4>
+                              <p className="mt-1 text-sm text-slate-500">
+                                This RFQ is now locked for further validation actions.
+                              </p>
+                            </div>
+                          </div>
+                          <span
+                            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isValidationRejected
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              }`}
+                          >
+                            {isValidationRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                            {isValidationRejected ? "Rejected" : "Approved"}
+                          </span>
+                        </div>
+
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                          {isValidationRejected ? (
+                            <>
+                              <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                  Rejected at
+                                </p>
+                                <p className="mt-2 text-base font-semibold text-ink">
+                                  {formatValidationAuditDate(validationAudit.rejectedAt)}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                  Rejected by
+                                </p>
+                                <p className="mt-2 text-base font-semibold text-ink">
+                                  {formatValidationAuditValue(validationAudit.rejectedBy)}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                  Rejected reason
+                                </p>
+                                <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
+                                  {formatValidationAuditValue(validationAudit.rejectionReason)}
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                  Approved at
+                                </p>
+                                <p className="mt-2 text-base font-semibold text-ink">
+                                  {formatValidationAuditDate(validationAudit.approvedAt)}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                  Approved by
+                                </p>
+                                <p className="mt-2 text-base font-semibold text-ink">
+                                  {formatValidationAuditValue(validationAudit.approvedBy)}
+                                </p>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </section>
+                    ) : null}
                   </form>
                 ) : null}
 

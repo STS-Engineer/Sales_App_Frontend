@@ -407,13 +407,127 @@ body {
   }
 }
 
+@keyframes toastEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastProgress {
+  0% {
+    transform: scaleX(1);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scaleX(0);
+    opacity: 0.2;
+  }
+}
+
 @layer components {
   .input-field {
-    @apply rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium text-ink shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
+    @apply w-full rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium normal-case tracking-normal text-ink shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
   }
 
   .textarea-field {
-    @apply rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium text-ink shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
+    @apply w-full rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium normal-case tracking-normal text-ink shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
+  }
+
+  .toast-viewport {
+    @apply pointer-events-none fixed right-4 top-4 z-[120] flex w-[calc(100%-2rem)] max-w-[24rem] flex-col gap-3;
+  }
+
+.toast {
+  @apply pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-[22px] border px-4 py-3.5 shadow-lg bg-white;
+}
+
+  .toast--info {
+    @apply border-slate-200/80 bg-white/95 text-ink;
+  }
+
+  .toast--success {
+    @apply border-emerald-200/80 bg-emerald-50/95 text-emerald-900;
+  }
+
+  .toast--error {
+    @apply border-coral/30 bg-coral/10 text-coral;
+  }
+
+  .toast-accent {
+    @apply absolute inset-y-0 left-0 w-1 rounded-r-full bg-slate-300/70;
+  }
+
+  .toast--info .toast-accent {
+    @apply bg-tide/70;
+  }
+
+  .toast--success .toast-accent {
+    @apply bg-emerald-500/80;
+  }
+
+  .toast--error .toast-accent {
+    @apply bg-coral/80;
+  }
+
+  .toast-icon-wrap {
+    @apply relative z-[1] pt-0.5;
+  }
+
+  .toast-icon {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-2xl border bg-white/80 shadow-sm;
+  }
+
+  .toast--info .toast-icon {
+    @apply border-tide/15 text-tide;
+  }
+
+  .toast--success .toast-icon {
+    @apply border-emerald-200/70 bg-emerald-100/80 text-emerald-700;
+  }
+
+  .toast--error .toast-icon {
+    @apply border-coral/20 bg-white/70 text-coral;
+  }
+
+  .toast-body {
+    @apply relative z-[1] min-w-0 flex-1 pr-8;
+  }
+
+  .toast-title {
+    @apply text-sm font-semibold tracking-[0.02em];
+  }
+
+  .toast-message {
+    @apply mt-1 text-sm leading-relaxed;
+    color: color-mix(in srgb, currentColor 82%, transparent);
+  }
+
+  .toast-close {
+    @apply absolute right-2 top-2 z-[2] inline-flex h-8 w-8 items-center justify-center rounded-full text-current opacity-50 transition hover:bg-black/5 hover:opacity-100;
+  }
+
+  .toast-progress {
+    @apply absolute bottom-0 left-0 right-0 h-[3px] origin-left bg-black/10;
+    animation-name: toastProgress;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  .toast--info .toast-progress {
+    @apply bg-tide/40;
+  }
+
+  .toast--success .toast-progress {
+    @apply bg-emerald-500/45;
+  }
+
+  .toast--error .toast-progress {
+    @apply bg-coral/45;
   }
 
   .outline-button {

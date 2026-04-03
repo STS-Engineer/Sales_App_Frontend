@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
+import { useToast } from "../components/ToastProvider.jsx";
 import { listAllUsers, listPendingUsers, updateUserRole } from "../api";
 import { getUserProfile } from "../utils/session.js";
 
@@ -14,13 +15,13 @@ const ROLE_OPTIONS = [
 ];
 
 export default function UserValidation() {
+  const { showToast } = useToast();
   const [pendingUsers, setPendingUsers] = useState([]);
   const [roleById, setRoleById] = useState({});
   const [openSelectId, setOpenSelectId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [approvedCount, setApprovedCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const dropdownRef = useRef(null);
   const profile = getUserProfile();
   const isOwner = profile.role === "OWNER";
@@ -31,7 +32,6 @@ export default function UserValidation() {
     }
     const loadUsers = async () => {
       setLoading(true);
-      setError("");
       try {
         const [pending, all] = await Promise.all([
           listPendingUsers(),
@@ -42,7 +42,10 @@ export default function UserValidation() {
         const pendingCountLocal = Array.isArray(pending) ? pending.length : 0;
         setApprovedCount(Math.max(allCount - pendingCountLocal, 0));
       } catch (err) {
-        setError("Unable to load users. Please refresh.");
+        showToast("Unable to load users. Please refresh.", {
+          type: "error",
+          title: "Loading failed"
+        });
       } finally {
         setLoading(false);
       }
@@ -89,8 +92,15 @@ export default function UserValidation() {
       const allCount = Array.isArray(all) ? all.length : 0;
       const pendingCountLocal = Array.isArray(pending) ? pending.length : 0;
       setApprovedCount(Math.max(allCount - pendingCountLocal, 0));
+      showToast("User approved successfully.", {
+        type: "success",
+        title: "User approved"
+      });
     } catch (err) {
-      setError("Unable to approve this user. Please try again.");
+      showToast("Unable to approve this user. Please try again.", {
+        type: "error",
+        title: "Approval failed"
+      });
     }
   };
 
@@ -210,11 +220,6 @@ export default function UserValidation() {
                     </p>
                   </div>
                 </div>
-                {error ? (
-                  <div className="rounded-2xl border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">
-                    {error}
-                  </div>
-                ) : null}
                 {loading ? (
                   <div className="rounded-2xl border border-slate-200/70 bg-white/70 px-4 py-3 text-sm text-slate-500">
                     Loading users...

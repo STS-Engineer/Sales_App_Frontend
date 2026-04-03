@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
+import { useToast } from "../components/ToastProvider.jsx";
 import { register } from "../api";
 
 const EyeIcon = ({ open }) => (
@@ -21,6 +22,7 @@ const EyeIcon = ({ open }) => (
 
 export default function Register() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [form, setForm] = useState({
     full_name: "",
     email: "",
@@ -30,7 +32,6 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [status, setStatus] = useState(null);
 
   const handleChange = (event) => {
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
@@ -38,11 +39,10 @@ export default function Register() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setStatus(null);
     if (form.password !== form.confirmPassword) {
-      setStatus({
+      showToast("Passwords do not match. Please confirm again.", {
         type: "error",
-        message: "Passwords do not match. Please confirm again."
+        title: "Registration failed"
       });
       return;
     }
@@ -66,7 +66,7 @@ export default function Register() {
         error?.status === 400
           ? "This email is already registered."
           : "Unable to create the account. Please try again.";
-      setStatus({ type: "error", message });
+      showToast(message, { type: "error", title: "Registration failed" });
     }
     setLoading(false);
   };
@@ -151,17 +151,6 @@ export default function Register() {
         >
           {loading ? "Sending request..." : "Create account"}
         </button>
-        {status ? (
-          <div
-            className={`rounded-2xl border px-4 py-3 text-sm ${
-              status.type === "success"
-                ? "border-mint/30 bg-mint/10 text-mint"
-                : "border-coral/30 bg-coral/10 text-coral"
-            }`}
-          >
-            {status.message}
-          </div>
-        ) : null}
         <div className="text-center text-sm text-slate-500">
           Already have an account?{" "}
           <Link className="font-semibold text-tide" to="/">

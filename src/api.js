@@ -93,6 +93,10 @@ export async function getRfq(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}`);
 }
 
+export async function getRfqAuditLogs(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/audit-logs`);
+}
+
 export async function createRfq(payload = {}) {
   return request("/api/rfq", { method: "POST", body: payload });
 }

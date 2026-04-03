@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
+import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
 import { listRfqs } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
@@ -92,6 +93,7 @@ const buildPageItems = (currentPage, totalPages) => {
 };
 
 export default function Dashboard() {
+  const { showToast } = useToast();
   const [rfqs, setRfqs] = useState([]);
   const [activeStatus, setActiveStatus] = useState("RFQ");
   const [activeSubStatus, setActiveSubStatus] = useState("all");
@@ -110,10 +112,14 @@ export default function Dashboard() {
         }
       } catch (error) {
         setRfqs([]);
+        showToast("Unable to load RFQs. Please refresh.", {
+          type: "error",
+          title: "Loading failed"
+        });
       }
     };
     load();
-  }, []);
+  }, [showToast]);
 
   const normalizedRfqs = useMemo(
     () =>
