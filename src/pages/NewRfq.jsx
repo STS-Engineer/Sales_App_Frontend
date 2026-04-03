@@ -230,7 +230,9 @@ const STATUS_CHOICES = [
 const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   if (!prevMessages.length) return serverMessages;
   const pending = prevMessages.filter(
-    (msg) => Array.isArray(msg.attachments) && msg.attachments.length
+    (msg) =>
+      msg?.role === "user" ||
+      (Array.isArray(msg.attachments) && msg.attachments.length)
   );
   if (!pending.length) return serverMessages;
   const used = new Set();
@@ -310,9 +312,29 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-.azurewebsites.net";
 const CHATBOT_INITIAL_GREETING =
   "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
+const INITIAL_CHAT_MESSAGE = {
+  role: "assistant",
+  content: CHATBOT_INITIAL_GREETING
+};
+
+const withInitialChatMessage = (messages = []) => {
+  if (!Array.isArray(messages) || !messages.length) {
+    return [{ ...INITIAL_CHAT_MESSAGE }];
+  }
+
+  const hasInitialGreeting = messages.some(
+    (message) =>
+      message?.role === "assistant" &&
+      String(message.content || "").trim() === CHATBOT_INITIAL_GREETING
+  );
+
+  return hasInitialGreeting
+    ? messages
+    : [{ ...INITIAL_CHAT_MESSAGE }, ...messages];
+};
 
 const canUseStorage = () => typeof window !== "undefined";
 
@@ -437,9 +459,7 @@ export default function NewRfq() {
     ];
   }, [loadingRfq]);
 
-  const chatFeed = chatMessages.length
-    ? chatMessages
-    : [{ role: "assistant", content: CHATBOT_INITIAL_GREETING }];
+  const chatFeed = useMemo(() => withInitialChatMessage(chatMessages), [chatMessages]);
   const stepCompletion = useMemo(() => {
     const isFilled = (value) => {
       if (value === 0) return true;

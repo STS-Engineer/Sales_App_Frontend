@@ -442,7 +442,7 @@ export default function ChatPanel({
       </div>
 
       <div className="mt-3 flex-1 overflow-y-auto rounded-2xl border border-slate-200/70 bg-white/70 px-2 pt-2 pb-2">
-        <div className="flex min-h-full flex-col justify-end">
+        <div className="flex min-h-full flex-col justify-start">
           <div className="space-y-3">
             {messages.map((message, index) => {
               const hasContent = Boolean(message.content && String(message.content).trim());
