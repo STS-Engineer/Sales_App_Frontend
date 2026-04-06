@@ -147,6 +147,12 @@ export const mapRfqDataToForm = (rfq) => {
     deliveryZone: pickFirst(data.delivery_zone, data.deliveryZone),
     plant: pickFirst(data.delivery_plant, data.plant),
     country: pickFirst(data.country),
+    poDate: normalizeDateInputValue(
+      pickFirst(data.po_date, data.poDate)
+    ),
+    ppapDate: normalizeDateInputValue(
+      pickFirst(data.ppap_date, data.ppapDate)
+    ),
     sop: pickFirst(data.sop_year, data.sop),
     qtyPerYear: pickFirst(data.annual_volume, data.qty_per_year, data.qtyPerYear),
     rfqReceptionDate: normalizeDateInputValue(
