@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Eye, Pencil, Trash2, X } from "lucide-react";
-import { getToken } from "../utils/session.js";
+import { Check, Eye, Files, MessageSquare, Pencil, SendHorizontal, Trash2, Upload, X } from "lucide-react";
+import { getToken, getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ChatPanel from "../components/ChatPanel.jsx";
 import FormField from "../components/FormField.jsx";
@@ -12,6 +12,7 @@ import {
   getRfqAuditLogs,
   getRfq,
   sendChat,
+  updateRfqData,
   validateRfq,
   uploadRfqFile
 } from "../api";
@@ -395,7 +396,10 @@ const normalizeRfqFiles = (rfq) => {
         id: `server-${name}-${index}`,
         name,
         url: entry,
-        source: "server"
+        source: "server",
+        size: "",
+        updatedAt: "",
+        owner: ""
       };
     }
     const name =
@@ -414,7 +418,160 @@ const normalizeRfqFiles = (rfq) => {
       "";
     const id =
       entry?.id || entry?.file_id || entry?.uuid || entry?.key || name || index;
-    return { id, name, url, source: "server" };
+    return {
+      id,
+      name,
+      url,
+      source: "server",
+      size:
+        entry?.size ||
+        entry?.file_size ||
+        entry?.content_length ||
+        entry?.contentLength ||
+        "",
+      updatedAt:
+        entry?.uploaded_at ||
+        entry?.updated_at ||
+        entry?.last_modified ||
+        entry?.lastModified ||
+        "",
+      owner: entry?.uploaded_by || entry?.owner || entry?.created_by || ""
+    };
+  });
+};
+
+const FILES_PREVIEW_LIMIT = 3;
+
+const getFileExtension = (name = "") => {
+  const extension = String(name).split(".").pop()?.trim() || "";
+  return extension ? extension.toUpperCase() : "FILE";
+};
+
+const getFileAccentClasses = (name = "") => {
+  const extension = getFileExtension(name).toLowerCase();
+  if (["xls", "xlsx", "xlsm", "csv"].includes(extension)) {
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+  }
+  if (extension === "pdf") {
+    return "bg-red-50 text-red-700 ring-1 ring-red-100";
+  }
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension)) {
+    return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
+  }
+  return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
+};
+
+const parseFileTimestamp = (value) => {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const formatFileDate = (value, { withTime = false } = {}) => {
+  if (!value) return "Date unavailable";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString("en-GB", withTime
+    ? {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }
+    : {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+};
+
+const formatFileSize = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "Size unavailable";
+  }
+  if (typeof value === "string" && Number.isNaN(Number(value))) {
+    return value;
+  }
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) {
+    return "Size unavailable";
+  }
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(1).replace(/\.0$/, "")} MB`;
+  }
+  if (size >= 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+  return `${size} B`;
+};
+
+const normalizeEmailValue = (value) => String(value || "").trim().toLowerCase();
+
+const DISCUSSION_STORAGE_KEYS = ["discussion_messages", "discussionMessages"];
+
+const normalizeDiscussionMessage = (entry, index = 0) => {
+  const content = String(entry?.content || entry?.message || "").trim();
+  if (!content) return null;
+  const createdAt =
+    entry?.created_at ||
+    entry?.createdAt ||
+    entry?.timestamp ||
+    new Date().toISOString();
+  return {
+    id:
+      entry?.id ||
+      entry?.message_id ||
+      `discussion-${index}-${String(createdAt)}`,
+    content,
+    createdAt,
+    authorEmail: String(entry?.author_email || entry?.authorEmail || "").trim(),
+    authorName: String(entry?.author_name || entry?.authorName || "").trim(),
+    authorRole: String(entry?.author_role || entry?.authorRole || "").trim()
+  };
+};
+
+const extractDiscussionMessages = (rfqData = {}) => {
+  const raw = DISCUSSION_STORAGE_KEYS.find((key) => Array.isArray(rfqData?.[key]))
+    ? rfqData[DISCUSSION_STORAGE_KEYS.find((key) => Array.isArray(rfqData?.[key]))]
+    : [];
+
+  return raw
+    .map((entry, index) => normalizeDiscussionMessage(entry, index))
+    .filter(Boolean)
+    .sort(
+      (left, right) =>
+        parseFileTimestamp(left?.createdAt) - parseFileTimestamp(right?.createdAt)
+    );
+};
+
+const createDiscussionMessage = ({
+  content,
+  authorEmail,
+  authorName,
+  authorRole
+}) => ({
+  id:
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `discussion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  content,
+  created_at: new Date().toISOString(),
+  author_email: authorEmail,
+  author_name: authorName,
+  author_role: authorRole
+});
+
+const formatDiscussionDate = (value) => {
+  if (!value) return "Just now";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
   });
 };
 
@@ -434,7 +591,7 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const CHATBOT_INITIAL_GREETING =
   "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
 const INITIAL_CHAT_MESSAGE = {
@@ -563,6 +720,11 @@ export default function NewRfq() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
+  const currentUserProfile = useMemo(() => getUserProfile(), []);
+  const currentUserLabel =
+    currentUserProfile?.name || currentUserProfile?.email || "You";
+  const currentUserEmail = String(currentUserProfile?.email || "").trim();
+  const currentUserRole = String(currentUserProfile?.role || "").trim();
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
@@ -581,8 +743,14 @@ export default function NewRfq() {
   const [fulfilledSteps, setFulfilledSteps] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
+  const [discussionMessages, setDiscussionMessages] = useState([]);
+  const [discussionDraft, setDiscussionDraft] = useState("");
+  const [discussionSending, setDiscussionSending] = useState(false);
+  const [discussionModalOpen, setDiscussionModalOpen] = useState(false);
+  const [rfqCreatedByEmail, setRfqCreatedByEmail] = useState("");
   const [filePreview, setFilePreview] = useState(null);
   const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
+  const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [fileActionId, setFileActionId] = useState("");
   const [filePreviewLoadingId, setFilePreviewLoadingId] = useState("");
   const [validationActionId, setValidationActionId] = useState("");
@@ -624,6 +792,22 @@ export default function NewRfq() {
   const mergedFiles = useMemo(
     () => [...serverFiles, ...localFiles],
     [serverFiles, localFiles]
+  );
+  const sortedFiles = useMemo(() => {
+    return mergedFiles
+      .map((file, index) => ({ file, index }))
+      .sort((left, right) => {
+        const timestampDiff =
+          parseFileTimestamp(right.file.updatedAt) -
+          parseFileTimestamp(left.file.updatedAt);
+        if (timestampDiff !== 0) return timestampDiff;
+        return right.index - left.index;
+      })
+      .map((entry) => entry.file);
+  }, [mergedFiles]);
+  const compactFiles = useMemo(
+    () => sortedFiles.slice(0, FILES_PREVIEW_LIMIT),
+    [sortedFiles]
   );
   const potentialMarginKeur = useMemo(
     () =>
@@ -760,9 +944,16 @@ export default function NewRfq() {
   const isChatLocked =
     isChatOnly || hasValidationLock;
   const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
-  const allowFileUpload = Boolean(rfqId) && !saving && !isRfqFormReadOnly;
+  const allowFileUpload = !saving && !isRfqFormReadOnly;
   const showRfqStepNavigation =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
+  const showChatPanel =
+    isRfqStage && !isRfqValidationView && activeRfqTab !== "files";
+  const canParticipateInDiscussion = useMemo(() => {
+    if (currentUserRole === "OWNER") return true;
+    if (!rfqId && !rfqIdParam) return true;
+    return normalizeEmailValue(currentUserEmail) === normalizeEmailValue(rfqCreatedByEmail);
+  }, [currentUserEmail, currentUserRole, rfqCreatedByEmail, rfqId, rfqIdParam]);
   const getNextStepId = (stepId) => {
     const currentIndex = stepIds.indexOf(stepId);
     if (currentIndex < 0 || currentIndex >= stepIds.length - 1) {
@@ -868,17 +1059,22 @@ export default function NewRfq() {
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
     handleMergeFields(mappedFields);
     setValidationAudit(extractValidationAudit(rfq, auditLogs));
+    setDiscussionMessages(extractDiscussionMessages(rfq?.rfq_data));
+    setRfqCreatedByEmail(String(rfq?.created_by_email || "").trim());
     setForm((prev) => ({
       ...prev,
       id: rfq.rfq_id,
       status: nextUiStatus
     }));
     setActiveStage(nextPipelineStage);
-    setActiveRfqTab(
-      rfq?.rfq_data?.chat_mode === "potential" || subStatusValue === "POTENTIAL"
+    setActiveRfqTab((prev) => {
+      if (prev === "files") {
+        return prev;
+      }
+      return rfq?.rfq_data?.chat_mode === "potential" || subStatusValue === "POTENTIAL"
         ? "potential"
-        : "new"
-    );
+        : "new";
+    });
     if (nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
       setSelectedStage("RFQ");
       setSelectedSubPhase("Validation");
@@ -970,6 +1166,11 @@ export default function NewRfq() {
           setActiveStep("step-client");
           setServerFiles([]);
           setLocalFiles([]);
+          setDiscussionMessages([]);
+          setDiscussionDraft("");
+          setDiscussionSending(false);
+          setDiscussionModalOpen(false);
+          setRfqCreatedByEmail("");
           setValidationSuccess("");
           setValidationAudit(createEmptyValidationAudit());
           setRejectModalOpen(false);
@@ -1043,6 +1244,16 @@ export default function NewRfq() {
   const handleFilesChange = async (event) => {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
+    let currentRfqId = rfqId;
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      if (rfqFileInputRef.current) {
+        rfqFileInputRef.current.value = "";
+      }
+      setRfqError("Unable to create the RFQ before uploading files.");
+      return;
+    }
     const newLocalFiles = files.map((file) => ({
       id: `local-${file.name}-${file.size}-${file.lastModified}-${Math.random()
         .toString(36)
@@ -1050,20 +1261,22 @@ export default function NewRfq() {
       name: file.name,
       url: URL.createObjectURL(file),
       file,
-      source: "local"
+      source: "local",
+      size: file.size,
+      updatedAt: file.lastModified ? new Date(file.lastModified).toISOString() : "",
+      owner: currentUserLabel
     }));
     setLocalFiles((prev) => [...prev, ...newLocalFiles]);
     if (rfqFileInputRef.current) {
       rfqFileInputRef.current.value = "";
     }
-    if (!rfqId) return;
 
     setSaving(true);
     try {
       for (const file of files) {
-        await uploadRfqFile(rfqId, file);
+        await uploadRfqFile(currentRfqId, file);
       }
-      await syncRfq(rfqId);
+      await syncRfq(currentRfqId);
     } catch {
       setRfqError("Unable to upload file(s). Please try again.");
     } finally {
@@ -1321,7 +1534,12 @@ export default function NewRfq() {
         name: attachment.name || attachment.file.name,
         url: attachment.url || URL.createObjectURL(attachment.file),
         file: attachment.file,
-        source: "local"
+        source: "local",
+        size: attachment.file.size,
+        updatedAt: attachment.file.lastModified
+          ? new Date(attachment.file.lastModified).toISOString()
+          : "",
+        owner: currentUserLabel
       }));
       setLocalFiles((prev) => [...prev, ...newLocalFiles]);
       setSaving(true);
@@ -1459,6 +1677,41 @@ export default function NewRfq() {
       setRfqError(error?.message || "Unable to reject this RFQ.");
     } finally {
       setValidationActionId("");
+    }
+  };
+
+  const handleDiscussionSend = async (event) => {
+    event.preventDefault();
+    const content = String(discussionDraft || "").trim();
+    if (!content || discussionSending || !canParticipateInDiscussion) {
+      return;
+    }
+
+    let currentRfqId = rfqId;
+    setDiscussionSending(true);
+    setRfqError("");
+
+    try {
+      currentRfqId = await ensureRfqExists();
+      const latestRfq = await getRfq(currentRfqId);
+      const latestMessages = extractDiscussionMessages(latestRfq?.rfq_data);
+      const nextMessage = createDiscussionMessage({
+        content,
+        authorEmail: currentUserEmail,
+        authorName: currentUserLabel,
+        authorRole: currentUserRole || "COMMERCIAL"
+      });
+
+      await updateRfqData(currentRfqId, {
+        discussion_messages: [...latestMessages, nextMessage]
+      });
+
+      setDiscussionDraft("");
+      await syncRfq(currentRfqId);
+    } catch (error) {
+      setRfqError(error?.message || "Unable to send this message.");
+    } finally {
+      setDiscussionSending(false);
     }
   };
 
@@ -1614,6 +1867,28 @@ export default function NewRfq() {
                       </div>
                     </div>
                   </div>
+                  {isRfqStage && isRfqFormView ? (
+                    <button
+                      type="button"
+                      onClick={() => setDiscussionModalOpen(true)}
+                      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:h-14 sm:w-14 ${discussionModalOpen
+                        ? "border-tide/30 bg-tide text-white"
+                        : "border-slate-200/80 bg-white/90 text-slate-600 hover:-translate-y-0.5 hover:border-tide/35 hover:text-tide"
+                        }`}
+                      aria-label="Open discussion"
+                      title="Open discussion"
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                      {discussionMessages.length ? (
+                        <span className={`absolute -right-1.5 -top-1.5 inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${discussionModalOpen
+                          ? "bg-white text-tide"
+                          : "bg-coral text-white"
+                          }`}>
+                          {discussionMessages.length > 99 ? "99+" : discussionMessages.length}
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1640,8 +1915,154 @@ export default function NewRfq() {
                     >
                       New RFQ
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveRfqTab("files")}
+                      className={`pb-1 transition ${activeRfqTab === "files"
+                        ? "border-b-2 border-tide text-ink"
+                        : "hover:text-ink"
+                        }`}
+                    >
+                      Files
+                    </button>
                   </div>
                 </div>
+              ) : null}
+
+              {false && isRfqStage && activeRfqTab === "new" ? (
+                <section className="px-4 pb-4 sm:px-6">
+                  <div className="card overflow-hidden p-0">
+                    <div className="flex flex-col gap-4 border-b border-slate-200/70 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-tide/10 text-tide">
+                          <Files className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.32em] text-slate-400">
+                            Documents
+                          </p>
+                          <h2 className="mt-1 font-display text-xl text-ink">
+                            Files ({sortedFiles.length})
+                          </h2>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Upload, review, and manage RFQ attachments in one place.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => rfqFileInputRef.current?.click()}
+                          disabled={!allowFileUpload}
+                        >
+                          <Upload className="h-4 w-4" />
+                          Add files
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-tide/20 bg-tide/5 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => setFilesPanelOpen(true)}
+                          disabled={!sortedFiles.length}
+                        >
+                          View all
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                        <input
+                          ref={rfqFileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={handleFilesChange}
+                          disabled={!allowFileUpload}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="px-5 py-4">
+                      {compactFiles.length ? (
+                        <div className="divide-y divide-slate-200/70">
+                          {compactFiles.map((file) => {
+                            const canPreview = Boolean(file.url);
+                            const isDeleting = fileActionId === file.id;
+                            const isPreviewing = filePreviewLoadingId === file.id;
+                            return (
+                              <div
+                                key={file.id}
+                                className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div className="min-w-0 flex items-center gap-3">
+                                  <span
+                                    className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                  >
+                                    {getFileExtension(file.name).slice(0, 4)}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <button
+                                      type="button"
+                                      className={`max-w-full truncate text-left text-sm font-semibold text-tide ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"}`}
+                                      onClick={() => handlePreviewFile(file)}
+                                      disabled={!canPreview || isPreviewing}
+                                    >
+                                      {file.name}
+                                    </button>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {[formatFileDate(file.updatedAt), formatFileSize(file.size), getFileExtension(file.name).toLowerCase()]
+                                        .filter(Boolean)
+                                        .join(" • ")}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => handlePreviewFile(file)}
+                                    disabled={!canPreview || isPreviewing}
+                                  >
+                                    {isPreviewing ? "Loading..." : "Preview"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => setFileDeleteTarget(file)}
+                                    disabled={isDeleting || isRfqFormReadOnly}
+                                  >
+                                    {isDeleting ? "Removing..." : "Delete"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-200/80 bg-slate-50/70 px-5 py-8 text-center">
+                          <p className="text-sm font-semibold text-ink">
+                            No files attached yet
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Files added to this RFQ will appear here in a compact list.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {sortedFiles.length ? (
+                      <div className="border-t border-slate-200/70 px-5 py-3">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-tide transition hover:text-ink"
+                          onClick={() => setFilesPanelOpen(true)}
+                        >
+                          View all files
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
               ) : null}
 
               <div
@@ -1998,6 +2419,289 @@ export default function NewRfq() {
                   </aside>
                 ) : null}
 
+                {isRfqFormView && activeRfqTab === "files" ? (
+                  <section className="card relative col-span-full flex min-h-0 flex-col overflow-hidden lg:h-full lg:min-h-0">
+                    <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-tide/10 blur-3xl" />
+                    <div className="pointer-events-none absolute -left-24 -bottom-24 h-56 w-56 rounded-full bg-sun/10 blur-3xl" />
+
+                    <div className="relative flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-tide/10 text-tide">
+                          <Files className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.32em] text-slate-400">
+                            Documents
+                          </p>
+                          <h2 className="mt-1 font-display text-2xl text-ink">
+                            Files ({sortedFiles.length})
+                          </h2>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => rfqFileInputRef.current?.click()}
+                          disabled={!allowFileUpload}
+                        >
+                          <Upload className="h-4 w-4" />
+                          Add files
+                        </button>
+                        <input
+                          ref={rfqFileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={handleFilesChange}
+                          disabled={!allowFileUpload}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="relative flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
+                      {sortedFiles.length ? (
+                          <section className="rounded-2xl border border-slate-200/70 bg-white/95 shadow-soft">
+                            <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-4">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                                  All files
+                                </p>
+                                <h3 className="mt-1 font-display text-xl text-ink">
+                                  Detailed list
+                                </h3>
+                              </div>
+                              <span className="rounded-full border border-tide/20 bg-tide/5 px-3 py-1 text-xs font-semibold text-tide">
+                                {sortedFiles.length} total
+                              </span>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-slate-200/70 text-left">
+                                <thead className="bg-slate-50/80">
+                                  <tr className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                    <th className="px-5 py-4">Title</th>
+                                    <th className="px-5 py-4">Owner</th>
+                                    <th className="px-5 py-4">Last modified</th>
+                                    <th className="px-5 py-4">Size</th>
+                                    <th className="px-5 py-4 text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200/70 bg-white text-sm text-slate-600">
+                                  {sortedFiles.map((file) => {
+                                    const canPreview = Boolean(file.url);
+                                    const isDeleting = fileActionId === file.id;
+                                    const isPreviewing = filePreviewLoadingId === file.id;
+                                    return (
+                                      <tr key={file.id} className="align-middle">
+                                        <td className="px-5 py-4">
+                                          <div className="flex items-center gap-3">
+                                            <span
+                                              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                            >
+                                              {getFileExtension(file.name).slice(0, 4)}
+                                            </span>
+                                            <div className="min-w-0">
+                                              <button
+                                                type="button"
+                                                className={`max-w-full truncate text-left font-semibold text-tide ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"}`}
+                                                onClick={() => handlePreviewFile(file)}
+                                                disabled={!canPreview || isPreviewing}
+                                              >
+                                                {file.name}
+                                              </button>
+                                              <p className="mt-1 text-xs text-slate-500">
+                                                {getFileExtension(file.name).toLowerCase()}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="px-5 py-4">
+                                          {file.owner || "Unknown"}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                          {formatFileDate(file.updatedAt, { withTime: true })}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                          {formatFileSize(file.size)}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                          <div className="flex items-center justify-end gap-2">
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                              onClick={() => handlePreviewFile(file)}
+                                              disabled={!canPreview || isPreviewing}
+                                              aria-label="Preview file"
+                                              title={isPreviewing ? "Loading..." : "Preview"}
+                                            >
+                                              <Eye className="h-4 w-4" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                              onClick={() => setFileDeleteTarget(file)}
+                                              disabled={isDeleting || isRfqFormReadOnly}
+                                              aria-label="Delete file"
+                                              title={isDeleting ? "Removing..." : "Delete"}
+                                            >
+                                              <Trash2 className="h-4 w-4" />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </section>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
+                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
+                            <Files className="h-6 w-6" />
+                          </div>
+                          <p className="mt-4 text-base font-semibold text-ink">
+                            No files attached yet
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Add files from this tab and they will appear here.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+
+                {false && isRfqFormView && activeRfqTab === "discussion" ? (
+                  <section className="card relative flex min-h-0 flex-col overflow-hidden md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0">
+                    <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-tide/10 blur-3xl" />
+                    <div className="pointer-events-none absolute -left-24 -bottom-24 h-56 w-56 rounded-full bg-sun/10 blur-3xl" />
+
+                    <div className="relative flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-tide/10 text-tide">
+                          <MessageSquare className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.32em] text-slate-400">
+                            Collaboration
+                          </p>
+                          <h2 className="mt-1 font-display text-2xl text-ink">
+                            Discussion
+                          </h2>
+                          <p className="mt-1 text-sm text-slate-500">
+                            The RFQ creator and the owner can exchange messages here.
+                          </p>
+                        </div>
+                      </div>
+
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                        {discussionMessages.length} message{discussionMessages.length > 1 ? "s" : ""}
+                      </span>
+                    </div>
+
+                    <div className="relative flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
+                      {discussionMessages.length ? (
+                        <div className="flex flex-col gap-4">
+                          {discussionMessages.map((message) => {
+                            const isCurrentUser =
+                              normalizeEmailValue(message.authorEmail) ===
+                              normalizeEmailValue(currentUserEmail);
+                            const isOwnerReply = message.authorRole === "OWNER";
+                            const authorLabel =
+                              message.authorName ||
+                              message.authorEmail ||
+                              (isOwnerReply ? "Owner" : "User");
+
+                            return (
+                              <div
+                                key={message.id}
+                                className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}
+                              >
+                                <article
+                                  className={`max-w-[min(100%,42rem)] rounded-[26px] border px-4 py-3 shadow-sm ${isCurrentUser
+                                    ? "border-tide/30 bg-tide text-white"
+                                    : isOwnerReply
+                                      ? "border-amber-200 bg-amber-50/95 text-ink"
+                                      : "border-slate-200/80 bg-white/95 text-ink"
+                                    }`}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className={`font-semibold ${isCurrentUser ? "text-white" : "text-slate-700"}`}>
+                                      {authorLabel}
+                                    </span>
+                                    {isOwnerReply ? (
+                                      <span className={`rounded-full border px-2 py-0.5 font-semibold ${isCurrentUser
+                                        ? "border-white/20 bg-white/15 text-white"
+                                        : "border-amber-200 bg-white/70 text-amber-700"
+                                        }`}>
+                                        Owner
+                                      </span>
+                                    ) : null}
+                                    <span className={isCurrentUser ? "text-white/75" : "text-slate-400"}>
+                                      {formatDiscussionDate(message.createdAt)}
+                                    </span>
+                                  </div>
+                                  <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isCurrentUser ? "text-white" : "text-slate-700"}`}>
+                                    {message.content}
+                                  </p>
+                                </article>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
+                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
+                            <MessageSquare className="h-6 w-6" />
+                          </div>
+                          <p className="mt-4 text-base font-semibold text-ink">
+                            No discussion yet
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Start the conversation with a message and the owner can reply in the same thread.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <form
+                      onSubmit={handleDiscussionSend}
+                      className="relative border-t border-slate-200/70 bg-white/85 p-5 sm:p-6"
+                    >
+                      <div className="space-y-3">
+                        <textarea
+                          className="textarea-field min-h-[120px]"
+                          value={discussionDraft}
+                          onChange={(event) => setDiscussionDraft(event.target.value)}
+                          disabled={discussionSending || !canParticipateInDiscussion}
+                        />
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-sm text-slate-500">
+                            {canParticipateInDiscussion
+                              ? "Messages are saved with author and date."
+                              : "Only the RFQ creator and the owner can send messages in this discussion."}
+                          </p>
+                          <button
+                            type="submit"
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-tide bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={
+                              discussionSending ||
+                              !canParticipateInDiscussion ||
+                              !String(discussionDraft || "").trim()
+                            }
+                          >
+                            <SendHorizontal className="h-4 w-4" />
+                            {discussionSending ? "Sending..." : "Send message"}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </section>
+                ) : null}
+
                 {isRfqFormView && activeRfqTab === "new" ? (
                   <form
                     onSubmit={handleSubmit}
@@ -2055,87 +2759,6 @@ export default function NewRfq() {
                                 <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-
-                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
-                                  <span>RFQ Files</span>
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    <button
-                                      type="button"
-                                      className="outline-button px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
-                                      onClick={() => rfqFileInputRef.current?.click()}
-                                      disabled={!allowFileUpload}
-                                    >
-                                      Choose files
-                                    </button>
-                                    <span className="text-xs font-medium text-slate-500">
-                                      {mergedFiles.length
-                                        ? `${mergedFiles.length} file(s)`
-                                        : "No files"}
-                                    </span>
-                                  </div>
-                                  <input
-                                    ref={rfqFileInputRef}
-                                    type="file"
-                                    multiple
-                                    className="hidden"
-                                    onChange={handleFilesChange}
-                                    disabled={!allowFileUpload}
-                                  />
-                                  {mergedFiles.length ? (
-                                    <div className="mt-3 flex flex-col gap-2 normal-case">
-                                      {mergedFiles.map((file) => {
-                                        const canPreview = Boolean(file.url);
-                                        const isDeleting = fileActionId === file.id;
-                                        const isPreviewing = filePreviewLoadingId === file.id;
-                                        return (
-                                          <div
-                                            key={file.id}
-                                            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/70 bg-white/90 px-3 py-2 text-[11px] font-medium text-slate-600"
-                                          >
-                                            <button
-                                              type="button"
-                                              className={`inline-flex items-center gap-2 truncate text-left ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"
-                                                }`}
-                                              onClick={() => handlePreviewFile(file)}
-                                              disabled={!canPreview || isPreviewing}
-                                            >
-                                              <span className="h-2 w-2 rounded-full bg-slate-400" />
-                                              <span className="max-w-[200px] truncate">{file.name}</span>
-                                            </button>
-                                            <div className="flex items-center gap-2">
-                                              <button
-                                                type="button"
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
-                                                onClick={() => handlePreviewFile(file)}
-                                                disabled={!canPreview || isPreviewing}
-                                                aria-label="View file"
-                                                title={isPreviewing ? "Loading..." : "View"}
-                                              >
-                                                <Eye className="h-4 w-4" />
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                                onClick={() => setFileDeleteTarget(file)}
-                                                disabled={isDeleting || isRfqFormReadOnly}
-                                                aria-label="Delete file"
-                                                title={
-                                                  isRfqFormReadOnly
-                                                    ? "Read only once validation starts"
-                                                    : isDeleting
-                                                      ? "Removing..."
-                                                      : "Delete"
-                                                }
-                                              >
-                                                <Trash2 className="h-4 w-4" />
-                                              </button>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                </label>
 
                                 <FormField label="Customer PN" name="customerPn" value={form.customerPn} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Revision level" name="revisionLevel" value={form.revisionLevel} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
@@ -2316,9 +2939,6 @@ export default function NewRfq() {
                               <h4 className="text-lg font-semibold text-ink">
                                 Decision recorded
                               </h4>
-                              <p className="mt-1 text-sm text-slate-500">
-                                This RFQ is now locked for further validation actions.
-                              </p>
                             </div>
                           </div>
                           <span
@@ -2386,7 +3006,7 @@ export default function NewRfq() {
                   </form>
                 ) : null}
 
-                {isRfqStage && !isRfqValidationView ? (
+                {showChatPanel ? (
                   <div className="h-[60vh] min-h-[320px] overflow-hidden md:col-span-2 md:h-[55vh] lg:col-span-1 lg:h-full lg:min-h-0 lg:overflow-hidden lg:sticky lg:top-0">
                     {chatCollapsed ? (
                       <div className="card flex h-full flex-col items-center justify-center gap-3 p-3">
@@ -2431,6 +3051,289 @@ export default function NewRfq() {
           </div>
         </div>
       </div>
+
+      {discussionModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => setDiscussionModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="chat-modal chat-modal--discussion"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Discussion"
+            onClick={(event) => event.stopPropagation()}
+          >
+          <div className="chat-modal-header">
+            <div>
+              <p className="chat-modal-title mt-1">Discussion</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Exchange messages about this RFQ in a clear and centralized space.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                {discussionMessages.length} message{discussionMessages.length > 1 ? "s" : ""}
+              </span>
+
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={() => setDiscussionModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+            <div className="chat-modal-body p-0">
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
+                  {discussionMessages.length ? (
+                    <div className="flex flex-col gap-4">
+                      {discussionMessages.map((message) => {
+                        const isCurrentUser =
+                          normalizeEmailValue(message.authorEmail) ===
+                          normalizeEmailValue(currentUserEmail);
+                        const isOwnerReply = message.authorRole === "OWNER";
+                        const authorLabel =
+                          message.authorName ||
+                          message.authorEmail ||
+                          (isOwnerReply ? "Owner" : "User");
+
+                        return (
+                          <div
+                            key={message.id}
+                            className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}
+                          >
+                            <article
+                              className={`max-w-[min(100%,42rem)] rounded-[26px] border px-4 py-3 shadow-sm ${isCurrentUser
+                                ? "border-tide/30 bg-tide text-white"
+                                : isOwnerReply
+                                  ? "border-amber-200 bg-amber-50/95 text-ink"
+                                  : "border-slate-200/80 bg-white/95 text-ink"
+                                }`}
+                            >
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className={`font-semibold ${isCurrentUser ? "text-white" : "text-slate-700"}`}>
+                                  {authorLabel}
+                                </span>
+                                {isOwnerReply ? (
+                                  <span className={`rounded-full border px-2 py-0.5 font-semibold ${isCurrentUser
+                                    ? "border-white/20 bg-white/15 text-white"
+                                    : "border-amber-200 bg-white/70 text-amber-700"
+                                    }`}>
+                                    Owner
+                                  </span>
+                                ) : null}
+                                <span className={isCurrentUser ? "text-white/75" : "text-slate-400"}>
+                                  {formatDiscussionDate(message.createdAt)}
+                                </span>
+                              </div>
+                              <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isCurrentUser ? "text-white" : "text-slate-700"}`}>
+                                {message.content}
+                              </p>
+                            </article>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
+                        <MessageSquare className="h-6 w-6" />
+                      </div>
+                      <p className="mt-4 text-base font-semibold text-ink">
+                        No discussion yet
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Start the conversation with a message and the owner can reply in the same thread.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <form
+                  onSubmit={handleDiscussionSend}
+                  className="border-t border-slate-200/70 bg-white/90 p-5 sm:p-6"
+                >
+                  <div className="space-y-3">
+                    <textarea
+                      className="textarea-field min-h-[80px]"
+                      value={discussionDraft}
+                      onChange={(event) => setDiscussionDraft(event.target.value)}
+                      disabled={discussionSending || !canParticipateInDiscussion}
+                    />
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <button
+                        type="submit"
+                        className="ml-auto inline-flex items-center justify-center gap-2 rounded-xl border border-tide bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={
+                          discussionSending ||
+                          !canParticipateInDiscussion ||
+                          !String(discussionDraft || "").trim()
+                        }
+                      >
+                        <SendHorizontal className="h-4 w-4" />
+                        {discussionSending ? "Sending..." : "Send message"}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {false && filesPanelOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => setFilesPanelOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="chat-modal chat-modal--preview"
+            role="dialog"
+            aria-modal="true"
+            aria-label="RFQ files"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <div>
+                <p className="chat-modal-title">RFQ files</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {sortedFiles.length} item{sortedFiles.length > 1 ? "s" : ""} available
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => rfqFileInputRef.current?.click()}
+                  disabled={!allowFileUpload}
+                >
+                  <Upload className="h-4 w-4" />
+                  Add files
+                </button>
+                <button
+                  type="button"
+                  className="chat-modal-close"
+                  onClick={() => setFilesPanelOpen(false)}
+                  aria-label="Close file list"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M6 6l12 12" />
+                    <path d="M18 6l-12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="chat-modal-body p-0">
+              {sortedFiles.length ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200/70 text-left">
+                    <thead className="bg-slate-50/80">
+                      <tr className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        <th className="px-6 py-4">Title</th>
+                        <th className="px-6 py-4">Owner</th>
+                        <th className="px-6 py-4">Last modified</th>
+                        <th className="px-6 py-4">Size</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/70 bg-white text-sm text-slate-600">
+                      {sortedFiles.map((file) => {
+                        const canPreview = Boolean(file.url);
+                        const isDeleting = fileActionId === file.id;
+                        const isPreviewing = filePreviewLoadingId === file.id;
+                        return (
+                          <tr key={file.id} className="align-middle">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                >
+                                  {getFileExtension(file.name).slice(0, 4)}
+                                </span>
+                                <div className="min-w-0">
+                                  <button
+                                    type="button"
+                                    className={`max-w-full truncate text-left font-semibold text-tide ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"}`}
+                                    onClick={() => {
+                                      setFilesPanelOpen(false);
+                                      handlePreviewFile(file);
+                                    }}
+                                    disabled={!canPreview || isPreviewing}
+                                  >
+                                    {file.name}
+                                  </button>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {getFileExtension(file.name).toLowerCase()}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              {file.owner || "Unknown"}
+                            </td>
+                            <td className="px-6 py-4">
+                              {formatFileDate(file.updatedAt, { withTime: true })}
+                            </td>
+                            <td className="px-6 py-4">
+                              {formatFileSize(file.size)}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => {
+                                    setFilesPanelOpen(false);
+                                    handlePreviewFile(file);
+                                  }}
+                                  disabled={!canPreview || isPreviewing}
+                                  aria-label="Preview file"
+                                  title={isPreviewing ? "Loading..." : "Preview"}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => {
+                                    setFilesPanelOpen(false);
+                                    setFileDeleteTarget(file);
+                                  }}
+                                  disabled={isDeleting || isRfqFormReadOnly}
+                                  aria-label="Delete file"
+                                  title={isDeleting ? "Removing..." : "Delete"}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="chat-modal-fallback py-12">
+                  <p className="text-base font-semibold text-ink">No files yet</p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Add files to this RFQ and they will appear here.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {filePreview ? (
         <div className="chat-modal-backdrop" onClick={() => setFilePreview(null)} role="presentation">
