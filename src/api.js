@@ -1,6 +1,6 @@
 import { getToken, setToken } from "./utils/session.js";
 
-const API_BASE = "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const REQUEST_TIMEOUT_MS = 15000;
 
 async function handleJson(response) {
@@ -125,6 +125,19 @@ export async function sendChat(rfqId, message, chatMode = "rfq") {
   return request("/api/chat", {
     method: "POST",
     body: { rfq_id: rfqId, message, chat_mode: chatMode }
+  });
+}
+
+export async function sendPotentialChat(rfqId, message) {
+  return request("/api/chat/potential", {
+    method: "POST",
+    body: { rfq_id: rfqId, message }
+  });
+}
+
+export async function proceedToFormalRfq(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/proceed-to-rfq`, {
+    method: "POST"
   });
 }
 

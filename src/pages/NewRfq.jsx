@@ -11,7 +11,9 @@ import {
   deleteRfqFile,
   getRfqAuditLogs,
   getRfq,
+  proceedToFormalRfq,
   sendChat,
+  sendPotentialChat,
   updateRfqData,
   validateRfq,
   uploadRfqFile
@@ -20,6 +22,7 @@ import {
   mapBackendStatusToUi,
   mapBackendStatusToPipelineStage,
   mapChatHistory,
+  mapPotentialToForm,
   mapRfqDataToForm
 } from "../utils/rfq.js";
 
@@ -70,10 +73,11 @@ const initialForm = {
   quantity: "",
   budget: "",
   dueDate: "",
-  status: "RFQ",
+  status: "Potential",
   owner: "",
   notes: "",
   location: "",
+  potentialSystematicId: "",
   potentialCustomerLocation: "",
   potentialIndustry: "",
   potentialProductType: "",
@@ -125,6 +129,8 @@ const STEP_FIELDS = {
     "deliveryZone",
     "plant",
     "country",
+    "poDate",
+    "ppapDate",
     "sop",
     "qtyPerYear",
     "rfqReceptionDate",
@@ -351,6 +357,29 @@ const calculatePotentialMarginKeur = (salesKeur, marginPercent) => {
   if (!Number.isFinite(computed)) return "";
   return computed.toFixed(2).replace(/\.?0+$/, "");
 };
+
+const RFQ_CHATBOT_INITIAL_GREETING =
+  "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
+const POTENTIAL_CHATBOT_INITIAL_GREETING =
+  "Hello, I'm your potential opportunity assistant. I'll help you assess this opportunity before we open the formal RFQ.\n1. Guide me step by step\n2. I will provide a whole paragraph";
+const SHARED_POTENTIAL_FIELDS = [
+  "customer",
+  "potentialCustomerLocation",
+  "application",
+  "contactName",
+  "contactEmail",
+  "contactPhone",
+  "contactFunction"
+];
+
+const hasMeaningfulValue = (value) => {
+  if (value === 0) return true;
+  if (value === null || value === undefined) return false;
+  return String(value).trim().length > 0;
+};
+
+const getMissingPotentialSharedFields = (form = {}) =>
+  SHARED_POTENTIAL_FIELDS.filter((field) => !hasMeaningfulValue(form?.[field]));
 
 const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   if (!prevMessages.length) return serverMessages;
@@ -594,27 +623,25 @@ const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
 const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
-const CHATBOT_INITIAL_GREETING =
-  "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
-const INITIAL_CHAT_MESSAGE = {
-  role: "assistant",
-  content: CHATBOT_INITIAL_GREETING
-};
+const withInitialChatMessage = (messages = [], greeting) => {
+  const initialMessage = {
+    role: "assistant",
+    content: greeting
+  };
 
-const withInitialChatMessage = (messages = []) => {
   if (!Array.isArray(messages) || !messages.length) {
-    return [{ ...INITIAL_CHAT_MESSAGE }];
+    return [{ ...initialMessage }];
   }
 
   const hasInitialGreeting = messages.some(
     (message) =>
       message?.role === "assistant" &&
-      String(message.content || "").trim() === CHATBOT_INITIAL_GREETING
+      String(message.content || "").trim() === greeting
   );
 
   return hasInitialGreeting
     ? messages
-    : [{ ...INITIAL_CHAT_MESSAGE }, ...messages];
+    : [{ ...initialMessage }, ...messages];
 };
 
 const canUseStorage = () => typeof window !== "undefined";
@@ -737,7 +764,7 @@ export default function NewRfq() {
   const [activeStage, setActiveStage] = useState("RFQ");
   const [selectedStage, setSelectedStage] = useState("RFQ");
   const [selectedSubPhase, setSelectedSubPhase] = useState("");
-  const [activeRfqTab, setActiveRfqTab] = useState("new");
+  const [activeRfqTab, setActiveRfqTab] = useState("potential");
   const [activeStep, setActiveStep] = useState("step-client");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -763,6 +790,7 @@ export default function NewRfq() {
   const [rfqValidationReached, setRfqValidationReached] = useState(false);
   const [validationAudit, setValidationAudit] = useState(createEmptyValidationAudit);
   const [persistValidationView, setPersistValidationView] = useState(false);
+  const [proceedingToFormalRfq, setProceedingToFormalRfq] = useState(false);
   const rfqFileInputRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
@@ -819,6 +847,20 @@ export default function NewRfq() {
       ),
     [form.potentialBusinessSalesKeur, form.potentialBusinessMarginPercent]
   );
+  const hasPersistedDraft = Boolean(rfqId || rfqIdParam || form.id);
+  const isPotentialDraft = form.status === "Potential";
+  const isPotentialTabLocked = hasPersistedDraft && !isPotentialDraft;
+  const isNewRfqTabLocked = hasPersistedDraft && isPotentialDraft;
+  const missingPotentialSharedFields = useMemo(
+    () => getMissingPotentialSharedFields(form),
+    [form]
+  );
+  const canProceedToFormalRfq = Boolean(
+    (rfqId || rfqIdParam) &&
+    isPotentialDraft &&
+    !missingPotentialSharedFields.length &&
+    !proceedingToFormalRfq
+  );
   const hasRecordedValidationDecision = Boolean(
     validationAudit.approvedAt || validationAudit.rejectedAt
   );
@@ -840,17 +882,19 @@ export default function NewRfq() {
     ];
   }, [loadingRfq]);
 
-  const chatFeed = useMemo(() => withInitialChatMessage(chatMessages), [chatMessages]);
+  const activeChatGreeting =
+    activeRfqTab === "potential"
+      ? POTENTIAL_CHATBOT_INITIAL_GREETING
+      : RFQ_CHATBOT_INITIAL_GREETING;
+  const chatFeed = useMemo(
+    () => withInitialChatMessage(chatMessages, activeChatGreeting),
+    [activeChatGreeting, chatMessages]
+  );
   const stepCompletion = useMemo(() => {
-    const isFilled = (value) => {
-      if (value === 0) return true;
-      if (value === null || value === undefined) return false;
-      return String(value).trim().length > 0;
-    };
     return Object.fromEntries(
       STEPS.map((step) => {
         const fields = STEP_FIELDS[step.id] || [];
-        const complete = fields.every((field) => isFilled(form[field]));
+        const complete = fields.every((field) => hasMeaningfulValue(form[field]));
         return [step.id, complete];
       })
     );
@@ -943,8 +987,9 @@ export default function NewRfq() {
     isRfqStage && rfqDisplaySubPhase === "Validation";
   const isRfqFormReadOnly =
     hasValidationLock && !rfqFormEditEnabled;
+  const potentialFieldReadOnly = true;
   const isChatLocked =
-    isChatOnly || hasValidationLock;
+    isChatOnly || hasValidationLock || proceedingToFormalRfq;
   const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !isRfqFormReadOnly;
   const showRfqStepNavigation =
@@ -1051,31 +1096,32 @@ export default function NewRfq() {
 
   const applyRfq = (rfq, { syncChat = true, auditLogs = [] } = {}) => {
     if (!rfq) return;
-    const mappedFields = {
-      ...mapRfqDataToForm(rfq),
-      ...extractPotentialAssessmentFields(rfq?.rfq_data)
-    };
-    const nextUiStatus = mapBackendStatusToUi(rfq);
-    const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
-    handleMergeFields(mappedFields);
+    const isPotentialRecord = subStatusValue === "POTENTIAL";
+    const mappedFields = isPotentialRecord
+      ? {
+        ...mapRfqDataToForm(rfq),
+        ...mapPotentialToForm(rfq?.potential)
+      }
+      : mapRfqDataToForm(rfq);
+    const nextUiStatus = mapBackendStatusToUi(rfq);
+    const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
     setValidationAudit(extractValidationAudit(rfq, auditLogs));
     setDiscussionMessages(extractDiscussionMessages(rfq?.rfq_data));
     setRfqCreatedByEmail(String(rfq?.created_by_email || "").trim());
-    setForm((prev) => ({
-      ...prev,
+    setForm({
+      ...initialForm,
+      ...mappedFields,
       id: rfq.rfq_id,
       status: nextUiStatus
-    }));
+    });
     setActiveStage(nextPipelineStage);
     setActiveRfqTab((prev) => {
       if (prev === "files") {
         return prev;
       }
-      return rfq?.rfq_data?.chat_mode === "potential" || subStatusValue === "POTENTIAL"
-        ? "potential"
-        : "new";
+      return isPotentialRecord ? "potential" : "new";
     });
     if (nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
       setSelectedStage("RFQ");
@@ -1098,8 +1144,11 @@ export default function NewRfq() {
       )
     );
     if (syncChat) {
+      const nextHistory = isPotentialRecord
+        ? rfq?.potential?.chat_history
+        : rfq?.chat_history;
       setChatMessages((prev) =>
-        mergeChatWithAttachments(mapChatHistory(rfq.chat_history), prev)
+        mergeChatWithAttachments(mapChatHistory(nextHistory), prev)
       );
     }
   };
@@ -1164,7 +1213,7 @@ export default function NewRfq() {
           setActiveStage("RFQ");
           setSelectedStage("RFQ");
           setSelectedSubPhase("RFQ form");
-          setActiveRfqTab("new");
+          setActiveRfqTab("potential");
           setActiveStep("step-client");
           setServerFiles([]);
           setLocalFiles([]);
@@ -1394,49 +1443,6 @@ export default function NewRfq() {
     );
   };
 
-  const handleMergeFields = (fields) => {
-    setForm((prev) => {
-      const next = { ...prev };
-      const aliasMap = {
-        contact: "contactName",
-        email: "contactEmail",
-        phone: "contactPhone",
-        validator_email: "validatorEmail",
-        validatorEmail: "validatorEmail",
-        product_name: "productName",
-        product_line_acronym: "productLine",
-        customer_name: "customer",
-        responsibility_design: "designResponsible",
-        design_responsible: "designResponsible",
-        responsibility_validation: "validationResponsible",
-        validation_responsible: "validationResponsible",
-        product_ownership: "designOwner",
-        design_owner: "designOwner",
-        pays_for_development: "developmentCosts",
-        development_costs: "developmentCosts",
-        zone_manager_email: "validatorEmail",
-        capacity_available: "technicalCapacity",
-        technical_capacity: "technicalCapacity",
-        customer_status: "customerStatus",
-        strategic_note: "strategicNote",
-        final_recommendation: "finalRecommendation",
-      };
-
-      Object.entries(fields || {}).forEach(([key, value]) => {
-        const targetKey = aliasMap[key] || key;
-        if (Array.isArray(value)) {
-          next[targetKey] = value;
-          return;
-        }
-        if (value !== null && value !== undefined && String(value).trim() !== "") {
-          next[targetKey] = value;
-        }
-      });
-
-      return next;
-    });
-  };
-
   const handleStageChange = (stageKey) => {
     setPersistValidationView(false);
     setSelectedStage(stageKey);
@@ -1572,14 +1578,18 @@ export default function NewRfq() {
 
     let shouldAutoRedirect = false;
     let finalAssistantResponse = "";
+    let replyRfq = null;
     try {
-      const reply = await sendChat(
-        currentRfqId,
-        payloadMessage,
-        activeRfqTab === "potential" ? "potential" : "rfq"
-      );
+      const reply =
+        activeRfqTab === "potential"
+          ? await sendPotentialChat(currentRfqId, payloadMessage)
+          : await sendChat(currentRfqId, payloadMessage, "rfq");
       shouldAutoRedirect = Boolean(reply?.auto_redirect);
       finalAssistantResponse = String(reply?.response || "");
+      replyRfq = reply?.rfq || null;
+      if (replyRfq) {
+        applyRfq(replyRfq);
+      }
     } catch {
       setChatMessages((prev) => [
         ...prev,
@@ -1590,7 +1600,7 @@ export default function NewRfq() {
       ]);
     } finally {
       const synced = await syncRfq(currentRfqId);
-      if (!synced && finalAssistantResponse) {
+      if (!synced && finalAssistantResponse && !replyRfq) {
         setChatMessages((prev) => [
           ...prev,
           { role: "assistant", content: finalAssistantResponse }
@@ -1599,6 +1609,32 @@ export default function NewRfq() {
       if (shouldAutoRedirect) {
         navigate(`/rfqs/new?id=${encodeURIComponent(currentRfqId)}`);
       }
+    }
+  };
+
+  const handleProceedToFormalRfq = async () => {
+    let currentRfqId = rfqId;
+    setRfqError("");
+
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      setRfqError("Unable to create the draft before proceeding to the formal RFQ.");
+      return;
+    }
+
+    setProceedingToFormalRfq(true);
+    try {
+      const updatedRfq = await proceedToFormalRfq(currentRfqId);
+      applyRfq(updatedRfq);
+      setActiveRfqTab("new");
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("RFQ form");
+      setValidationSuccess("Potential saved and promoted to the formal RFQ.");
+    } catch (error) {
+      setRfqError(error?.message || "Unable to proceed to the formal RFQ.");
+    } finally {
+      setProceedingToFormalRfq(false);
     }
   };
 
@@ -1899,21 +1935,41 @@ export default function NewRfq() {
                   <div className="flex items-center gap-6 border-b border-slate-200/70 text-sm font-semibold text-slate-500">
                     <button
                       type="button"
-                      onClick={() => setActiveRfqTab("potential")}
-                      className={`pb-1 transition ${activeRfqTab === "potential"
+                      onClick={() => {
+                        if (!isPotentialTabLocked) {
+                          setActiveRfqTab("potential");
+                        }
+                      }}
+                      disabled={isPotentialTabLocked}
+                      className={`pb-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${activeRfqTab === "potential"
                         ? "border-b-2 border-tide text-ink"
                         : "hover:text-ink"
                         }`}
+                      title={
+                        isPotentialTabLocked
+                          ? "Potential is locked once the formal RFQ begins."
+                          : "Potential"
+                      }
                     >
                       Potential
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveRfqTab("new")}
-                      className={`pb-1 transition ${activeRfqTab === "new"
+                      onClick={() => {
+                        if (!isNewRfqTabLocked) {
+                          setActiveRfqTab("new");
+                        }
+                      }}
+                      disabled={isNewRfqTabLocked}
+                      className={`pb-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${activeRfqTab === "new"
                         ? "border-b-2 border-tide text-ink"
                         : "hover:text-ink"
                         }`}
+                      title={
+                        isNewRfqTabLocked
+                          ? "Use Proceed to Formal RFQ to unlock this tab after starting the Potential phase."
+                          : "New RFQ"
+                      }
                     >
                       New RFQ
                     </button>
@@ -2092,6 +2148,12 @@ export default function NewRfq() {
                       <div>
                         <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Potential</p>
                         <h2 className="font-display text-2xl text-ink sm:text-3xl">Potential RFQ intake</h2>
+                        <p className="mt-2 text-sm font-semibold text-tide">
+                          Opportunity: {form.potentialSystematicId || "Draft"}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-500">
+                          This tab mirrors the Potential chatbot. You can start here for a pre-sales assessment, or switch straight to New RFQ before any draft is created.
+                        </p>
                       </div>
                     </div>
 
@@ -2110,11 +2172,11 @@ export default function NewRfq() {
                         </div>
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Customer location" name="potentialCustomerLocation" value={form.potentialCustomerLocation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                          <FormField label="Industry served" name="potentialIndustry" value={form.potentialIndustry} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Planned product type" name="potentialProductType" value={form.potentialProductType} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                          <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Customer location" name="potentialCustomerLocation" value={form.potentialCustomerLocation} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
+                          <FormField label="Industry served" name="potentialIndustry" value={form.potentialIndustry} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Planned product type" name="potentialProductType" value={form.potentialProductType} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                         </div>
                       </section>
 
@@ -2133,18 +2195,18 @@ export default function NewRfq() {
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
                           <div className="md:col-span-2">
-                            <FormField label="Engagement reasons" name="potentialEngagementReason" value={form.potentialEngagementReason} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Engagement reasons" name="potentialEngagementReason" value={form.potentialEngagementReason} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                           </div>
-                          <FormField label="Idea source" name="potentialIdeaOwner" value={form.potentialIdeaOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Current supplier" name="potentialCurrentSupplier" value={form.potentialCurrentSupplier} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                          <FormField label="Main win reason" name="potentialWinReason" value={form.potentialWinReason} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Idea source" name="potentialIdeaOwner" value={form.potentialIdeaOwner} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Current supplier" name="potentialCurrentSupplier" value={form.potentialCurrentSupplier} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
+                          <FormField label="Main win reason" name="potentialWinReason" value={form.potentialWinReason} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <div className="md:col-span-2">
-                            <FormField label="Win rationale details" name="potentialWinDetails" value={form.potentialWinDetails} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Win rationale details" name="potentialWinDetails" value={form.potentialWinDetails} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                           </div>
-                          <FormField label="Technical capabilities" name="potentialTechnicalCapability" value={form.potentialTechnicalCapability} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Strategic fit" name="potentialStrategyFit" value={form.potentialStrategyFit} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Technical capabilities" name="potentialTechnicalCapability" value={form.potentialTechnicalCapability} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Strategic fit" name="potentialStrategyFit" value={form.potentialStrategyFit} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <div className="md:col-span-2">
-                            <FormField label="Strategic fit details" name="potentialStrategyFitDetails" value={form.potentialStrategyFitDetails} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Strategic fit details" name="potentialStrategyFitDetails" value={form.potentialStrategyFitDetails} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                           </div>
                         </div>
                       </section>
@@ -2163,13 +2225,13 @@ export default function NewRfq() {
                         </div>
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                          <FormField label="Sales (kEUR)" name="potentialBusinessSalesKeur" type="number" value={form.potentialBusinessSalesKeur} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Margin (%)" name="potentialBusinessMarginPercent" type="number" value={form.potentialBusinessMarginPercent} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Sales (kEUR)" name="potentialBusinessSalesKeur" type="number" value={form.potentialBusinessSalesKeur} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Margin (%)" name="potentialBusinessMarginPercent" type="number" value={form.potentialBusinessMarginPercent} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Margin (kEUR)" name="potentialBusinessMarginKeur" value={potentialMarginKeur} readOnly />
-                          <FormField label="Start of production" name="potentialStartOfProduction" value={form.potentialStartOfProduction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Development effort" name="potentialDevelopmentEffort" value={form.potentialDevelopmentEffort} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Start of production" name="potentialStartOfProduction" value={form.potentialStartOfProduction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Development effort" name="potentialDevelopmentEffort" value={form.potentialDevelopmentEffort} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <div className="xl:col-span-3">
-                            <FormField label="Side effects of engagement" name="potentialSideEffects" value={form.potentialSideEffects} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Side effects of engagement" name="potentialSideEffects" value={form.potentialSideEffects} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                           </div>
                         </div>
                       </section>
@@ -2194,7 +2256,7 @@ export default function NewRfq() {
                               name="potentialRiskDoAssessment"
                               value={form.potentialRiskDoAssessment}
                               onChange={handleChange}
-                              readOnly={rfqFormFieldReadOnly}
+                              readOnly={potentialFieldReadOnly}
                               autoExpand
                             />
                           </div>
@@ -2221,7 +2283,7 @@ export default function NewRfq() {
                               name="potentialRiskNotDoAssessment"
                               value={form.potentialRiskNotDoAssessment}
                               onChange={handleChange}
-                              readOnly={rfqFormFieldReadOnly}
+                              readOnly={potentialFieldReadOnly}
                               autoExpand
                             />
                           </div>
@@ -2242,11 +2304,40 @@ export default function NewRfq() {
                         </div>
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                          <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                          <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                         </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h3 className="font-display text-xl text-ink">Proceed to formal RFQ</h3>
+                            <p className="mt-2 text-sm text-slate-500">
+                              When the shared Potential fields are complete, promote this opportunity and lock the Potential tab.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleProceedToFormalRfq}
+                            disabled={!canProceedToFormalRfq}
+                            className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
+                            title={
+                              canProceedToFormalRfq
+                                ? "Proceed to Formal RFQ"
+                                : "Complete the shared Potential fields in the chatbot before proceeding."
+                            }
+                          >
+                            {proceedingToFormalRfq ? "Proceeding..." : "Proceed to Formal RFQ"}
+                          </button>
+                        </div>
+                        {missingPotentialSharedFields.length ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            Missing shared fields: {missingPotentialSharedFields.join(", ")}
+                          </p>
+                        ) : null}
                       </section>
                     </div>
                   </form>
@@ -2464,101 +2555,101 @@ export default function NewRfq() {
 
                     <div className="relative flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
                       {sortedFiles.length ? (
-                          <section className="rounded-2xl border border-slate-200/70 bg-white/95 shadow-soft">
-                            <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-4">
-                              <div>
-                                <p className="text-xs uppercase tracking-[0.28em] text-slate-400">
-                                  All files
-                                </p>
-                                <h3 className="mt-1 font-display text-xl text-ink">
-                                  Detailed list
-                                </h3>
-                              </div>
-                              <span className="rounded-full border border-tide/20 bg-tide/5 px-3 py-1 text-xs font-semibold text-tide">
-                                {sortedFiles.length} total
-                              </span>
+                        <section className="rounded-2xl border border-slate-200/70 bg-white/95 shadow-soft">
+                          <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-4">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                                All files
+                              </p>
+                              <h3 className="mt-1 font-display text-xl text-ink">
+                                Detailed list
+                              </h3>
                             </div>
+                            <span className="rounded-full border border-tide/20 bg-tide/5 px-3 py-1 text-xs font-semibold text-tide">
+                              {sortedFiles.length} total
+                            </span>
+                          </div>
 
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full divide-y divide-slate-200/70 text-left">
-                                <thead className="bg-slate-50/80">
-                                  <tr className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                    <th className="px-5 py-4">Title</th>
-                                    <th className="px-5 py-4">Owner</th>
-                                    <th className="px-5 py-4">Last modified</th>
-                                    <th className="px-5 py-4">Size</th>
-                                    <th className="px-5 py-4 text-right">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-200/70 bg-white text-sm text-slate-600">
-                                  {sortedFiles.map((file) => {
-                                    const canPreview = Boolean(file.url);
-                                    const isDeleting = fileActionId === file.id;
-                                    const isPreviewing = filePreviewLoadingId === file.id;
-                                    return (
-                                      <tr key={file.id} className="align-middle">
-                                        <td className="px-5 py-4">
-                                          <div className="flex items-center gap-3">
-                                            <span
-                                              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
-                                            >
-                                              {getFileExtension(file.name).slice(0, 4)}
-                                            </span>
-                                            <div className="min-w-0">
-                                              <button
-                                                type="button"
-                                                className={`max-w-full truncate text-left font-semibold text-tide ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"}`}
-                                                onClick={() => handlePreviewFile(file)}
-                                                disabled={!canPreview || isPreviewing}
-                                              >
-                                                {file.name}
-                                              </button>
-                                              <p className="mt-1 text-xs text-slate-500">
-                                                {getFileExtension(file.name).toLowerCase()}
-                                              </p>
-                                            </div>
-                                          </div>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                          {file.owner || "Unknown"}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                          {formatFileDate(file.updatedAt, { withTime: true })}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                          {formatFileSize(file.size)}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                          <div className="flex items-center justify-end gap-2">
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200/70 text-left">
+                              <thead className="bg-slate-50/80">
+                                <tr className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  <th className="px-5 py-4">Title</th>
+                                  <th className="px-5 py-4">Owner</th>
+                                  <th className="px-5 py-4">Last modified</th>
+                                  <th className="px-5 py-4">Size</th>
+                                  <th className="px-5 py-4 text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200/70 bg-white text-sm text-slate-600">
+                                {sortedFiles.map((file) => {
+                                  const canPreview = Boolean(file.url);
+                                  const isDeleting = fileActionId === file.id;
+                                  const isPreviewing = filePreviewLoadingId === file.id;
+                                  return (
+                                    <tr key={file.id} className="align-middle">
+                                      <td className="px-5 py-4">
+                                        <div className="flex items-center gap-3">
+                                          <span
+                                            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                          >
+                                            {getFileExtension(file.name).slice(0, 4)}
+                                          </span>
+                                          <div className="min-w-0">
                                             <button
                                               type="button"
-                                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                              className={`max-w-full truncate text-left font-semibold text-tide ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"}`}
                                               onClick={() => handlePreviewFile(file)}
                                               disabled={!canPreview || isPreviewing}
-                                              aria-label="Preview file"
-                                              title={isPreviewing ? "Loading..." : "Preview"}
                                             >
-                                              <Eye className="h-4 w-4" />
+                                              {file.name}
                                             </button>
-                                            <button
-                                              type="button"
-                                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                              onClick={() => setFileDeleteTarget(file)}
-                                              disabled={isDeleting || isRfqFormReadOnly}
-                                              aria-label="Delete file"
-                                              title={isDeleting ? "Removing..." : "Delete"}
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </button>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                              {getFileExtension(file.name).toLowerCase()}
+                                            </p>
                                           </div>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </section>
+                                        </div>
+                                      </td>
+                                      <td className="px-5 py-4">
+                                        {file.owner || "Unknown"}
+                                      </td>
+                                      <td className="px-5 py-4">
+                                        {formatFileDate(file.updatedAt, { withTime: true })}
+                                      </td>
+                                      <td className="px-5 py-4">
+                                        {formatFileSize(file.size)}
+                                      </td>
+                                      <td className="px-5 py-4">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                            onClick={() => handlePreviewFile(file)}
+                                            disabled={!canPreview || isPreviewing}
+                                            aria-label="Preview file"
+                                            title={isPreviewing ? "Loading..." : "Preview"}
+                                          >
+                                            <Eye className="h-4 w-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                            onClick={() => setFileDeleteTarget(file)}
+                                            disabled={isDeleting || isRfqFormReadOnly}
+                                            aria-label="Delete file"
+                                            title={isDeleting ? "Removing..." : "Delete"}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
                       ) : (
                         <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
                           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
@@ -3125,6 +3216,12 @@ export default function NewRfq() {
                           onSend={handleChatSend}
                           readOnly={isChatLocked}
                           onCollapse={() => setChatCollapsed(true)}
+                          eyebrow={activeRfqTab === "potential" ? "Potential" : "Chatbot"}
+                          title={
+                            activeRfqTab === "potential"
+                              ? "Potential Assistant"
+                              : "RFQ Assistant"
+                          }
                         />
                       </div>
                     )}
@@ -3149,28 +3246,28 @@ export default function NewRfq() {
             aria-label="Discussion"
             onClick={(event) => event.stopPropagation()}
           >
-          <div className="chat-modal-header">
-            <div>
-              <p className="chat-modal-title mt-1">Discussion</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Exchange messages about this RFQ in a clear and centralized space.
-              </p>
-            </div>
+            <div className="chat-modal-header">
+              <div>
+                <p className="chat-modal-title mt-1">Discussion</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Exchange messages about this RFQ in a clear and centralized space.
+                </p>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                {discussionMessages.length} message{discussionMessages.length > 1 ? "s" : ""}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                  {discussionMessages.length} message{discussionMessages.length > 1 ? "s" : ""}
+                </span>
 
-              <button
-                type="button"
-                className="chat-modal-close"
-                onClick={() => setDiscussionModalOpen(false)}
-              >
-                ✕
-              </button>
+                <button
+                  type="button"
+                  className="chat-modal-close"
+                  onClick={() => setDiscussionModalOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
-          </div>
 
             <div className="chat-modal-body p-0">
               <div className="flex h-full min-h-0 flex-col">

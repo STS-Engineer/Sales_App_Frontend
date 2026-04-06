@@ -173,7 +173,9 @@ export default function ChatPanel({
   messages = [],
   onSend,
   onCollapse,
-  readOnly = false
+  readOnly = false,
+  eyebrow = "Chatbot",
+  title = "RFQ Assistant"
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -435,8 +437,8 @@ export default function ChatPanel({
             </button>
           ) : null}
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Chatbot</p>
-            <h2 className="font-display text-2xl text-ink">RFQ Assistant</h2>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">{eyebrow}</p>
+            <h2 className="font-display text-2xl text-ink">{title}</h2>
           </div>
         </div>
       </div>

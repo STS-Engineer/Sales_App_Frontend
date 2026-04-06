@@ -222,6 +222,101 @@ export const mapRfqDataToForm = (rfq) => {
     )
   };
 };
+
+export const mapPotentialToForm = (potential) => {
+  const data = potential || {};
+  const pickValue = (value) => {
+    if (value === 0 || value === false) return value;
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  };
+  const pickFirst = (...values) => {
+    for (const value of values) {
+      const picked = pickValue(value);
+      if (picked !== undefined) return picked;
+    }
+    return undefined;
+  };
+
+  return {
+    potentialSystematicId: pickFirst(
+      data.potential_systematic_id,
+      data.potentialSystematicId
+    ),
+    customer: pickFirst(data.customer, data.customer_name, data.customerName),
+    potentialCustomerLocation: pickFirst(
+      data.customer_location,
+      data.customerLocation,
+      data.potential_customer_location,
+      data.potentialCustomerLocation
+    ),
+    application: pickFirst(data.application),
+    contactName: pickFirst(data.contact_name, data.contactName),
+    contactEmail: pickFirst(data.contact_email, data.contactEmail),
+    contactPhone: pickFirst(data.contact_phone, data.contactPhone),
+    contactFunction: pickFirst(
+      data.contact_function,
+      data.contactFunction,
+      data.contact_role
+    ),
+    potentialIndustry: pickFirst(data.industry_served, data.potentialIndustry),
+    potentialProductType: pickFirst(
+      data.planned_product_type,
+      data.potentialProductType
+    ),
+    potentialEngagementReason: pickFirst(
+      data.engagement_reasons,
+      data.potentialEngagementReason
+    ),
+    potentialIdeaOwner: pickFirst(data.idea_source, data.potentialIdeaOwner),
+    potentialCurrentSupplier: pickFirst(
+      data.current_supplier,
+      data.potentialCurrentSupplier
+    ),
+    potentialWinReason: pickFirst(data.main_win_reason, data.potentialWinReason),
+    potentialWinDetails: pickFirst(
+      data.win_rationale_details,
+      data.potentialWinDetails
+    ),
+    potentialTechnicalCapability: pickFirst(
+      data.technical_capabilities,
+      data.potentialTechnicalCapability
+    ),
+    potentialStrategyFit: pickFirst(data.strategic_fit, data.potentialStrategyFit),
+    potentialStrategyFitDetails: pickFirst(
+      data.strategic_fit_details,
+      data.potentialStrategyFitDetails
+    ),
+    potentialBusinessSalesKeur: pickFirst(
+      data.sales_keur,
+      data.potentialBusinessSalesKeur
+    ),
+    potentialBusinessMarginPercent: pickFirst(
+      data.margin_percentage,
+      data.potentialBusinessMarginPercent
+    ),
+    potentialStartOfProduction: pickFirst(
+      data.start_of_production,
+      data.potentialStartOfProduction
+    ),
+    potentialDevelopmentEffort: pickFirst(
+      data.development_effort,
+      data.potentialDevelopmentEffort
+    ),
+    potentialSideEffects: pickFirst(data.side_effects, data.potentialSideEffects),
+    potentialRiskDoAssessment: pickFirst(
+      data.risks_to_do,
+      data.potentialRiskDoAssessment,
+      data.potential_risk_do_assessment
+    ),
+    potentialRiskNotDoAssessment: pickFirst(
+      data.risks_not_to_do,
+      data.potentialRiskNotDoAssessment,
+      data.potential_risk_not_do_assessment
+    )
+  };
+};
  
 export const mapRfqToRow = (rfq) => {
   const data = rfq?.rfq_data || {};
