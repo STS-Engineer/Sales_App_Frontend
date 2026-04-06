@@ -1278,7 +1278,7 @@ export default function NewRfq() {
       }
       await syncRfq(currentRfqId);
     } catch {
-      setRfqError("Unable to upload file(s). Please try again.");
+      setRfqError("Unable to upload file. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -1548,7 +1548,7 @@ export default function NewRfq() {
           await uploadRfqFile(currentRfqId, attachment.file);
         }
       } catch {
-        setRfqError("Unable to upload file(s). Please try again.");
+        setRfqError("Unable to upload file. Please try again.");
         setChatMessages((prev) => [
           ...prev,
           {
@@ -2759,6 +2759,86 @@ export default function NewRfq() {
                                 <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
+                                  <span>RFQ Files</span>
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <button
+                                      type="button"
+                                      className="outline-button px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => rfqFileInputRef.current?.click()}
+                                      disabled={!allowFileUpload}
+                                    >
+                                      Choose files
+                                    </button>
+                                    <span className="text-xs font-medium text-slate-500">
+                                      {mergedFiles.length
+                                        ? `${mergedFiles.length} file${mergedFiles.length > 1 ? "s" : ""}`
+                                        : "No files"}
+                                    </span>
+                                  </div>
+                                  <input
+                                    ref={rfqFileInputRef}
+                                    type="file"
+                                    multiple
+                                    className="hidden"
+                                    onChange={handleFilesChange}
+                                    disabled={!allowFileUpload}
+                                  />
+                                  {mergedFiles.length ? (
+                                    <div className="mt-3 flex flex-col gap-2 normal-case">
+                                      {mergedFiles.map((file) => {
+                                        const canPreview = Boolean(file.url);
+                                        const isDeleting = fileActionId === file.id;
+                                        const isPreviewing = filePreviewLoadingId === file.id;
+                                        return (
+                                          <div
+                                            key={file.id}
+                                            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/70 bg-white/90 px-3 py-2 text-[11px] font-medium text-slate-600"
+                                          >
+                                            <button
+                                              type="button"
+                                              className={`inline-flex items-center gap-2 truncate text-left ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"
+                                                }`}
+                                              onClick={() => handlePreviewFile(file)}
+                                              disabled={!canPreview || isPreviewing}
+                                            >
+                                              <span className="h-2 w-2 rounded-full bg-slate-400" />
+                                              <span className="max-w-[200px] truncate">{file.name}</span>
+                                            </button>
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                type="button"
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                                onClick={() => handlePreviewFile(file)}
+                                                disabled={!canPreview || isPreviewing}
+                                                aria-label="View file"
+                                                title={isPreviewing ? "Loading..." : "View"}
+                                              >
+                                                <Eye className="h-4 w-4" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                onClick={() => setFileDeleteTarget(file)}
+                                                disabled={isDeleting || isRfqFormReadOnly}
+                                                aria-label="Delete file"
+                                                title={
+                                                  isRfqFormReadOnly
+                                                    ? "Read only in validation"
+                                                    : isDeleting
+                                                      ? "Removing..."
+                                                      : "Delete"
+                                                }
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                </label>
 
                                 <FormField label="Customer PN" name="customerPn" value={form.customerPn} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Revision level" name="revisionLevel" value={form.revisionLevel} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
