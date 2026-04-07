@@ -317,31 +317,36 @@ export const mapPotentialToForm = (potential) => {
     )
   };
 };
- 
+
 export const mapRfqToRow = (rfq) => {
   const data = rfq?.rfq_data || {};
+  const potential = rfq?.potential || {};
   const toTotalRaw = data.to_total;
   const toTotal =
     typeof toTotalRaw === "string" && toTotalRaw.trim() !== ""
       ? Number(toTotalRaw)
       : toTotalRaw;
- 
+
   return {
     id: rfq?.rfq_id,
     displayId: data.systematic_rfq_id || "Draft - Pending",
-    customer: data.customer_name,
-    client: data.customer_name,
+    customer: data.customer_name || potential.customer,
+    client: data.customer_name || potential.customer,
     productName: data.product_name || data.product_line_acronym,
     productLine: data.product_line_acronym || data.product_name,
     item: data.product_name || data.product_line_acronym,
-    application: data.application,
+    application: data.application || potential.application,
     deliveryZone: data.delivery_zone,
-    location: data.delivery_zone,
+    location: data.delivery_zone || potential.customer_location,
     toTotal: Number.isFinite(toTotal) ? toTotal : toTotalRaw,
-    status: mapBackendStatusToUi(rfq)
+    status: mapBackendStatusToUi(rfq),
+    potentialSystematicId: potential.potential_systematic_id || "",
+    potentialCustomer: potential.customer || "",
+    potentialApplication: potential.application || "",
+    potentialLocation: potential.customer_location || ""
   };
 };
- 
+
 export const mapChatHistory = (history = []) =>
   history
     .filter(
@@ -352,5 +357,3 @@ export const mapChatHistory = (history = []) =>
         entry.content.trim() !== ""
     )
     .map((entry) => ({ role: entry.role, content: entry.content }));
- 
- 
