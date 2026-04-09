@@ -987,10 +987,12 @@ export default function NewRfq() {
     isRfqStage && rfqDisplaySubPhase === "Validation";
   const isRfqFormReadOnly =
     hasValidationLock && !rfqFormEditEnabled;
+  const lockNewRfqFields = true;
   const potentialFieldReadOnly = true;
   const isChatLocked =
     isChatOnly || hasValidationLock || proceedingToFormalRfq;
-  const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
+  const rfqFormFieldReadOnly =
+    lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !isRfqFormReadOnly;
   const showRfqStepNavigation =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
@@ -1289,6 +1291,12 @@ export default function NewRfq() {
   }, [filePreview]);
 
   const handleChange = (event) => {
+    if (activeRfqTab === "potential" && potentialFieldReadOnly) {
+      return;
+    }
+    if (activeRfqTab === "new" && rfqFormFieldReadOnly) {
+      return;
+    }
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
   };
 
@@ -2333,11 +2341,6 @@ export default function NewRfq() {
                             {proceedingToFormalRfq ? "Proceeding..." : "Proceed to Formal RFQ"}
                           </button>
                         </div>
-                        {missingPotentialSharedFields.length ? (
-                          <p className="mt-3 text-sm text-slate-500">
-                            Missing shared fields: {missingPotentialSharedFields.join(", ")}
-                          </p>
-                        ) : null}
                       </section>
                     </div>
                   </form>
@@ -2811,6 +2814,10 @@ export default function NewRfq() {
                             <h2 className="font-display text-xl text-ink sm:text-2xl">
                               Step {stepIndex + 1}: {activeStepData.label}
                             </h2>
+                            <p className="mt-2 max-w-2xl text-sm text-slate-500">
+                              The New RFQ form is locked for direct editing and mirrors the chatbot.
+                              Use the chat panel to update these fields.
+                            </p>
                           </div>
                         </div>
 
