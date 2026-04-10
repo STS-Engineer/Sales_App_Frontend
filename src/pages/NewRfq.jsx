@@ -837,7 +837,7 @@ export default function NewRfq() {
   const [activeStage, setActiveStage] = useState("RFQ");
   const [selectedStage, setSelectedStage] = useState("RFQ");
   const [selectedSubPhase, setSelectedSubPhase] = useState("");
-  const [activeRfqTab, setActiveRfqTab] = useState("potential");
+  const [activeRfqTab, setActiveRfqTab] = useState("new");
   const [activeStep, setActiveStep] = useState("step-client");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -1058,12 +1058,29 @@ export default function NewRfq() {
     isRfqStage &&
     (hasValidationLock || selectedSubPhase === "Validation");
 
+  const getActiveDisplaySubPhase = (stageKey) => {
+    if (stageKey !== groupedActiveStage) return "";
+    return activeSubPhase;
+  };
+  const rfqDisplaySubPhase = isRfqStage
+    ? selectedSubPhase || getActiveDisplaySubPhase("RFQ") || "RFQ form"
+    : "";
+  const isRfqFormView = isRfqStage && rfqDisplaySubPhase === "RFQ form";
+  const unlockAllNewRfqSteps =
+    activeRfqTab === "new" && isRfqStage && isRfqFormView;
+  const isRfqValidationView =
+    isRfqStage && rfqDisplaySubPhase === "Validation";
   const highestUnlockedStepIndex = useMemo(() => {
-    if (reviewNavigationUnlocked) {
+    if (reviewNavigationUnlocked || unlockAllNewRfqSteps) {
       return lastStepIndex;
     }
     return Math.min(lastStepIndex, Math.max(0, highestCompletedStepIndex + 1));
-  }, [reviewNavigationUnlocked, lastStepIndex, highestCompletedStepIndex]);
+  }, [
+    reviewNavigationUnlocked,
+    unlockAllNewRfqSteps,
+    lastStepIndex,
+    highestCompletedStepIndex
+  ]);
 
   const stepStates = useMemo(() => {
     const entries = STEPS.map((step, index) => {
@@ -1080,16 +1097,6 @@ export default function NewRfq() {
   );
   const canOpenRfqValidation =
     hasValidationLock;
-  const getActiveDisplaySubPhase = (stageKey) => {
-    if (stageKey !== groupedActiveStage) return "";
-    return activeSubPhase;
-  };
-  const rfqDisplaySubPhase = isRfqStage
-    ? selectedSubPhase || getActiveDisplaySubPhase("RFQ") || "RFQ form"
-    : "";
-  const isRfqFormView = isRfqStage && rfqDisplaySubPhase === "RFQ form";
-  const isRfqValidationView =
-    isRfqStage && rfqDisplaySubPhase === "Validation";
   const isCostingStage = selectedStage === "In costing";
   const costingDisplaySubPhase = isCostingStage
     ? selectedSubPhase || getActiveDisplaySubPhase("In costing") || "Feasability"
@@ -1121,8 +1128,8 @@ export default function NewRfq() {
     isPotentialAssistantLocked && activeRfqTab === "potential"
       ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
       : "Chat is locked once the RFQ enters validation";
-  const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
-  const allowFileUpload = !saving && !isRfqFormReadOnly;
+  const rfqFormFieldReadOnly = lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
+  const allowFileUpload = !saving && !rfqFormFieldReadOnly;
   const showRfqStepNavigation =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
   const showChatPanel =
@@ -1217,10 +1224,8 @@ export default function NewRfq() {
       !isRfqFormReadOnly &&
       activeStepJustCompleted
     ) {
-      const shouldAutoAdvance =
-        stepIndex >= 0 && stepIndex === Math.max(0, highestUnlockedStepIndex - 1);
       const nextStepId = getNextStepId(activeStep);
-      if (nextStepId && shouldAutoAdvance) {
+      if (nextStepId) {
         setActiveStep(nextStepId);
       }
     }
@@ -1270,6 +1275,9 @@ export default function NewRfq() {
     setActiveStage(nextPipelineStage);
     setActiveRfqTab((prev) => {
       if (prev === "files") {
+        return prev;
+      }
+      if (prev === "potential" || prev === "new") {
         return prev;
       }
       return isPotentialRecord ? "potential" : "new";
@@ -1368,7 +1376,7 @@ export default function NewRfq() {
           setActiveStage("RFQ");
           setSelectedStage("RFQ");
           setSelectedSubPhase("RFQ form");
-          setActiveRfqTab("potential");
+          setActiveRfqTab("new");
           setActiveStep("step-client");
           setServerFiles([]);
           setLocalFiles([]);
@@ -3679,7 +3687,7 @@ export default function NewRfq() {
                                 <FormField label="PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Ppap date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="SOP year" name="sop" type="number" value={form.sop} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Quantity per year" name="qtyPerYear" type="text" value={form.qtyPerYear} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                                <FormField label="Quantity per year (K piece)" name="qtyPerYear" type="text" value={form.qtyPerYear} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="RFQ reception date" name="rfqReceptionDate" type="date" value={form.rfqReceptionDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                               </div>
@@ -3704,7 +3712,7 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <FormField label="Target Price" name="targetPrice" type="number" value={form.targetPrice} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <FormField label="Target Price (eur)" name="targetPrice" type="number" value={form.targetPrice} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                             <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
@@ -3739,7 +3747,7 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <FormField label="TO total" name="toTotal" type="number" value={form.toTotal} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <FormField label="TO (K eur)" name="toTotal" type="number" value={form.toTotal} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                             <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                           </div>
                         </div>
