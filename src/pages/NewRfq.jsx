@@ -7,14 +7,18 @@ import FormField from "../components/FormField.jsx";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import {
+  advanceRfqStatus,
   createRfq,
+  downloadCostingTemplate,
   deleteRfqFile,
   getRfqAuditLogs,
   getRfq,
   proceedToFormalRfq,
   sendChat,
   sendPotentialChat,
+  submitCostingReview,
   updateRfqData,
+  uploadCostingFile,
   validateRfq,
   uploadRfqFile
 } from "../api";
@@ -78,7 +82,13 @@ const initialForm = {
   notes: "",
   location: "",
   potentialSystematicId: "",
+  potentialCustomer: "",
   potentialCustomerLocation: "",
+  potentialApplication: "",
+  potentialContactName: "",
+  potentialContactFunction: "",
+  potentialContactPhone: "",
+  potentialContactEmail: "",
   potentialIndustry: "",
   potentialProductType: "",
   potentialEngagementReason: "",
@@ -363,13 +373,13 @@ const RFQ_CHATBOT_INITIAL_GREETING =
 const POTENTIAL_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your potential opportunity assistant. I'll help you assess this opportunity before we open the formal RFQ.\n1. Guide me step by step\n2. I will provide a whole paragraph";
 const SHARED_POTENTIAL_FIELDS = [
-  "customer",
-  "potentialCustomerLocation",
-  "application",
-  "contactName",
-  "contactEmail",
-  "contactPhone",
-  "contactFunction"
+  { key: "potentialCustomer", label: "customer" },
+  { key: "potentialCustomerLocation", label: "customer location" },
+  { key: "potentialApplication", label: "application" },
+  { key: "potentialContactName", label: "contact name" },
+  { key: "potentialContactEmail", label: "contact email" },
+  { key: "potentialContactPhone", label: "contact phone" },
+  { key: "potentialContactFunction", label: "contact function" }
 ];
 
 const hasMeaningfulValue = (value) => {
@@ -379,7 +389,9 @@ const hasMeaningfulValue = (value) => {
 };
 
 const getMissingPotentialSharedFields = (form = {}) =>
-  SHARED_POTENTIAL_FIELDS.filter((field) => !hasMeaningfulValue(form?.[field]));
+  SHARED_POTENTIAL_FIELDS
+    .filter(({ key }) => !hasMeaningfulValue(form?.[key]))
+    .map(({ label }) => label);
 
 const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   if (!prevMessages.length) return serverMessages;
@@ -453,6 +465,39 @@ const normalizeRfqFiles = (rfq) => {
       id,
       name,
       url,
+      source: "server",
+      size:
+        entry?.size ||
+        entry?.file_size ||
+        entry?.content_length ||
+        entry?.contentLength ||
+        "",
+      updatedAt:
+        entry?.uploaded_at ||
+        entry?.updated_at ||
+        entry?.last_modified ||
+        entry?.lastModified ||
+        "",
+      owner: entry?.uploaded_by || entry?.owner || entry?.created_by || ""
+    };
+  });
+};
+
+const normalizeCostingFiles = (rfq) => {
+  const raw = rfq?.costing_files || [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry, index) => {
+    const name =
+      entry?.name ||
+      entry?.filename ||
+      entry?.original_name ||
+      entry?.file_name ||
+      `costing-file-${index + 1}`;
+    const id =
+      entry?.id || entry?.file_id || entry?.uuid || entry?.path || name || index;
+    return {
+      id,
+      name,
       source: "server",
       size:
         entry?.size ||
@@ -720,6 +765,33 @@ const extractValidationAudit = (rfq, auditLogs = []) => {
   };
 };
 
+const extractAuditReasonFromAction = (action) => {
+  const text = normalizeAuditValue(action);
+  if (!text.includes(":")) return "";
+  return text.split(":").slice(1).join(":").trim();
+};
+
+const extractCostingReviewAudit = (rfq, auditLogs = []) => {
+  const approvedLog = auditLogs.find(
+    (entry) =>
+      typeof entry?.action === "string" && entry.action.includes("Costing review approved")
+  );
+  const rejectedLog = auditLogs.find(
+    (entry) =>
+      typeof entry?.action === "string" && entry.action.includes("Costing review rejected")
+  );
+
+  return {
+    approvedAt: normalizeAuditValue(approvedLog?.timestamp),
+    approvedBy: normalizeAuditValue(approvedLog?.performed_by),
+    rejectedAt: normalizeAuditValue(rejectedLog?.timestamp),
+    rejectedBy: normalizeAuditValue(rejectedLog?.performed_by),
+    rejectionReason:
+      normalizeAuditValue(rfq?.rejection_reason) ||
+      extractAuditReasonFromAction(rejectedLog?.action)
+  };
+};
+
 const formatValidationAuditValue = (value) => {
   const text = normalizeAuditValue(value);
   return text || "Not available";
@@ -758,7 +830,8 @@ export default function NewRfq() {
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
   const [rfqId, setRfqId] = useState("");
-  const [chatMessages, setChatMessages] = useState([]);
+  const [potentialChatMessages, setPotentialChatMessages] = useState([]);
+  const [rfqChatMessages, setRfqChatMessages] = useState([]);
   const [loadingRfq, setLoadingRfq] = useState(false);
   const [rfqError, setRfqError] = useState("");
   const [activeStage, setActiveStage] = useState("RFQ");
@@ -772,6 +845,8 @@ export default function NewRfq() {
   const [fulfilledSteps, setFulfilledSteps] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
+  const [costingFiles, setCostingFiles] = useState([]);
+  const [pendingCostingFiles, setPendingCostingFiles] = useState([]);
   const [discussionMessages, setDiscussionMessages] = useState([]);
   const [discussionDraft, setDiscussionDraft] = useState("");
   const [discussionSending, setDiscussionSending] = useState(false);
@@ -784,14 +859,26 @@ export default function NewRfq() {
   const [filePreviewLoadingId, setFilePreviewLoadingId] = useState("");
   const [validationActionId, setValidationActionId] = useState("");
   const [validationSuccess, setValidationSuccess] = useState("");
+  const [templateDownloadPending, setTemplateDownloadPending] = useState(false);
+  const [templatePreviewPending, setTemplatePreviewPending] = useState(false);
+  const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
+  const [templatePreviewFilename, setTemplatePreviewFilename] = useState("");
+  const [templatePreviewModalOpen, setTemplatePreviewModalOpen] = useState(false);
+  const [costingReviewActionId, setCostingReviewActionId] = useState("");
+  const [costingRejectModalOpen, setCostingRejectModalOpen] = useState(false);
+  const [costingRejectReason, setCostingRejectReason] = useState("");
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rfqFormEditEnabled, setRfqFormEditEnabled] = useState(false);
   const [rfqValidationReached, setRfqValidationReached] = useState(false);
   const [validationAudit, setValidationAudit] = useState(createEmptyValidationAudit);
+  const [costingReviewAudit, setCostingReviewAudit] = useState(createEmptyValidationAudit);
   const [persistValidationView, setPersistValidationView] = useState(false);
+  const [persistCostingReviewView, setPersistCostingReviewView] = useState(false);
   const [proceedingToFormalRfq, setProceedingToFormalRfq] = useState(false);
+  const [costingSavePending, setCostingSavePending] = useState(false);
   const rfqFileInputRef = useRef(null);
+  const costingFileInputRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
   const resizeState = useRef({ startX: 0, startWidth: 420 });
@@ -849,8 +936,10 @@ export default function NewRfq() {
   );
   const hasPersistedDraft = Boolean(rfqId || rfqIdParam || form.id);
   const isPotentialDraft = form.status === "Potential";
-  const isPotentialTabLocked = hasPersistedDraft && !isPotentialDraft;
+  const isPotentialTabLocked = false;
   const isNewRfqTabLocked = hasPersistedDraft && isPotentialDraft;
+  const isPotentialAssistantLocked =
+    activeRfqTab === "potential" && hasPersistedDraft && !isPotentialDraft;
   const missingPotentialSharedFields = useMemo(
     () => getMissingPotentialSharedFields(form),
     [form]
@@ -865,6 +954,20 @@ export default function NewRfq() {
     validationAudit.approvedAt || validationAudit.rejectedAt
   );
   const isValidationRejected = Boolean(validationAudit.rejectedAt);
+  const canDownloadCostingTemplate = Boolean(
+    rfqId && validationAudit.approvedAt && !isValidationRejected
+  );
+  const templateDefaultFilename = rfqId
+    ? `${rfqId}_costing_feasibility_template.pdf`
+    : "costing_feasibility_template.pdf";
+  const hasRecordedCostingReviewDecision = Boolean(
+    costingReviewAudit.approvedAt || costingReviewAudit.rejectedAt
+  );
+  const isCostingReviewRejected = Boolean(costingReviewAudit.rejectedAt);
+  const allCostingFiles = useMemo(
+    () => [...costingFiles, ...pendingCostingFiles],
+    [costingFiles, pendingCostingFiles]
+  );
   const validationButtonsDisabled = Boolean(
     validationActionId || hasRecordedValidationDecision
   );
@@ -877,7 +980,7 @@ export default function NewRfq() {
       {
         role: "assistant",
         content:
-          "Please select your preferred language.\n1- English\n2- Français\n3- 中文\n4- Español\n5- Deutsch\n6- हिन्दी"
+          "Please select your preferred language.\n1- English\n2- FranÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ais\n3- ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡\n4- EspaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±ol\n5- Deutsch\n6- ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¿ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬"
       }
     ];
   }, [loadingRfq]);
@@ -886,9 +989,11 @@ export default function NewRfq() {
     activeRfqTab === "potential"
       ? POTENTIAL_CHATBOT_INITIAL_GREETING
       : RFQ_CHATBOT_INITIAL_GREETING;
+  const activeChatMessages =
+    activeRfqTab === "potential" ? potentialChatMessages : rfqChatMessages;
   const chatFeed = useMemo(
-    () => withInitialChatMessage(chatMessages, activeChatGreeting),
-    [activeChatGreeting, chatMessages]
+    () => withInitialChatMessage(activeChatMessages, activeChatGreeting),
+    [activeChatGreeting, activeChatMessages]
   );
   const stepCompletion = useMemo(() => {
     return Object.fromEntries(
@@ -985,12 +1090,39 @@ export default function NewRfq() {
   const isRfqFormView = isRfqStage && rfqDisplaySubPhase === "RFQ form";
   const isRfqValidationView =
     isRfqStage && rfqDisplaySubPhase === "Validation";
+  const isCostingStage = selectedStage === "In costing";
+  const costingDisplaySubPhase = isCostingStage
+    ? selectedSubPhase || getActiveDisplaySubPhase("In costing") || "Feasability"
+    : "";
+  const isCostingFeasabilityView =
+    isCostingStage && costingDisplaySubPhase === "Feasability";
+  const canReviewCostingFeasability = Boolean(
+    rfqId &&
+    isCostingFeasabilityView &&
+    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+  );
+  const costingReviewButtonsDisabled = Boolean(
+    !canReviewCostingFeasability || costingReviewActionId
+  );
+  const canSaveCostingFeasability = Boolean(
+    canReviewCostingFeasability &&
+    hasRecordedCostingReviewDecision &&
+    !isCostingReviewRejected &&
+    allCostingFiles.length &&
+    !costingSavePending
+  );
   const isRfqFormReadOnly =
     hasValidationLock && !rfqFormEditEnabled;
+  const lockNewRfqFields = true;
   const potentialFieldReadOnly = true;
   const isChatLocked =
-    isChatOnly || hasValidationLock || proceedingToFormalRfq;
-  const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
+    isChatOnly || hasValidationLock || proceedingToFormalRfq || isPotentialAssistantLocked;
+  const chatReadOnlyMessage =
+    isPotentialAssistantLocked && activeRfqTab === "potential"
+      ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
+      : "Chat is locked once the RFQ enters validation";
+  const rfqFormFieldReadOnly =
+    lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !isRfqFormReadOnly;
   const showRfqStepNavigation =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
@@ -1023,25 +1155,44 @@ export default function NewRfq() {
   useEffect(() => {
     const nextSelectedStage = normalizePipelineStageKey(activeStage);
     if (nextSelectedStage) {
-      if (persistValidationView) {
+      if (persistValidationView || persistCostingReviewView) {
         return;
       }
       setSelectedStage(nextSelectedStage);
       setSelectedSubPhase(getActiveDisplaySubPhase(nextSelectedStage));
     }
-  }, [activeStage, hasRecordedValidationDecision, persistValidationView]);
+  }, [
+    activeStage,
+    hasRecordedValidationDecision,
+    persistValidationView,
+    persistCostingReviewView
+  ]);
 
   useEffect(() => {
     const nextSelectedStage = normalizePipelineStageKey(activeStage);
     if (nextSelectedStage && selectedStage === nextSelectedStage) {
+      if (persistValidationView && selectedStage === "RFQ") {
+        return;
+      }
+      if (persistCostingReviewView && selectedStage === "In costing") {
+        return;
+      }
       setSelectedSubPhase(getActiveDisplaySubPhase(nextSelectedStage));
     }
-  }, [activeSubPhase, allStepsComplete, activeStage, selectedStage]);
+  }, [
+    activeSubPhase,
+    allStepsComplete,
+    activeStage,
+    selectedStage,
+    persistValidationView,
+    persistCostingReviewView
+  ]);
 
   useEffect(() => {
     setRfqFormEditEnabled(false);
     setRfqValidationReached(false);
     setPersistValidationView(false);
+    setPersistCostingReviewView(false);
   }, [rfqId]);
 
   useEffect(() => {
@@ -1099,15 +1250,16 @@ export default function NewRfq() {
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
     const isPotentialRecord = subStatusValue === "POTENTIAL";
-    const mappedFields = isPotentialRecord
-      ? {
-        ...mapRfqDataToForm(rfq),
-        ...mapPotentialToForm(rfq?.potential)
-      }
-      : mapRfqDataToForm(rfq);
+    const mappedFields = {
+      ...mapRfqDataToForm(rfq),
+      ...mapPotentialToForm(rfq?.potential)
+    };
     const nextUiStatus = mapBackendStatusToUi(rfq);
     const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
     setValidationAudit(extractValidationAudit(rfq, auditLogs));
+    setCostingReviewAudit(extractCostingReviewAudit(rfq, auditLogs));
+    setCostingFiles(normalizeCostingFiles(rfq));
+    setPendingCostingFiles([]);
     setDiscussionMessages(extractDiscussionMessages(rfq?.rfq_data));
     setRfqCreatedByEmail(String(rfq?.created_by_email || "").trim());
     setForm({
@@ -1144,11 +1296,14 @@ export default function NewRfq() {
       )
     );
     if (syncChat) {
-      const nextHistory = isPotentialRecord
-        ? rfq?.potential?.chat_history
-        : rfq?.chat_history;
-      setChatMessages((prev) =>
-        mergeChatWithAttachments(mapChatHistory(nextHistory), prev)
+      setPotentialChatMessages((prev) =>
+        mergeChatWithAttachments(
+          mapChatHistory(rfq?.potential?.chat_history),
+          prev
+        )
+      );
+      setRfqChatMessages((prev) =>
+        mergeChatWithAttachments(mapChatHistory(rfq?.chat_history), prev)
       );
     }
   };
@@ -1209,7 +1364,8 @@ export default function NewRfq() {
           if (!alive) return;
           setRfqId("");
           setForm(initialForm);
-          setChatMessages([]);
+          setPotentialChatMessages([]);
+          setRfqChatMessages([]);
           setActiveStage("RFQ");
           setSelectedStage("RFQ");
           setSelectedSubPhase("RFQ form");
@@ -1217,6 +1373,8 @@ export default function NewRfq() {
           setActiveStep("step-client");
           setServerFiles([]);
           setLocalFiles([]);
+          setCostingFiles([]);
+          setPendingCostingFiles([]);
           setDiscussionMessages([]);
           setDiscussionDraft("");
           setDiscussionSending(false);
@@ -1224,11 +1382,14 @@ export default function NewRfq() {
           setRfqCreatedByEmail("");
           setValidationSuccess("");
           setValidationAudit(createEmptyValidationAudit());
+          setCostingReviewAudit(createEmptyValidationAudit());
           setRejectModalOpen(false);
           setRejectReason("");
           setRfqFormEditEnabled(false);
           setRfqValidationReached(false);
           setPersistValidationView(false);
+          setPersistCostingReviewView(false);
+          setCostingSavePending(false);
           return;
         }
 
@@ -1288,7 +1449,37 @@ export default function NewRfq() {
     };
   }, [filePreview]);
 
+  useEffect(() => {
+    return () => {
+      if (templatePreviewUrl) {
+        window.URL.revokeObjectURL(templatePreviewUrl);
+      }
+    };
+  }, [templatePreviewUrl]);
+
+  useEffect(() => {
+    setTemplatePreviewFilename("");
+    setTemplatePreviewModalOpen(false);
+    setCostingReviewActionId("");
+    setCostingRejectModalOpen(false);
+    setCostingRejectReason("");
+    setPendingCostingFiles([]);
+    setCostingSavePending(false);
+    setTemplatePreviewUrl((current) => {
+      if (current) {
+        window.URL.revokeObjectURL(current);
+      }
+      return "";
+    });
+  }, [rfqId]);
+
   const handleChange = (event) => {
+    if (activeRfqTab === "potential" && potentialFieldReadOnly) {
+      return;
+    }
+    if (activeRfqTab === "new" && rfqFormFieldReadOnly) {
+      return;
+    }
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
   };
 
@@ -1445,6 +1636,7 @@ export default function NewRfq() {
 
   const handleStageChange = (stageKey) => {
     setPersistValidationView(false);
+    setPersistCostingReviewView(false);
     setSelectedStage(stageKey);
     const stage = PIPELINE_STAGES.find((entry) => entry.key === stageKey);
     setSelectedSubPhase(
@@ -1456,6 +1648,7 @@ export default function NewRfq() {
 
   const handleSubPhaseChange = (stageKey, subPhase) => {
     setPersistValidationView(false);
+    setPersistCostingReviewView(false);
     if (
       stageKey === "RFQ" &&
       subPhase === "Validation" &&
@@ -1504,6 +1697,11 @@ export default function NewRfq() {
   };
 
   const handleChatSend = async (message, attachments = []) => {
+    const activeChatMode = activeRfqTab === "potential" ? "potential" : "rfq";
+    const setActiveChatMessages =
+      activeChatMode === "potential"
+        ? setPotentialChatMessages
+        : setRfqChatMessages;
     const trimmedMessage = message ? message.trim() : "";
     const attachmentNames = (attachments || [])
       .map((attachment) => attachment.name || attachment.file?.name)
@@ -1514,7 +1712,7 @@ export default function NewRfq() {
     const displayMessage = trimmedMessage || fallbackMessage;
     const payloadMessage = trimmedMessage || fallbackMessage;
 
-    setChatMessages((prev) => [
+    setActiveChatMessages((prev) => [
       ...prev,
       { role: "user", content: displayMessage, attachments }
     ]);
@@ -1523,7 +1721,7 @@ export default function NewRfq() {
     try {
       currentRfqId = await ensureRfqExists();
     } catch {
-      setChatMessages((prev) => [
+      setActiveChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
@@ -1557,7 +1755,7 @@ export default function NewRfq() {
         }
       } catch {
         setRfqError("Unable to upload file. Please try again.");
-        setChatMessages((prev) => [
+        setActiveChatMessages((prev) => [
           ...prev,
           {
             role: "assistant",
@@ -1581,7 +1779,7 @@ export default function NewRfq() {
     let replyRfq = null;
     try {
       const reply =
-        activeRfqTab === "potential"
+        activeChatMode === "potential"
           ? await sendPotentialChat(currentRfqId, payloadMessage)
           : await sendChat(currentRfqId, payloadMessage, "rfq");
       shouldAutoRedirect = Boolean(reply?.auto_redirect);
@@ -1591,7 +1789,7 @@ export default function NewRfq() {
         applyRfq(replyRfq);
       }
     } catch {
-      setChatMessages((prev) => [
+      setActiveChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
@@ -1601,7 +1799,7 @@ export default function NewRfq() {
     } finally {
       const synced = await syncRfq(currentRfqId);
       if (!synced && finalAssistantResponse && !replyRfq) {
-        setChatMessages((prev) => [
+        setActiveChatMessages((prev) => [
           ...prev,
           { role: "assistant", content: finalAssistantResponse }
         ]);
@@ -1666,9 +1864,9 @@ export default function NewRfq() {
     try {
       await validateRfq(rfqId, { approved: true });
       await syncRfq(rfqId);
-      setPersistValidationView(true);
-      setSelectedStage("RFQ");
-      setSelectedSubPhase("Validation");
+      setPersistValidationView(false);
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Feasability");
       setValidationSuccess("RFQ approved successfully.");
     } catch (error) {
       setRfqError(error?.message || "Unable to approve this RFQ.");
@@ -1677,11 +1875,203 @@ export default function NewRfq() {
     }
   };
 
+  const loadCostingTemplatePreview = async () => {
+    if (!rfqId || templatePreviewPending) return null;
+    if (templatePreviewUrl) {
+      return {
+        url: templatePreviewUrl,
+        filename: templatePreviewFilename || templateDefaultFilename
+      };
+    }
+
+    setTemplatePreviewPending(true);
+    setRfqError("");
+    try {
+      const { blob, filename } = await downloadCostingTemplate(rfqId);
+      const nextUrl = window.URL.createObjectURL(blob);
+      const nextFilename = filename || templateDefaultFilename;
+      setTemplatePreviewFilename(nextFilename);
+      setTemplatePreviewUrl((current) => {
+        if (current) {
+          window.URL.revokeObjectURL(current);
+        }
+        return nextUrl;
+      });
+      return { url: nextUrl, filename: nextFilename };
+    } catch (error) {
+      setRfqError(error?.message || "Unable to load the RFQ data PDF preview.");
+      return null;
+    } finally {
+      setTemplatePreviewPending(false);
+    }
+  };
+
+  const handleOpenCostingPdfPreview = async () => {
+    if (!canDownloadCostingTemplate || templatePreviewPending) return;
+    const template = templatePreviewUrl
+      ? {
+        url: templatePreviewUrl,
+        filename: templatePreviewFilename || templateDefaultFilename
+      }
+      : await loadCostingTemplatePreview();
+    if (!template?.url) {
+      return;
+    }
+    setTemplatePreviewModalOpen(true);
+  };
+
+  const handleDownloadCostingPdfTemplate = async () => {
+    if (!rfqId || templateDownloadPending) return;
+    setTemplateDownloadPending(true);
+    try {
+      const template = templatePreviewUrl
+        ? {
+          url: templatePreviewUrl,
+          filename: templatePreviewFilename || templateDefaultFilename
+        }
+        : await loadCostingTemplatePreview();
+      if (!template?.url) {
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = template.url;
+      link.download = template.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      setTemplateDownloadPending(false);
+    }
+  };
+
+  const handleApproveCostingReview = async () => {
+    if (!rfqId || costingReviewActionId) return;
+    setCostingReviewActionId("approve");
+    setValidationSuccess("");
+    setRfqError("");
+    try {
+      await submitCostingReview(rfqId, { scope: true });
+      await syncRfq(rfqId);
+      setPersistCostingReviewView(true);
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Feasability");
+      setValidationSuccess("Feasibility approved. Upload the feasibility file and click Save to move to pricing.");
+    } catch (error) {
+      setRfqError(error?.message || "Unable to approve this feasibility review.");
+    } finally {
+      setCostingReviewActionId("");
+    }
+  };
+
+  const handleRejectCostingReview = () => {
+    if (costingReviewActionId) return;
+    setValidationSuccess("");
+    setRfqError("");
+    setCostingRejectModalOpen(true);
+  };
+
+  const handleCloseCostingRejectModal = () => {
+    if (costingReviewActionId === "reject") return;
+    setCostingRejectModalOpen(false);
+    setCostingRejectReason("");
+    setRfqError("");
+  };
+
+  const handleConfirmCostingRejectReview = async () => {
+    if (!rfqId) return;
+    if (!String(costingRejectReason || "").trim()) {
+      setRfqError("Please provide a rejection reason.");
+      return;
+    }
+    setCostingReviewActionId("reject");
+    setValidationSuccess("");
+    setRfqError("");
+    try {
+      await submitCostingReview(rfqId, {
+        scope: false,
+        rejection_reason: String(costingRejectReason).trim()
+      });
+      await syncRfq(rfqId);
+      setPersistCostingReviewView(true);
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Feasability");
+      setCostingRejectModalOpen(false);
+      setCostingRejectReason("");
+      setValidationSuccess("Feasibility rejected successfully.");
+    } catch (error) {
+      setRfqError(error?.message || "Unable to reject this feasibility review.");
+    } finally {
+      setCostingReviewActionId("");
+    }
+  };
+
+  const handleCostingFilesChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const nextFiles = files.map((file) => ({
+      id: `costing-local-${file.name}-${file.size}-${file.lastModified}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      name: file.name,
+      file,
+      source: "local",
+      size: file.size,
+      updatedAt: file.lastModified ? new Date(file.lastModified).toISOString() : "",
+      owner: currentUserLabel
+    }));
+    setPendingCostingFiles((prev) => [...prev, ...nextFiles]);
+    if (costingFileInputRef.current) {
+      costingFileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemovePendingCostingFile = (fileId) => {
+    setPendingCostingFiles((prev) => prev.filter((file) => file.id !== fileId));
+  };
+
+  const handleSaveCostingFeasability = async () => {
+    if (!rfqId || costingSavePending) return;
+    if (!hasRecordedCostingReviewDecision || isCostingReviewRejected) {
+      setRfqError("Only an approved feasibility review can be saved to pricing.");
+      return;
+    }
+    if (!allCostingFiles.length) {
+      setRfqError("Please upload at least one feasibility file before saving.");
+      return;
+    }
+
+    setCostingSavePending(true);
+    setValidationSuccess("");
+    setRfqError("");
+
+    try {
+      for (const file of pendingCostingFiles) {
+        await uploadCostingFile(rfqId, file.file);
+      }
+
+      await advanceRfqStatus(rfqId, {
+        target_phase: "COSTING",
+        target_sub_status: "PRICING"
+      });
+
+      setPersistCostingReviewView(false);
+      await syncRfq(rfqId);
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Pricing");
+      setValidationSuccess("Feasibility file saved and RFQ moved to pricing.");
+    } catch (error) {
+      setRfqError(error?.message || "Unable to save the feasibility file and move to pricing.");
+    } finally {
+      setCostingSavePending(false);
+    }
+  };
+
   const handleRejectValidation = async () => {
     setValidationSuccess("");
     setRfqError("");
     setRejectModalOpen(true);
   };
+
 
   const handleCloseRejectModal = () => {
     if (validationActionId === "reject") return;
@@ -1946,8 +2336,8 @@ export default function NewRfq() {
                         : "hover:text-ink"
                         }`}
                       title={
-                        isPotentialTabLocked
-                          ? "Potential is locked once the formal RFQ begins."
+                        !isPotentialDraft
+                          ? "Potential remains available for reference. The Potential assistant is locked once the formal RFQ begins."
                           : "Potential"
                       }
                     >
@@ -2068,7 +2458,7 @@ export default function NewRfq() {
                                     <p className="mt-1 text-xs text-slate-500">
                                       {[formatFileDate(file.updatedAt), formatFileSize(file.size), getFileExtension(file.name).toLowerCase()]
                                         .filter(Boolean)
-                                        .join(" • ")}
+                                        .join(" ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ")}
                                     </p>
                                   </div>
                                 </div>
@@ -2131,9 +2521,353 @@ export default function NewRfq() {
                 }}
               >
                 {!isRfqStage ? (
-                  <div className="col-span-full flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200/80 bg-white/70 text-sm font-medium text-slate-500">
-                    Empty stage
-                  </div>
+                  isCostingFeasabilityView ? (
+                    <section className="card col-span-full flex min-h-[280px] flex-col gap-6 overflow-x-hidden overflow-y-auto p-6 sm:p-8 lg:h-full lg:min-h-0">
+                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="max-w-3xl">
+                            <h3 className="mt-2 font-display text-xl text-ink sm:text-2xl"> 
+                              RFQ Data
+                            </h3>
+                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                              Use Preview to open the PDF in a modal, or Download to save it.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleOpenCostingPdfPreview}
+                              disabled={!canDownloadCostingTemplate || templatePreviewPending}
+                            >
+                              <Eye className="h-4 w-4" />
+                              {templatePreviewPending ? "Preparing preview..." : "Preview PDF"}
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleDownloadCostingPdfTemplate}
+                              disabled={!canDownloadCostingTemplate || templateDownloadPending}
+                            >
+                              <Files className="h-4 w-4" />
+                              {templateDownloadPending
+                                ? "Preparing PDF file..."
+                                : "Download PDF"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                              RFQ files
+                            </h2>
+                          </div>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                            {sortedFiles.length} file{sortedFiles.length > 1 ? "s" : ""}
+                          </span>
+                        </div>
+
+                        {sortedFiles.length ? (
+                          <div className="mt-5 divide-y divide-slate-200/70 rounded-2xl border border-slate-200/70 bg-white/70 px-4">
+                            {sortedFiles.map((file) => {
+                              const canPreview = Boolean(file.url);
+                              const isPreviewing = filePreviewLoadingId === file.id;
+                              return (
+                                <div
+                                  key={`costing-drawing-${file.id}`}
+                                  className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                  <div className="min-w-0 flex items-center gap-3">
+                                    <span
+                                      className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                    >
+                                      {getFileExtension(file.name).slice(0, 4)}
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-ink">
+                                        {file.name}
+                                      </p>
+                                      <p className="mt-1 text-xs text-slate-500">
+                                        {[formatFileDate(file.updatedAt), formatFileSize(file.size), getFileExtension(file.name).toLowerCase()]
+                                          .filter(Boolean)
+                                          .join(" • ")}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handlePreviewFile(file)}
+                                      disabled={!canPreview || isPreviewing}
+                                    >
+                                      {isPreviewing ? "Loading..." : "Preview"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-5 px-1 py-2">
+                            <p className="text-sm font-semibold text-ink">
+                              No drawing files uploaded yet
+                            </p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              Upload RFQ files in{" "}
+                              <span className="font-medium text-ink">New RFQ &gt; Step 1</span> and they
+                              will appear here.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="max-w-2xl">
+                            <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                              Reception review
+                            </h2>
+                          </div>
+                        </div>
+
+                        {hasRecordedCostingReviewDecision ? (
+                          <section
+                            className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${
+                              isCostingReviewRejected
+                                ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
+                                : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
+                            }`}
+                          >
+                            <div
+                              className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${
+                                isCostingReviewRejected ? "border-red-100/80" : "border-emerald-100/80"
+                              }`}
+                            >
+                              <div className="space-y-2">
+                                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                                  Reception audit
+                                </p>
+                                <div>
+                                  <h4 className="text-lg font-semibold text-ink">
+                                    Decision recorded
+                                  </h4>
+                                </div>
+                              </div>
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${
+                                  isCostingReviewRejected
+                                    ? "border-red-200 bg-red-50 text-red-700"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                }`}
+                              >
+                                {isCostingReviewRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                                {isCostingReviewRejected ? "Rejected" : "Approved"}
+                              </span>
+                            </div>
+
+                            <div className="mt-5 grid gap-4 md:grid-cols-2">
+                              {isCostingReviewRejected ? (
+                                <>
+                                  <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Rejected at
+                                    </p>
+                                    <p className="mt-2 text-base font-semibold text-ink">
+                                      {formatValidationAuditDate(costingReviewAudit.rejectedAt)}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Rejected by
+                                    </p>
+                                    <p className="mt-2 text-base font-semibold text-ink">
+                                      {formatValidationAuditValue(costingReviewAudit.rejectedBy)}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Rejection reason
+                                    </p>
+                                    <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
+                                      {formatValidationAuditValue(costingReviewAudit.rejectionReason)}
+                                    </p>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Approved at
+                                    </p>
+                                    <p className="mt-2 text-base font-semibold text-ink">
+                                      {formatValidationAuditDate(costingReviewAudit.approvedAt)}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Approved by
+                                    </p>
+                                    <p className="mt-2 text-base font-semibold text-ink">
+                                      {formatValidationAuditValue(costingReviewAudit.approvedBy)}
+                                    </p>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </section>
+                        ) : (
+                          <div className="mt-5 flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleRejectCostingReview}
+                              disabled={costingReviewButtonsDisabled}
+                              title={
+                                canReviewCostingFeasability
+                                  ? "Reject feasibility"
+                                  : "Only the owner or costing team can review feasibility."
+                              }
+                            >
+                              <X className="h-4 w-4" />
+                              {costingReviewActionId === "reject" ? "Rejecting..." : "Reject"}
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleApproveCostingReview}
+                              disabled={costingReviewButtonsDisabled}
+                              title={
+                                canReviewCostingFeasability
+                                  ? "Approve feasibility"
+                                  : "Only the owner or costing team can review feasibility."
+                              }
+                            >
+                              <Check className="h-4 w-4" />
+                              {costingReviewActionId === "approve" ? "Approving..." : "Approve"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {hasRecordedCostingReviewDecision && !isCostingReviewRejected ? (
+                        <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 shadow-soft">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="max-w-2xl">
+                              <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                Feasibility file
+                              </h2>
+                              <p className="mt-2 text-sm leading-7 text-slate-600">
+                                Upload the feasibility document, then click Save to move this RFQ to pricing.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => costingFileInputRef.current?.click()}
+                                disabled={!canReviewCostingFeasability || costingSavePending}
+                              >
+                                <Upload className="h-4 w-4" />
+                                Add feasibility file
+                              </button>
+                              <input
+                                ref={costingFileInputRef}
+                                type="file"
+                                multiple
+                                className="hidden"
+                                onChange={handleCostingFilesChange}
+                                disabled={!canReviewCostingFeasability || costingSavePending}
+                              />
+                            </div>
+                          </div>
+
+                          {allCostingFiles.length ? (
+                            <div className="mt-5 divide-y divide-slate-200/70 rounded-2xl border border-slate-200/80 bg-white/90 px-4">
+                              {allCostingFiles.map((file) => {
+                                const isPending = file.source === "local";
+                                return (
+                                  <div
+                                    key={`feasibility-file-${file.id}`}
+                                    className="flex flex-col gap-3 py-4 first:pt-4 last:pb-4 sm:flex-row sm:items-center sm:justify-between"
+                                  >
+                                    <div className="min-w-0 flex items-center gap-3">
+                                      <span
+                                        className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                      >
+                                        {getFileExtension(file.name).slice(0, 4)}
+                                      </span>
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-semibold text-ink">
+                                          {file.name}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          {[formatFileDate(file.updatedAt), formatFileSize(file.size), isPending ? "Pending upload" : "Uploaded"]
+                                            .filter(Boolean)
+                                            .join(" | ")}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      {isPending ? (
+                                        <button
+                                          type="button"
+                                          className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                          onClick={() => handleRemovePendingCostingFile(file.id)}
+                                          disabled={costingSavePending}
+                                        >
+                                          Remove
+                                        </button>
+                                      ) : (
+                                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+                                          Uploaded
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
+                              <p className="text-sm font-semibold text-ink">
+                                No feasibility file uploaded yet
+                              </p>
+                              <p className="mt-2 text-sm text-slate-500">
+                                Add the feasibility document, then save to move forward.
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="mt-5 flex justify-end">
+                            <button
+                              type="button"
+                              className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleSaveCostingFeasability}
+                              disabled={!canSaveCostingFeasability}
+                              title={
+                                canSaveCostingFeasability
+                                  ? "Save feasibility and move to pricing"
+                                  : "Approve feasibility and upload at least one file before saving."
+                              }
+                            >
+                              <Check className="h-4 w-4" />
+                              {costingSavePending ? "Saving..." : "Save"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : (
+                    <div className="col-span-full flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200/80 bg-white/70 text-sm font-medium text-slate-500">
+                      Empty stage
+                    </div>
+                  )
                 ) : null}
 
                 {isRfqFormView && activeRfqTab === "potential" ? (
@@ -2172,9 +2906,9 @@ export default function NewRfq() {
                         </div>
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Customer" name="potentialCustomer" value={form.potentialCustomer} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Customer location" name="potentialCustomerLocation" value={form.potentialCustomerLocation} onChange={handleChange} readOnly={potentialFieldReadOnly} />
-                          <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
+                          <FormField label="Application" name="potentialApplication" value={form.potentialApplication} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                           <FormField label="Industry served" name="potentialIndustry" value={form.potentialIndustry} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Planned product type" name="potentialProductType" value={form.potentialProductType} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                         </div>
@@ -2304,10 +3038,10 @@ export default function NewRfq() {
                         </div>
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2">
-                          <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={potentialFieldReadOnly} />
-                          <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
-                          <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={potentialFieldReadOnly} />
-                          <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact name" name="potentialContactName" value={form.potentialContactName} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact function" name="potentialContactFunction" value={form.potentialContactFunction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact phone" name="potentialContactPhone" value={form.potentialContactPhone} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact email" name="potentialContactEmail" type="email" value={form.potentialContactEmail} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                         </div>
                       </section>
 
@@ -2316,7 +3050,7 @@ export default function NewRfq() {
                           <div>
                             <h3 className="font-display text-xl text-ink">Proceed to formal RFQ</h3>
                             <p className="mt-2 text-sm text-slate-500">
-                              When the shared Potential fields are complete, promote this opportunity and lock the Potential tab.
+                              When the shared Potential fields are complete, promote this opportunity to New RFQ while keeping the Potential tab available as reference.
                             </p>
                           </div>
                           <button
@@ -2333,11 +3067,6 @@ export default function NewRfq() {
                             {proceedingToFormalRfq ? "Proceeding..." : "Proceed to Formal RFQ"}
                           </button>
                         </div>
-                        {missingPotentialSharedFields.length ? (
-                          <p className="mt-3 text-sm text-slate-500">
-                            Missing shared fields: {missingPotentialSharedFields.join(", ")}
-                          </p>
-                        ) : null}
                       </section>
                     </div>
                   </form>
@@ -2811,6 +3540,10 @@ export default function NewRfq() {
                             <h2 className="font-display text-xl text-ink sm:text-2xl">
                               Step {stepIndex + 1}: {activeStepData.label}
                             </h2>
+                            <p className="mt-2 max-w-2xl text-sm text-slate-500">
+                              The New RFQ form is locked for direct editing and mirrors the chatbot.
+                              Use the chat panel to update these fields.
+                            </p>
                           </div>
                         </div>
 
@@ -3215,6 +3948,7 @@ export default function NewRfq() {
                           messages={chatFeed}
                           onSend={handleChatSend}
                           readOnly={isChatLocked}
+                          readOnlyMessage={chatReadOnlyMessage}
                           onCollapse={() => setChatCollapsed(true)}
                           eyebrow={activeRfqTab === "potential" ? "Potential" : "Chatbot"}
                           title={
@@ -3544,6 +4278,60 @@ export default function NewRfq() {
         </div>
       ) : null}
 
+      {templatePreviewModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => setTemplatePreviewModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="chat-modal chat-modal--preview"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Costing feasibility PDF preview"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">{templatePreviewFilename || templateDefaultFilename}</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="outline-button px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={handleDownloadCostingPdfTemplate}
+                  disabled={templateDownloadPending}
+                >
+                  {templateDownloadPending ? "Preparing PDF file..." : "Download PDF"}
+                </button>
+                <button
+                  type="button"
+                  className="chat-modal-close"
+                  onClick={() => setTemplatePreviewModalOpen(false)}
+                  aria-label="Close PDF preview"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M6 6l12 12" />
+                    <path d="M18 6l-12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="chat-modal-body">
+              {templatePreviewUrl ? (
+                <iframe
+                  title="Costing feasibility PDF preview"
+                  src={templatePreviewUrl}
+                  className="chat-modal-frame"
+                />
+              ) : (
+                <div className="chat-modal-fallback">
+                  <p>Preview not available for this PDF.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {fileDeleteTarget ? (
         <div
           className="chat-modal-backdrop"
@@ -3660,6 +4448,74 @@ export default function NewRfq() {
                   >
                     <X className="h-4 w-4" />
                     {validationActionId === "reject" ? "Rejecting..." : "Reject"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {costingRejectModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleCloseCostingRejectModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Reject feasibility"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header border-b-red-100 bg-red-50/70">
+              <p className="chat-modal-title text-red-700">Reject feasibility</p>
+              <button
+                type="button"
+                className="chat-modal-close h-10 w-10 rounded-xl border border-red-200/70 bg-white text-red-500 shadow-sm hover:border-red-300 hover:bg-red-50"
+                onClick={handleCloseCostingRejectModal}
+                aria-label="Close feasibility reject modal"
+                disabled={costingReviewActionId === "reject"}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body bg-gradient-to-b from-red-50/30 to-white">
+              <div className="chat-modal-fallback w-full">
+                <p className="text-slate-600">
+                  Please provide the rejection reason before continuing.
+                </p>
+                <label className="mt-2 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-red-600">
+                  <span>Reason</span>
+                  <textarea
+                    className="textarea-field min-h-[120px] border-red-200/80 bg-white focus:border-red-300 focus:ring-red-200"
+                    value={costingRejectReason}
+                    onChange={(event) => setCostingRejectReason(event.target.value)}
+                    placeholder="Explain why this feasibility is rejected..."
+                    disabled={costingReviewActionId === "reject"}
+                  />
+                </label>
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="inline-flex min-w-[116px] items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleCloseCostingRejectModal}
+                    disabled={costingReviewActionId === "reject"}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-2xl border border-red-300 bg-red-500 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:border-red-400 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleConfirmCostingRejectReview}
+                    disabled={costingReviewActionId === "reject"}
+                  >
+                    <X className="h-4 w-4" />
+                    {costingReviewActionId === "reject" ? "Rejecting..." : "Reject"}
                   </button>
                 </div>
               </div>

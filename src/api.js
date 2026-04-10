@@ -61,6 +61,73 @@ async function request(
   }
 }
 
+function extractFilenameFromDisposition(contentDisposition) {
+  if (!contentDisposition) return "";
+  const utfMatch = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    return decodeURIComponent(utfMatch[1]).trim();
+  }
+  const plainMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1].trim();
+  }
+  const unquotedMatch = contentDisposition.match(/filename\s*=\s*([^;]+)/i);
+  return unquotedMatch?.[1]?.trim() || "";
+}
+
+async function requestBinary(path, { method = "GET", headers, auth = true } = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const finalHeaders = { ...(headers || {}) };
+
+  if (auth) {
+    const token = getToken();
+    if (token) {
+      finalHeaders.Authorization = `Bearer ${token}`;
+    }
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: finalHeaders,
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text || "Request failed";
+      try {
+        const json = JSON.parse(text);
+        if (json?.detail) {
+          message = json.detail;
+        }
+      } catch (error) {
+        // ignore JSON parse errors
+      }
+      const err = new Error(message);
+      err.status = response.status;
+      throw err;
+    }
+
+    return {
+      blob: await response.blob(),
+      filename: extractFilenameFromDisposition(
+        response.headers.get("Content-Disposition") || ""
+      )
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      const err = new Error("Request timed out. Please try again.");
+      err.status = 408;
+      throw err;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function login(payload) {
   const data = await request("/api/auth/login", {
     method: "POST",
@@ -121,6 +188,24 @@ export async function validateRfq(rfqId, payload) {
   });
 }
 
+export async function submitCostingReview(rfqId, payload) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing_review`, {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function advanceRfqStatus(rfqId, payload) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/advance`, {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function downloadCostingTemplate(rfqId) {
+  return requestBinary(`/api/rfq/${encodeURIComponent(rfqId)}/costing-template`);
+}
+
 export async function sendChat(rfqId, message, chatMode = "rfq") {
   return request("/api/chat", {
     method: "POST",
@@ -145,6 +230,16 @@ export async function uploadRfqFile(rfqId, file) {
   const formData = new FormData();
   formData.append("file", file);
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/upload`, {
+    method: "POST",
+    body: formData,
+    isForm: true
+  });
+}
+
+export async function uploadCostingFile(rfqId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/api/actions/upload-costing?rfq_id=${encodeURIComponent(rfqId)}`, {
     method: "POST",
     body: formData,
     isForm: true

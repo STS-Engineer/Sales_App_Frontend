@@ -174,6 +174,7 @@ export default function ChatPanel({
   onSend,
   onCollapse,
   readOnly = false,
+  readOnlyMessage = "Chat is locked once the RFQ enters validation",
   eyebrow = "Chatbot",
   title = "RFQ Assistant"
 }) {
@@ -509,7 +510,7 @@ export default function ChatPanel({
               className="chat-input-textarea w-full resize-none py-3 pl-12 pr-20"
               placeholder={
                 readOnly
-                  ? "Chat is locked once the RFQ enters validation"
+                  ? readOnlyMessage
                   : "Type your message"
               }
               value={input}

@@ -244,18 +244,22 @@ export const mapPotentialToForm = (potential) => {
       data.potential_systematic_id,
       data.potentialSystematicId
     ),
-    customer: pickFirst(data.customer, data.customer_name, data.customerName),
+    potentialCustomer: pickFirst(
+      data.customer,
+      data.customer_name,
+      data.customerName
+    ),
     potentialCustomerLocation: pickFirst(
       data.customer_location,
       data.customerLocation,
       data.potential_customer_location,
       data.potentialCustomerLocation
     ),
-    application: pickFirst(data.application),
-    contactName: pickFirst(data.contact_name, data.contactName),
-    contactEmail: pickFirst(data.contact_email, data.contactEmail),
-    contactPhone: pickFirst(data.contact_phone, data.contactPhone),
-    contactFunction: pickFirst(
+    potentialApplication: pickFirst(data.application),
+    potentialContactName: pickFirst(data.contact_name, data.contactName),
+    potentialContactEmail: pickFirst(data.contact_email, data.contactEmail),
+    potentialContactPhone: pickFirst(data.contact_phone, data.contactPhone),
+    potentialContactFunction: pickFirst(
       data.contact_function,
       data.contactFunction,
       data.contact_role
