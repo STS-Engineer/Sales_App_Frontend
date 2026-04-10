@@ -1116,7 +1116,11 @@ export default function NewRfq() {
   const lockNewRfqFields = true;
   const potentialFieldReadOnly = true;
   const isChatLocked =
-    isChatOnly || hasValidationLock || proceedingToFormalRfq;
+    isChatOnly || hasValidationLock || proceedingToFormalRfq || isPotentialAssistantLocked;
+  const chatReadOnlyMessage =
+    isPotentialAssistantLocked && activeRfqTab === "potential"
+      ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
+      : "Chat is locked once the RFQ enters validation";
   const rfqFormFieldReadOnly = isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !isRfqFormReadOnly;
   const showRfqStepNavigation =
