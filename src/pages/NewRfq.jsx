@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Eye, Files, MessageSquare, Pencil, SendHorizontal, Trash2, Upload, X } from "lucide-react";
 import { getToken, getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import costingTemplate from "../assets/costing_template.xlsm?url";
+import feasibilityTemplate from "../assets/feasibility_template.xlsm?url";
 import ChatPanel from "../components/ChatPanel.jsx";
 import FormField from "../components/FormField.jsx";
 import TopBar from "../components/TopBar.jsx";
@@ -12,7 +14,9 @@ import {
   downloadCostingTemplate,
   deleteRfqFile,
   getRfqAuditLogs,
+  getRfqDiscussion,
   getRfq,
+  postRfqDiscussion,
   proceedToFormalRfq,
   sendChat,
   sendPotentialChat,
@@ -584,8 +588,6 @@ const formatFileSize = (value) => {
 
 const normalizeEmailValue = (value) => String(value || "").trim().toLowerCase();
 
-const DISCUSSION_STORAGE_KEYS = ["discussion_messages", "discussionMessages"];
-
 const normalizeDiscussionMessage = (entry, index = 0) => {
   const content = String(entry?.content || entry?.message || "").trim();
   if (!content) return null;
@@ -607,36 +609,14 @@ const normalizeDiscussionMessage = (entry, index = 0) => {
   };
 };
 
-const extractDiscussionMessages = (rfqData = {}) => {
-  const raw = DISCUSSION_STORAGE_KEYS.find((key) => Array.isArray(rfqData?.[key]))
-    ? rfqData[DISCUSSION_STORAGE_KEYS.find((key) => Array.isArray(rfqData?.[key]))]
-    : [];
-
-  return raw
+const mapDiscussionMessages = (messages = []) =>
+  messages
     .map((entry, index) => normalizeDiscussionMessage(entry, index))
     .filter(Boolean)
     .sort(
       (left, right) =>
         parseFileTimestamp(left?.createdAt) - parseFileTimestamp(right?.createdAt)
     );
-};
-
-const createDiscussionMessage = ({
-  content,
-  authorEmail,
-  authorName,
-  authorRole
-}) => ({
-  id:
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `discussion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  content,
-  created_at: new Date().toISOString(),
-  author_email: authorEmail,
-  author_name: authorName,
-  author_role: authorRole
-});
 
 const formatDiscussionDate = (value) => {
   if (!value) return "Just now";
@@ -668,6 +648,10 @@ const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
 const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const omitUndefinedValues = (obj = {}) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined)
+  );
 const withInitialChatMessage = (messages = [], greeting) => {
   const initialMessage = {
     role: "assistant",
@@ -827,13 +811,14 @@ export default function NewRfq() {
   const currentUserEmail = String(currentUserProfile?.email || "").trim();
   const currentUserRole = String(currentUserProfile?.role || "").trim();
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(() => ({ ...initialForm }));
   const [saving, setSaving] = useState(false);
   const [rfqId, setRfqId] = useState("");
   const [potentialChatMessages, setPotentialChatMessages] = useState([]);
   const [rfqChatMessages, setRfqChatMessages] = useState([]);
   const [loadingRfq, setLoadingRfq] = useState(false);
   const [rfqError, setRfqError] = useState("");
+  const [rfqSubStatus, setRfqSubStatus] = useState("");
   const [activeStage, setActiveStage] = useState("RFQ");
   const [selectedStage, setSelectedStage] = useState("RFQ");
   const [selectedSubPhase, setSelectedSubPhase] = useState("");
@@ -850,8 +835,9 @@ export default function NewRfq() {
   const [discussionMessages, setDiscussionMessages] = useState([]);
   const [discussionDraft, setDiscussionDraft] = useState("");
   const [discussionSending, setDiscussionSending] = useState(false);
+  const [discussionLoading, setDiscussionLoading] = useState(false);
+  const [discussionError, setDiscussionError] = useState("");
   const [discussionModalOpen, setDiscussionModalOpen] = useState(false);
-  const [rfqCreatedByEmail, setRfqCreatedByEmail] = useState("");
   const [filePreview, setFilePreview] = useState(null);
   const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
@@ -1134,11 +1120,12 @@ export default function NewRfq() {
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
   const showChatPanel =
     isRfqStage && !isRfqValidationView && activeRfqTab !== "files";
-  const canParticipateInDiscussion = useMemo(() => {
-    if (currentUserRole === "OWNER") return true;
-    if (!rfqId && !rfqIdParam) return true;
-    return normalizeEmailValue(currentUserEmail) === normalizeEmailValue(rfqCreatedByEmail);
-  }, [currentUserEmail, currentUserRole, rfqCreatedByEmail, rfqId, rfqIdParam]);
+  const activeDiscussionPhase = useMemo(() => {
+    if (activeRfqTab === "potential") return "POTENTIAL";
+    if (activeRfqTab === "new") return "NEW_RFQ";
+    return rfqSubStatus || (isPotentialDraft ? "POTENTIAL" : "NEW_RFQ");
+  }, [activeRfqTab, isPotentialDraft, rfqSubStatus]);
+  const canParticipateInDiscussion = Boolean(currentUserEmail || currentUserRole);
   const getNextStepId = (stepId) => {
     const currentIndex = stepIds.indexOf(stepId);
     if (currentIndex < 0 || currentIndex >= stepIds.length - 1) {
@@ -1249,23 +1236,27 @@ export default function NewRfq() {
   const prevStepId = stepIndex > 0 ? stepIds[stepIndex - 1] : "";
   const canGoPrev = Boolean(prevStepId);
 
-  const applyRfq = (rfq, { syncChat = true, auditLogs = [] } = {}) => {
+  const applyRfq = (
+    rfq,
+    { syncChat = true, auditLogs = [], preserveActiveTab = false } = {}
+  ) => {
     if (!rfq) return;
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
     const isPotentialRecord = subStatusValue === "POTENTIAL";
-    const mappedFields = {
+    const mappedFields = omitUndefinedValues({
       ...mapRfqDataToForm(rfq),
       ...mapPotentialToForm(rfq?.potential)
-    };
+    });
     const nextUiStatus = mapBackendStatusToUi(rfq);
     const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
     setValidationAudit(extractValidationAudit(rfq, auditLogs));
     setCostingReviewAudit(extractCostingReviewAudit(rfq, auditLogs));
     setCostingFiles(normalizeCostingFiles(rfq));
     setPendingCostingFiles([]);
-    setDiscussionMessages(extractDiscussionMessages(rfq?.rfq_data));
-    setRfqCreatedByEmail(String(rfq?.created_by_email || "").trim());
+    setRfqSubStatus(subStatusValue || "");
+    setDiscussionMessages([]);
+    setDiscussionError("");
     setForm({
       ...initialForm,
       ...mappedFields,
@@ -1274,10 +1265,7 @@ export default function NewRfq() {
     });
     setActiveStage(nextPipelineStage);
     setActiveRfqTab((prev) => {
-      if (prev === "files") {
-        return prev;
-      }
-      if (prev === "potential" || prev === "new") {
+      if (preserveActiveTab && prev === "files") {
         return prev;
       }
       return isPotentialRecord ? "potential" : "new";
@@ -1321,7 +1309,7 @@ export default function NewRfq() {
     setRfqError("");
     try {
       const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
-      applyRfq(rfq, { auditLogs });
+      applyRfq(rfq, { auditLogs, preserveActiveTab: true });
       return true;
     } catch (error) {
       setRfqError("Unable to refresh this RFQ. Please try again.");
@@ -1370,9 +1358,10 @@ export default function NewRfq() {
         if (!rfqIdParam) {
           if (!alive) return;
           setRfqId("");
-          setForm(initialForm);
+          setForm({ ...initialForm });
           setPotentialChatMessages([]);
           setRfqChatMessages([]);
+          setRfqSubStatus("");
           setActiveStage("RFQ");
           setSelectedStage("RFQ");
           setSelectedSubPhase("RFQ form");
@@ -1385,8 +1374,9 @@ export default function NewRfq() {
           setDiscussionMessages([]);
           setDiscussionDraft("");
           setDiscussionSending(false);
+          setDiscussionLoading(false);
+          setDiscussionError("");
           setDiscussionModalOpen(false);
-          setRfqCreatedByEmail("");
           setValidationSuccess("");
           setValidationAudit(createEmptyValidationAudit());
           setCostingReviewAudit(createEmptyValidationAudit());
@@ -1407,6 +1397,9 @@ export default function NewRfq() {
         applyRfq(rfq, { auditLogs });
       } catch {
         if (!alive) return;
+        setRfqSubStatus("");
+        setDiscussionMessages([]);
+        setDiscussionError("");
         setRfqError("Unable to load the RFQ. Please try again.");
       } finally {
         if (alive) {
@@ -1424,6 +1417,43 @@ export default function NewRfq() {
   useEffect(() => {
     localFilesRef.current = localFiles;
   }, [localFiles]);
+
+  useEffect(() => {
+    let alive = true;
+    const currentRfqId = rfqId || rfqIdParam;
+
+    if (!currentRfqId || !activeDiscussionPhase) {
+      setDiscussionMessages([]);
+      setDiscussionLoading(false);
+      setDiscussionError("");
+      return () => {
+        alive = false;
+      };
+    }
+
+    const loadDiscussion = async () => {
+      setDiscussionLoading(true);
+      setDiscussionError("");
+      try {
+        const messages = await getRfqDiscussion(currentRfqId, activeDiscussionPhase);
+        if (!alive) return;
+        setDiscussionMessages(mapDiscussionMessages(messages));
+      } catch (error) {
+        if (!alive) return;
+        setDiscussionMessages([]);
+        setDiscussionError(error?.message || "Unable to load discussion.");
+      } finally {
+        if (alive) {
+          setDiscussionLoading(false);
+        }
+      }
+    };
+
+    loadDiscussion();
+    return () => {
+      alive = false;
+    };
+  }, [activeDiscussionPhase, discussionModalOpen, rfqId, rfqIdParam]);
 
   useEffect(() => {
     return () => {
@@ -2123,28 +2153,22 @@ export default function NewRfq() {
     }
 
     let currentRfqId = rfqId;
+    const phase = activeDiscussionPhase;
     setDiscussionSending(true);
-    setRfqError("");
+    setDiscussionError("");
 
     try {
       currentRfqId = await ensureRfqExists();
-      const latestRfq = await getRfq(currentRfqId);
-      const latestMessages = extractDiscussionMessages(latestRfq?.rfq_data);
-      const nextMessage = createDiscussionMessage({
-        content,
-        authorEmail: currentUserEmail,
-        authorName: currentUserLabel,
-        authorRole: currentUserRole || "COMMERCIAL"
+      const createdMessage = await postRfqDiscussion(currentRfqId, {
+        phase,
+        message: content
       });
-
-      await updateRfqData(currentRfqId, {
-        discussion_messages: [...latestMessages, nextMessage]
-      });
-
+      setDiscussionMessages((prev) =>
+        mapDiscussionMessages([...prev, createdMessage])
+      );
       setDiscussionDraft("");
-      await syncRfq(currentRfqId);
     } catch (error) {
-      setRfqError(error?.message || "Unable to send this message.");
+      setDiscussionError(error?.message || "Unable to send this message.");
     } finally {
       setDiscussionSending(false);
     }
@@ -2533,7 +2557,7 @@ export default function NewRfq() {
                       <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="max-w-3xl">
-                            <h3 className="mt-2 font-display text-xl text-ink sm:text-2xl"> 
+                            <h3 className="mt-2 font-display text-xl text-ink sm:text-2xl">
                               RFQ Data
                             </h3>
                             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
@@ -2644,16 +2668,14 @@ export default function NewRfq() {
 
                         {hasRecordedCostingReviewDecision ? (
                           <section
-                            className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${
-                              isCostingReviewRejected
+                            className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isCostingReviewRejected
                                 ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
                                 : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
-                            }`}
+                              }`}
                           >
                             <div
-                              className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${
-                                isCostingReviewRejected ? "border-red-100/80" : "border-emerald-100/80"
-                              }`}
+                              className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isCostingReviewRejected ? "border-red-100/80" : "border-emerald-100/80"
+                                }`}
                             >
                               <div className="space-y-2">
                                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -2666,11 +2688,10 @@ export default function NewRfq() {
                                 </div>
                               </div>
                               <span
-                                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${
-                                  isCostingReviewRejected
+                                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isCostingReviewRejected
                                     ? "border-red-200 bg-red-50 text-red-700"
                                     : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                }`}
+                                  }`}
                               >
                                 {isCostingReviewRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
                                 {isCostingReviewRejected ? "Rejected" : "Approved"}
@@ -2770,6 +2791,42 @@ export default function NewRfq() {
                               </h2>
                               <p className="mt-2 text-sm leading-7 text-slate-600">
                                 Upload the feasibility document, then click Save to move this RFQ to pricing.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
+                            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                              Required Templates
+                            </h3>
+                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                              Please download and complete these templates before uploading your final feasibility analysis.
+                            </p>
+                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                              <a
+                                href={costingTemplate}
+                                download="Avocarbon_Costing_Template.xlsm"
+                                className="inline-flex items-center justify-center rounded-2xl border border-tide/20 bg-tide/10 px-4 py-3 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                              >
+                                Download Costing
+                              </a>
+                              <a
+                                href={feasibilityTemplate}
+                                download="Avocarbon_Feasibility_Template.xlsm"
+                                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                              >
+                                Download Feasibility
+                              </a>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="max-w-2xl">
+                              <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                Upload Completed File
+                              </h3>
+                              <p className="mt-2 text-sm leading-7 text-slate-600">
+                                Add the completed feasibility document here, then save to move this RFQ to pricing.
                               </p>
                             </div>
                             <div className="flex flex-wrap items-center gap-3">
@@ -4013,7 +4070,19 @@ export default function NewRfq() {
             <div className="chat-modal-body p-0">
               <div className="flex h-full min-h-0 flex-col">
                 <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
-                  {discussionMessages.length ? (
+                  {discussionLoading ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
+                        <MessageSquare className="h-6 w-6" />
+                      </div>
+                      <p className="mt-4 text-base font-semibold text-ink">
+                        Loading discussion
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Fetching the messages for this phase.
+                      </p>
+                    </div>
+                  ) : discussionMessages.length ? (
                     <div className="flex flex-col gap-4">
                       {discussionMessages.map((message) => {
                         const isCurrentUser =
@@ -4071,7 +4140,7 @@ export default function NewRfq() {
                         No discussion yet
                       </p>
                       <p className="mt-2 text-sm text-slate-500">
-                        Start the conversation with a message and the owner can reply in the same thread.
+                        Start the conversation for this phase with a new message.
                       </p>
                     </div>
                   )}
@@ -4082,11 +4151,21 @@ export default function NewRfq() {
                   className="border-t border-slate-200/70 bg-white/90 p-5 sm:p-6"
                 >
                   <div className="space-y-3">
+                    {discussionError ? (
+                      <p className="text-sm font-medium text-red-600">
+                        {discussionError}
+                      </p>
+                    ) : null}
                     <textarea
                       className="textarea-field min-h-[80px]"
                       value={discussionDraft}
                       onChange={(event) => setDiscussionDraft(event.target.value)}
-                      disabled={discussionSending || !canParticipateInDiscussion}
+                      disabled={
+                        discussionSending ||
+                        discussionLoading ||
+                        !canParticipateInDiscussion
+                      }
+                      placeholder="Write a message for this phase..."
                     />
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <button
@@ -4094,6 +4173,7 @@ export default function NewRfq() {
                         className="ml-auto inline-flex items-center justify-center gap-2 rounded-xl border border-tide bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={
                           discussionSending ||
+                          discussionLoading ||
                           !canParticipateInDiscussion ||
                           !String(discussionDraft || "").trim()
                         }

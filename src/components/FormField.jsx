@@ -15,14 +15,15 @@ export default function FormField({
   const isLocked = readOnly || disabled;
   const textareaRef = useRef(null);
   const canAutoExpand = autoExpand && !options && type === "text";
+  const normalizedValue = value ?? "";
 
   useLayoutEffect(() => {
     if (!canAutoExpand || !textareaRef.current) return;
     const element = textareaRef.current;
-    const hasValue = String(value ?? "").trim().length > 0;
+    const hasValue = String(normalizedValue).trim().length > 0;
     element.style.height = "0px";
     element.style.height = hasValue ? `${Math.max(element.scrollHeight, 50)}px` : "";
-  }, [canAutoExpand, value]);
+  }, [canAutoExpand, normalizedValue]);
 
   return (
     <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -31,7 +32,7 @@ export default function FormField({
         <select
           className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
-          value={value}
+          value={normalizedValue}
           onChange={onChange}
           disabled={disabled}
           aria-readonly={readOnly}
@@ -52,7 +53,7 @@ export default function FormField({
           rows={1}
           className={`textarea-field min-h-[50px] resize-none overflow-hidden ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
-          value={value}
+          value={normalizedValue}
           onChange={onChange}
           placeholder={placeholder}
           readOnly={readOnly}
@@ -64,7 +65,7 @@ export default function FormField({
           className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
           type={type}
-          value={value}
+          value={normalizedValue}
           onChange={onChange}
           placeholder={placeholder}
           readOnly={readOnly}

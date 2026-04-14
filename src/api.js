@@ -164,6 +164,12 @@ export async function getRfqAuditLogs(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/audit-logs`);
 }
 
+export async function getRfqDiscussion(rfqId, phase) {
+  return request(
+    `/api/rfq/${encodeURIComponent(rfqId)}/discussion?phase=${encodeURIComponent(phase)}`
+  );
+}
+
 export async function createRfq(payload = {}) {
   return request("/api/rfq", { method: "POST", body: payload });
 }
@@ -183,6 +189,13 @@ export async function submitRfq(rfqId) {
 
 export async function validateRfq(rfqId, payload) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/validate`, {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function postRfqDiscussion(rfqId, payload) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/discussion`, {
     method: "POST",
     body: payload
   });
