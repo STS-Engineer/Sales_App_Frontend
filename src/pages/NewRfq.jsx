@@ -44,6 +44,7 @@ const initialForm = {
   application: "",
   productName: "",
   productLine: "",
+  projectName: "",
   customerPn: "",
   costingData: "",
   deliveryZone: "",
@@ -63,6 +64,7 @@ const initialForm = {
   targetPrice: "",
   expectedDeliveryConditions: "",
   expectedPaymentTerms: "",
+  typeOfPackaging: "",
   businessTrigger: "",
   customerToolingConditions: "",
   entryBarriers: "",
@@ -140,6 +142,7 @@ const STEP_FIELDS = {
     "customer",
     "productName",
     "productLine",
+    "projectName",
     "deliveryZone",
     "plant",
     "country",
@@ -158,6 +161,7 @@ const STEP_FIELDS = {
     "targetPrice",
     "expectedDeliveryConditions",
     "expectedPaymentTerms",
+    "typeOfPackaging",
     "businessTrigger",
     "customerToolingConditions",
     "entryBarriers"
@@ -3648,6 +3652,7 @@ export default function NewRfq() {
                                 <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                                 <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
                                   <span>RFQ Files</span>
@@ -3772,6 +3777,7 @@ export default function NewRfq() {
                             <FormField label="Target Price (eur)" name="targetPrice" type="number" value={form.targetPrice} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                             <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />

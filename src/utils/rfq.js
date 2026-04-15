@@ -141,6 +141,7 @@ export const mapRfqDataToForm = (rfq) => {
     application: pickFirst(data.application),
     productName: pickFirst(data.product_name, data.product_line_acronym),
     productLine: pickFirst(data.product_line_acronym, data.product_name),
+    projectName: pickFirst(data.project_name, data.projectName),
     costingData: pickFirst(data.costing_data, data.costingData),
     customerPn: pickFirst(data.customer_pn, data.customerPn),
     revisionLevel: pickFirst(data.revision_level, data.revisionLevel),
@@ -173,6 +174,10 @@ export const mapRfqDataToForm = (rfq) => {
     expectedPaymentTerms: pickFirst(
       data.expected_payment_terms,
       data.expectedPaymentTerms
+    ),
+    typeOfPackaging: pickFirst(
+      data.type_of_packaging,
+      data.typeOfPackaging
     ),
     businessTrigger: pickFirst(data.business_trigger, data.businessTrigger),
     customerToolingConditions: pickFirst(
