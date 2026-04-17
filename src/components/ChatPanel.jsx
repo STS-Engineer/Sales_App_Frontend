@@ -172,6 +172,7 @@ const renderMessageContent = (content, keyPrefix) => {
 export default function ChatPanel({
   messages = [],
   onSend,
+  onEditMessage,
   onCollapse,
   readOnly = false,
   readOnlyMessage = "Chat is locked once the RFQ enters validation",
@@ -181,15 +182,21 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  const [editingMessageIndex, setEditingMessageIndex] = useState(null);
+  const [editingDraft, setEditingDraft] = useState("");
   const [attachments, setAttachments] = useState([]);
   const [previewAttachment, setPreviewAttachment] = useState(null);
   const recognitionRef = useRef(null);
   const fileInputRef = useRef(null);
+  const editingTextareaRef = useRef(null);
   const attachmentsRef = useRef([]);
   const messagesEndRef = useRef(null);
+  const isEditing = editingMessageIndex !== null;
+  const composerDisabled = readOnly || isEditing;
 
   const canSend =
-    !readOnly && (input.trim().length > 0 || attachments.length > 0) && !busy;
+    !composerDisabled && (input.trim().length > 0 || attachments.length > 0) && !busy;
+  const canSubmitEdit = !readOnly && !busy && editingDraft.trim().length > 0;
 
   const speechAvailable = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -221,8 +228,21 @@ export default function ChatPanel({
     }
   };
 
+  const handleSubmitEdit = async () => {
+    if (!canSubmitEdit || editingMessageIndex === null || !onEditMessage) return;
+    setBusy(true);
+    try {
+      const success = await onEditMessage(editingMessageIndex, editingDraft.trim());
+      if (success === false) return;
+      setEditingMessageIndex(null);
+      setEditingDraft("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleStartListening = () => {
-    if (!speechAvailable || readOnly) {
+    if (!speechAvailable || composerDisabled) {
       return;
     }
     if (!recognitionRef.current) {
@@ -244,7 +264,7 @@ export default function ChatPanel({
   };
 
   const handleAttach = (event) => {
-    if (readOnly) {
+    if (composerDisabled) {
       event.target.value = "";
       return;
     }
@@ -258,6 +278,24 @@ export default function ChatPanel({
     }));
     setAttachments((prev) => [...prev, ...next]);
     event.target.value = "";
+  };
+
+  const handleBeginEditing = (message) => {
+    const nextIndex =
+      typeof message?.chatEditIndex === "number" ? message.chatEditIndex : null;
+    if (nextIndex === null) return;
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setListening(false);
+    setEditingMessageIndex(nextIndex);
+    setEditingDraft(String(message.content || ""));
+    editingTextareaRef.current?.focus();
+  };
+
+  const handleCancelEditing = () => {
+    setEditingMessageIndex(null);
+    setEditingDraft("");
   };
 
   const handleOpenAttachment = (attachment) => {
@@ -383,6 +421,8 @@ export default function ChatPanel({
       recognitionRef.current.stop();
     }
     setListening(false);
+    setEditingMessageIndex(null);
+    setEditingDraft("");
     setInput("");
     setAttachments((prev) => {
       prev.forEach((attachment) => {
@@ -420,6 +460,22 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
+  useEffect(() => {
+    if (editingMessageIndex === null) return;
+    const messageStillVisible = messages.some(
+      (message) => message?.role === "user" && message?.chatEditIndex === editingMessageIndex
+    );
+    if (!messageStillVisible) {
+      setEditingMessageIndex(null);
+      setEditingDraft("");
+    }
+  }, [editingMessageIndex, messages]);
+
+  useEffect(() => {
+    if (editingMessageIndex === null) return;
+    editingTextareaRef.current?.focus();
+  }, [editingMessageIndex]);
+
   return (
     <div className="card flex h-full min-h-0 flex-col pt-6 pb-2 px-6 md:pt-7 md:pb-2 md:px-7">
       <div className="flex items-center justify-between border-slate-200/70">
@@ -449,10 +505,21 @@ export default function ChatPanel({
           <div className="space-y-3">
             {messages.map((message, index) => {
               const hasContent = Boolean(message.content && String(message.content).trim());
+              const canEditMessage =
+                Boolean(onEditMessage) &&
+                !readOnly &&
+                editingMessageIndex === null &&
+                message.role === "user" &&
+                !busy &&
+                !message.attachments?.length &&
+                typeof message.chatEditIndex === "number" &&
+                hasContent;
+              const isEditingMessage =
+                message.role === "user" && message.chatEditIndex === editingMessageIndex;
               return (
                 <div
                   key={`${message.role}-${index}`}
-                  className={`flex items-end gap-2 ${
+                  className={`group flex items-end gap-2 ${
                     message.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
@@ -461,18 +528,87 @@ export default function ChatPanel({
                       <Bot className="h-4 w-4" />
                     </span>
                   ) : null}
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-3 py-3 text-sm shadow-sm ${
-                      message.role === "user" ? "chat-bubble-user" : "chat-bubble-bot"
-                    }`}
-                  >
-                    {hasContent ? renderMessageContent(message.content, `${message.role}-${index}`) : null}
-                    {message.attachments?.length
-                      ? renderAttachmentChips(
-                          message.attachments,
-                          hasContent ? "message" : "message-compact"
-                        )
-                      : null}
+                  <div className={`flex max-w-[80%] flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
+                    {isEditingMessage ? (
+                      <div className="w-full min-w-[280px] rounded-3xl border border-slate-200 bg-white px-3 py-3 text-sm shadow-sm">
+                        <textarea
+                          ref={editingTextareaRef}
+                          rows={4}
+                          className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-tide/40 focus:bg-white"
+                          value={editingDraft}
+                          onChange={(event) => setEditingDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              handleCancelEditing();
+                              return;
+                            }
+                            if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+                              event.preventDefault();
+                              handleSubmitEdit();
+                            }
+                          }}
+                        />
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <span className="text-[11px] text-slate-400">
+                            Press Enter to save, Shift+Enter for a new line
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="rounded-full px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                              onClick={handleCancelEditing}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                              onClick={handleSubmitEdit}
+                              disabled={!canSubmitEdit}
+                              title="Save and submit"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 2L11 13" />
+                                <path d="M22 2L15 22l-4-9-9-4 20-7z" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          className={`rounded-2xl px-3 py-3 text-sm shadow-sm ${
+                            message.role === "user" ? "chat-bubble-user" : "chat-bubble-bot"
+                          }`}
+                        >
+                          {hasContent
+                            ? renderMessageContent(message.content, `${message.role}-${index}`)
+                            : null}
+                          {message.attachments?.length
+                            ? renderAttachmentChips(
+                                message.attachments,
+                                hasContent ? "message" : "message-compact"
+                              )
+                            : null}
+                        </div>
+                        {canEditMessage ? (
+                          <button
+                            type="button"
+                            className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 opacity-0 shadow-sm transition hover:border-slate-300 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
+                            onClick={() => handleBeginEditing(message)}
+                            title="Edit message"
+                            aria-label="Edit message"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                            </svg>
+                          </button>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                   {message.role === "user" ? (
                     <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-tide/30 bg-tide/10 text-tide shadow-sm">
@@ -511,14 +647,16 @@ export default function ChatPanel({
               placeholder={
                 readOnly
                   ? readOnlyMessage
+                  : isEditing
+                    ? "Finish editing the message above"
                   : "Type your message"
               }
               value={input}
-              readOnly={readOnly}
-              disabled={readOnly}
+              readOnly={composerDisabled}
+              disabled={composerDisabled}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
-                if (readOnly) {
+                if (composerDisabled) {
                   event.preventDefault();
                   return;
                 }
@@ -539,9 +677,9 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={readOnly}
+                disabled={composerDisabled}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
-                title="Attach files"
+                title={isEditing ? "Finish editing the message above first" : "Attach files"}
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21.44 11.05l-8.49 8.49a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95L9.88 15.38a2 2 0 1 1-2.83-2.83l8.49-8.49" />
@@ -552,9 +690,17 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={handleStartListening}
-                disabled={readOnly}
+                disabled={composerDisabled}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
-                title={readOnly ? "Chat is locked" : listening ? "Listening..." : "Speak"}
+                title={
+                  readOnly
+                    ? "Chat is locked"
+                    : isEditing
+                      ? "Finish editing the message above first"
+                      : listening
+                        ? "Listening..."
+                        : "Speak"
+                }
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />

@@ -250,6 +250,17 @@ export async function sendChat(rfqId, message, chatMode = "rfq") {
   });
 }
 
+export async function editRfqChatMessage(rfqId, payload) {
+  return request("/api/chat/edit", {
+    method: "POST",
+    body: {
+      rfq_id: rfqId,
+      visible_message_index: payload.visibleMessageIndex,
+      message: payload.message
+    }
+  });
+}
+
 export async function sendPotentialChat(rfqId, message) {
   return request("/api/chat/potential", {
     method: "POST",
@@ -291,6 +302,17 @@ export async function submitCostingFileAction(rfqId, payload) {
     formData.append("file", payload.file);
   }
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing-file-action`, {
+    method: "POST",
+    body: formData,
+    isForm: true
+  });
+}
+
+export async function uploadPricingBomFile(rfqId, payload) {
+  const formData = new FormData();
+  formData.append("note", payload.note);
+  formData.append("file", payload.file);
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/pricing-bom`, {
     method: "POST",
     body: formData,
     isForm: true

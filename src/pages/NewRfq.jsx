@@ -13,6 +13,7 @@ import {
   createRfq,
   downloadCostingTemplate,
   deleteRfqFile,
+  editRfqChatMessage,
   getCostingMessages,
   getRfqAuditLogs,
   getRfqDiscussion,
@@ -27,6 +28,7 @@ import {
   submitCostingReview,
   submitRevision,
   updateRfqData,
+  uploadPricingBomFile,
   validateRfq,
   uploadRfqFile
 } from "../api";
@@ -620,6 +622,64 @@ const buildLegacyCostingFileState = (files = []) => {
   };
 };
 
+const normalizePricingBomUpload = (rfq) => {
+  const raw = rfq?.rfq_data?.pricing_bom_upload;
+  if (!raw || typeof raw !== "object") return null;
+
+  const normalizedFile =
+    raw?.file && typeof raw.file === "object"
+      ? {
+        id:
+          raw.file?.id ||
+          raw.file?.file_id ||
+          raw.file?.uuid ||
+          raw.file?.path ||
+          raw.file?.filename ||
+          "pricing-bom-file",
+        name:
+          raw.file?.name ||
+          raw.file?.filename ||
+          raw.file?.original_name ||
+          raw.file?.file_name ||
+          "Pricing BOM file",
+        url:
+          raw.file?.url ||
+          raw.file?.file_url ||
+          raw.file?.download_url ||
+          raw.file?.path ||
+          raw.file?.link ||
+          "",
+        source: "server",
+        size:
+          raw.file?.size ||
+          raw.file?.file_size ||
+          raw.file?.content_length ||
+          raw.file?.contentLength ||
+          "",
+        updatedAt:
+          raw.file?.uploaded_at ||
+          raw.file?.updated_at ||
+          raw.file?.last_modified ||
+          raw.file?.lastModified ||
+          raw?.uploaded_at ||
+          "",
+        owner:
+          raw.file?.uploaded_by ||
+          raw.file?.owner ||
+          raw.file?.created_by ||
+          raw?.uploaded_by ||
+          ""
+      }
+      : null;
+
+  return {
+    note: String(raw?.note || "").trim(),
+    uploadedBy: String(raw?.uploaded_by || "").trim(),
+    uploadedAt: String(raw?.uploaded_at || "").trim(),
+    file: normalizedFile
+  };
+};
+
 const FILES_PREVIEW_LIMIT = 3;
 
 const getFileExtension = (name = "") => {
@@ -988,6 +1048,11 @@ export default function NewRfq() {
   const [costingFileActionNote, setCostingFileActionNote] = useState("");
   const [costingFileActionDraft, setCostingFileActionDraft] = useState(null);
   const [costingFileActionPending, setCostingFileActionPending] = useState(false);
+  const [pricingBomUpload, setPricingBomUpload] = useState(null);
+  const [pricingBomModalOpen, setPricingBomModalOpen] = useState(false);
+  const [pricingBomNote, setPricingBomNote] = useState("");
+  const [pricingBomDraft, setPricingBomDraft] = useState(null);
+  const [pricingBomPending, setPricingBomPending] = useState(false);
   const [discussionMessages, setDiscussionMessages] = useState([]);
   const [discussionDraft, setDiscussionDraft] = useState("");
   const [discussionSending, setDiscussionSending] = useState(false);
@@ -1130,6 +1195,11 @@ export default function NewRfq() {
   const validationButtonsDisabled = Boolean(
     validationActionId || hasRecordedValidationDecision
   );
+  const hideValidationActionButtons = Boolean(
+    hasRecordedValidationDecision ||
+    validationActionId === "approve" ||
+    validationActionId === "reject"
+  );
 
   const chatFallback = useMemo(() => {
     if (loadingRfq) {
@@ -1152,9 +1222,13 @@ export default function NewRfq() {
         : RFQ_CHATBOT_INITIAL_GREETING;
   const activeChatMessages =
     activeRfqTab === "potential" ? potentialChatMessages : rfqChatMessages;
+  const activeChatMessagesWithMeta = useMemo(
+    () => activeChatMessages.map((message, index) => ({ ...message, chatEditIndex: index })),
+    [activeChatMessages]
+  );
   const chatFeed = useMemo(
-    () => withInitialChatMessage(activeChatMessages, activeChatGreeting),
-    [activeChatGreeting, activeChatMessages]
+    () => withInitialChatMessage(activeChatMessagesWithMeta, activeChatGreeting),
+    [activeChatGreeting, activeChatMessagesWithMeta]
   );
   const stepCompletion = useMemo(() => {
     return Object.fromEntries(
@@ -1210,10 +1284,16 @@ export default function NewRfq() {
     return highestIndex;
   }, [stepCompletion, fulfilledSteps]);
   const hasWorkflowMovedBeyondRfq = Boolean(activeStage && activeStage !== "RFQ");
+  const isCancelledAfterRfqValidation = Boolean(
+    normalizePipelineStageKey(activeStage) === "RFQ" &&
+    form.status === "Cancelled" &&
+    validationAudit.rejectedAt
+  );
   const hasValidationLock =
     !isRevisionModeActive &&
     (
       activeSubPhase === "Validation" ||
+      isCancelledAfterRfqValidation ||
       rfqValidationReached ||
       hasWorkflowMovedBeyondRfq
     );
@@ -1227,6 +1307,9 @@ export default function NewRfq() {
       return "RFQ form";
     }
     if (stageKey !== groupedActiveStage) return "";
+    if (stageKey === "RFQ" && isCancelledAfterRfqValidation) {
+      return "Validation";
+    }
     return activeSubPhase;
   };
   const rfqDisplaySubPhase = isRfqStage
@@ -1272,6 +1355,15 @@ export default function NewRfq() {
     : "";
   const isCostingFeasabilityView =
     isCostingStage && costingDisplaySubPhase === "Feasability";
+  const isCostingPricingView =
+    isCostingStage && costingDisplaySubPhase === "Pricing";
+  const hasCompletedCostingFileAction = Boolean(
+    effectiveCostingFileState?.fileStatus &&
+    effectiveCostingFileState.fileStatus !== "PENDING"
+  );
+  const canOpenCostingPricing = Boolean(
+    activeSubPhase === "Pricing" || hasCompletedCostingFileAction
+  );
   const canReviewCostingFeasability = Boolean(
     rfqId &&
     isCostingFeasabilityView &&
@@ -1287,9 +1379,14 @@ export default function NewRfq() {
     ["UPLOADED", "NA"].includes(effectiveCostingFileState?.fileStatus || "") &&
     !costingSavePending
   );
-  const hasCompletedCostingFileAction = Boolean(
-    effectiveCostingFileState?.fileStatus &&
-    effectiveCostingFileState.fileStatus !== "PENDING"
+  const hasSavedCostingFeasability = Boolean(
+    normalizePipelineStageKey(activeStage) === "In costing" &&
+    activeSubPhase === "Pricing"
+  );
+  const canManagePricingBom = Boolean(
+    rfqId &&
+    isCostingPricingView &&
+    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
   );
   const knownCostingRecipients = useMemo(() => {
     const candidates = [
@@ -1411,6 +1508,15 @@ export default function NewRfq() {
   }, [activeSubPhase, isRevisionModeActive]);
 
   useEffect(() => {
+    if (!isCostingStage || canOpenCostingPricing) {
+      return;
+    }
+    if (selectedSubPhase === "Pricing") {
+      setSelectedSubPhase("Feasability");
+    }
+  }, [canOpenCostingPricing, isCostingStage, selectedSubPhase]);
+
+  useEffect(() => {
     const previousCompletion = previousStepCompletionRef.current;
     const hadPreviousValue = Object.prototype.hasOwnProperty.call(
       previousCompletion,
@@ -1467,15 +1573,26 @@ export default function NewRfq() {
     });
     const nextUiStatus = mapBackendStatusToUi(rfq);
     const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
-    setValidationAudit(extractValidationAudit(rfq, auditLogs));
-    setCostingReviewAudit(extractCostingReviewAudit(rfq, auditLogs));
+    const nextValidationAudit = extractValidationAudit(rfq, auditLogs);
+    const nextCostingReviewAudit = extractCostingReviewAudit(rfq, auditLogs);
+    const keepRfqValidationView =
+      nextPipelineStage === "RFQ" &&
+      nextUiStatus === "Cancelled" &&
+      Boolean(nextValidationAudit.rejectedAt);
+    setValidationAudit(nextValidationAudit);
+    setCostingReviewAudit(nextCostingReviewAudit);
     setCostingFiles(normalizeCostingFiles(rfq));
     setCostingFileState(normalizeCostingFileState(rfq));
+    setPricingBomUpload(normalizePricingBomUpload(rfq));
     setCostingFileActionModalOpen(false);
     setCostingFileActionMode("UPLOADED");
     setCostingFileActionNote("");
     setCostingFileActionDraft(null);
     setCostingFileActionPending(false);
+    setPricingBomModalOpen(false);
+    setPricingBomNote("");
+    setPricingBomDraft(null);
+    setPricingBomPending(false);
     setRfqSubStatus(subStatusValue || "");
     setRfqCreatorEmail(String(rfq?.created_by_email || ""));
     setRevisionNotes(String(rfq?.revision_notes || ""));
@@ -1491,7 +1608,7 @@ export default function NewRfq() {
     if (nextUiStatus === "Cancelled" || nextUiStatus === "Lost") {
       const canceledStageKey = normalizePipelineStageKey(nextPipelineStage) || nextPipelineStage || "RFQ";
       setSelectedStage(canceledStageKey);
-      setSelectedSubPhase("");
+      setSelectedSubPhase(keepRfqValidationView ? "Validation" : "");
     }
     setActiveRfqTab((prev) => {
       if (preserveActiveTab && prev === "files") {
@@ -1612,11 +1729,16 @@ export default function NewRfq() {
           setLocalFiles([]);
           setCostingFiles([]);
           setCostingFileState(null);
+          setPricingBomUpload(null);
           setCostingFileActionModalOpen(false);
           setCostingFileActionMode("UPLOADED");
           setCostingFileActionNote("");
           setCostingFileActionDraft(null);
           setCostingFileActionPending(false);
+          setPricingBomModalOpen(false);
+          setPricingBomNote("");
+          setPricingBomDraft(null);
+          setPricingBomPending(false);
           setDiscussionMessages([]);
           setDiscussionDraft("");
           setDiscussionSending(false);
@@ -1662,11 +1784,16 @@ export default function NewRfq() {
         setOptimisticRevisionMode(false);
         setCostingFiles([]);
         setCostingFileState(null);
+        setPricingBomUpload(null);
         setCostingFileActionModalOpen(false);
         setCostingFileActionMode("UPLOADED");
         setCostingFileActionNote("");
         setCostingFileActionDraft(null);
         setCostingFileActionPending(false);
+        setPricingBomModalOpen(false);
+        setPricingBomNote("");
+        setPricingBomDraft(null);
+        setPricingBomPending(false);
         setDiscussionMessages([]);
         setDiscussionError("");
         setCostingDiscussionMessages([]);
@@ -2004,6 +2131,13 @@ export default function NewRfq() {
     ) {
       return;
     }
+    if (
+      stageKey === "In costing" &&
+      subPhase === "Pricing" &&
+      !canOpenCostingPricing
+    ) {
+      return;
+    }
     if (stageKey === "RFQ" && subPhase === "Validation") {
       setRfqValidationReached(true);
       setRfqFormEditEnabled(false);
@@ -2042,6 +2176,49 @@ export default function NewRfq() {
     document.body.style.userSelect = "";
     window.removeEventListener("pointermove", handleResizeMove);
     window.removeEventListener("pointerup", handleResizeEnd);
+  };
+
+  const handleRfqChatEdit = async (visibleMessageIndex, message) => {
+    const trimmedMessage = String(message || "").trim();
+    if (!trimmedMessage) return false;
+
+    let currentRfqId = rfqId;
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      setRfqError("Unable to update this chat message right now.");
+      return false;
+    }
+
+    const previousMessages = rfqChatMessages;
+    const nextMessages = rfqChatMessages.slice(0, visibleMessageIndex);
+    setRfqError("");
+    setRfqChatMessages([
+      ...nextMessages,
+      { role: "user", content: trimmedMessage }
+    ]);
+
+    let finalAssistantResponse = "";
+    try {
+      const reply = await editRfqChatMessage(currentRfqId, {
+        visibleMessageIndex,
+        message: trimmedMessage
+      });
+      finalAssistantResponse = String(reply?.response || "");
+    } catch (error) {
+      setRfqChatMessages(previousMessages);
+      setRfqError(error?.message || "Unable to update this chat message.");
+      return false;
+    }
+
+    const synced = await syncRfq(currentRfqId);
+    if (!synced && finalAssistantResponse) {
+      setRfqChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: finalAssistantResponse }
+      ]);
+    }
+    return true;
   };
 
   const handleChatSend = async (message, attachments = []) => {
@@ -2515,6 +2692,67 @@ export default function NewRfq() {
     }
   };
 
+  const openPricingBomModal = () => {
+    if (!canManagePricingBom || pricingBomPending) {
+      return;
+    }
+    setRfqError("");
+    setPricingBomNote(pricingBomUpload?.note || "");
+    setPricingBomDraft(null);
+    setPricingBomModalOpen(true);
+  };
+
+  const handleClosePricingBomModal = () => {
+    if (pricingBomPending) return;
+    setPricingBomModalOpen(false);
+    setPricingBomNote("");
+    setPricingBomDraft(null);
+  };
+
+  const handlePricingBomDraftChange = (event) => {
+    const nextFile = event.target.files?.[0] || null;
+    setPricingBomDraft(nextFile);
+  };
+
+  const handleSubmitPricingBomUpload = async (event) => {
+    event.preventDefault();
+    if (!rfqId || pricingBomPending) return;
+
+    const trimmedNote = String(pricingBomNote || "").trim();
+    if (!trimmedNote) {
+      setRfqError("Please provide a note for the costing BOM upload.");
+      return;
+    }
+    if (!pricingBomDraft) {
+      setRfqError("Please choose the costing file with BOM data before submitting.");
+      return;
+    }
+
+    setPricingBomPending(true);
+    setRfqError("");
+
+    try {
+      const updatedRfq = await uploadPricingBomFile(rfqId, {
+        note: trimmedNote,
+        file: pricingBomDraft
+      });
+      applyRfq(updatedRfq, { preserveActiveTab: true });
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Pricing");
+      setPricingBomModalOpen(false);
+      setPricingBomNote("");
+      setPricingBomDraft(null);
+      showToast("Costing file with BOM data uploaded successfully.", {
+        type: "success",
+        title: "Pricing updated"
+      });
+    } catch (error) {
+      setRfqError(error?.message || "Unable to upload the costing file with BOM data.");
+    } finally {
+      setPricingBomPending(false);
+    }
+  };
+
   const handleSaveCostingFeasability = async () => {
     if (!rfqId || costingSavePending) return;
     if (!hasRecordedCostingReviewDecision || isCostingReviewRejected) {
@@ -2741,12 +2979,22 @@ export default function NewRfq() {
                                           isExpanded &&
                                           subPhaseIndex >= 0 &&
                                           subIndex < subPhaseIndex;
+                                        const isNeutralCompletedRfqForm =
+                                          isCancelledAfterRfqValidation &&
+                                          stage.key === "RFQ" &&
+                                          subPhase === "RFQ form";
                                         return (
                                           <span
                                             key={`segment-${subPhase}`}
                                             className={[
                                               "h-1 flex-1 rounded-full",
-                                              isSubComplete ? (isTerminalStage ? "bg-red-400" : "bg-emerald-400") : "bg-white/25"
+                                              isSubComplete
+                                                ? isNeutralCompletedRfqForm
+                                                  ? "bg-white/25"
+                                                  : isTerminalStage
+                                                    ? "bg-red-400"
+                                                    : "bg-emerald-400"
+                                                : "bg-white/25"
                                             ].join(" ")}
                                           />
                                         );
@@ -2759,24 +3007,44 @@ export default function NewRfq() {
                                           isSelected && selectedSubPhaseForStage === subPhase;
                                         const isValidationSubPhase =
                                           stage.key === "RFQ" && subPhase === "Validation";
+                                        const isPricingSubPhase =
+                                          stage.key === "In costing" && subPhase === "Pricing";
                                         const isSubDisabled =
-                                          isValidationSubPhase && !canOpenRfqValidation;
+                                          (isValidationSubPhase && !canOpenRfqValidation) ||
+                                          (isPricingSubPhase && !canOpenCostingPricing);
                                         const currentSubPhaseIndex =
                                           stage.subPhases.indexOf(subPhase);
                                         const isSubComplete =
                                           isActive &&
                                           subPhaseIndex >= 0 &&
                                           currentSubPhaseIndex < subPhaseIndex;
+                                        const isNeutralCompletedRfqForm =
+                                          isCancelledAfterRfqValidation &&
+                                          stage.key === "RFQ" &&
+                                          subPhase === "RFQ form";
+                                        const hideTerminalSelectedBackground =
+                                          isCancelledAfterRfqValidation &&
+                                          stage.key === "RFQ" &&
+                                          subPhase === "RFQ form";
                                         const dotClass = isSubActive
                                           ? "h-2 w-2 rounded-full bg-white shadow-[0_0_0_2px_rgba(255,255,255,0.35)]"
                                           : isSubComplete
-                                            ? (isTerminalStage ? "h-2 w-2 rounded-full bg-red-300" : "h-2 w-2 rounded-full bg-emerald-300")
+                                            ? isNeutralCompletedRfqForm
+                                              ? "h-1.5 w-1.5 rounded-full bg-white/70"
+                                              : (isTerminalStage ? "h-2 w-2 rounded-full bg-red-300" : "h-2 w-2 rounded-full bg-emerald-300")
                                             : "h-1.5 w-1.5 rounded-full bg-white/70";
                                         const labelClass = isSubActive
                                           ? "mt-0.5 max-w-[120px] text-center font-semibold leading-tight text-white"
                                           : isSubComplete
-                                            ? (isTerminalStage ? "mt-0.5 max-w-[120px] text-center leading-tight text-red-100" : "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50")
+                                            ? isNeutralCompletedRfqForm
+                                              ? "mt-0.5 max-w-[120px] text-center leading-tight text-white/85"
+                                              : (isTerminalStage ? "mt-0.5 max-w-[120px] text-center leading-tight text-red-100" : "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50")
                                             : "mt-0.5 max-w-[120px] text-center leading-tight text-white/85";
+                                        const subPhaseSelectedClass =
+                                          isSubSelected && !hideTerminalSelectedBackground
+                                            ? "bg-white/10"
+                                            : "";
+                                        const subPhaseHoverClass = isSubDisabled ? "" : "hover:bg-white/10";
 
                                         return (
                                           <button
@@ -2784,14 +3052,14 @@ export default function NewRfq() {
                                             type="button"
                                             onClick={() => handleSubPhaseChange(stage.key, subPhase)}
                                             disabled={isSubDisabled}
-                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-0.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${isSubSelected ? "bg-white/10" : ""
-                                              } ${isSubDisabled ? "" : "hover:bg-white/10"
-                                              }`}
+                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-0.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${subPhaseSelectedClass} ${subPhaseHoverClass}`}
                                             aria-pressed={isSubSelected}
                                             aria-disabled={isSubDisabled || undefined}
                                             title={
                                               isSubDisabled
-                                                ? "Submit the RFQ for validation to unlock this tab"
+                                                ? isValidationSubPhase
+                                                  ? "Submit the RFQ for validation to unlock this tab"
+                                                  : "Complete feasibility handoff to unlock this tab"
                                                 : `${stage.label} - ${subPhase}`
                                             }
                                           >
@@ -3059,6 +3327,8 @@ export default function NewRfq() {
                 {!isRfqStage ? (
                   isCostingStage ? (
                     <section className="card col-span-full flex min-h-[280px] flex-col gap-6 overflow-x-hidden overflow-y-auto p-6 sm:p-8 lg:h-full lg:min-h-0">
+                      {!isCostingPricingView ? (
+                        <>
                       <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="max-w-3xl">
@@ -3161,270 +3431,405 @@ export default function NewRfq() {
                           </div>
                         )}
                       </div>
+                        </>
+                      ) : null}
 
-                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="max-w-2xl">
-                            <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
-                              Reception review
-                            </h2>
-                          </div>
-                        </div>
-
-                        {hasRecordedCostingReviewDecision ? (
-                          <section
-                            className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isCostingReviewRejected
-                              ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
-                              : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
-                              }`}
-                          >
-                            <div
-                              className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isCostingReviewRejected ? "border-red-100/80" : "border-emerald-100/80"
-                                }`}
-                            >
-                              <div className="space-y-2">
-                                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                                  Reception audit
-                                </p>
-                                <div>
-                                  <h4 className="text-lg font-semibold text-ink">
-                                    Decision recorded
-                                  </h4>
-                                </div>
+                      {isCostingFeasabilityView ? (
+                        <>
+                          <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                              <div className="max-w-2xl">
+                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                  Reception review
+                                </h2>
                               </div>
-                              <span
-                                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isCostingReviewRejected
-                                  ? "border-red-200 bg-red-50 text-red-700"
-                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            </div>
+
+                            {hasRecordedCostingReviewDecision ? (
+                              <section
+                                className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isCostingReviewRejected
+                                  ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
+                                  : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
                                   }`}
                               >
-                                {isCostingReviewRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                                {isCostingReviewRejected ? "Rejected" : "Approved"}
-                              </span>
-                            </div>
+                                <div
+                                  className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isCostingReviewRejected ? "border-red-100/80" : "border-emerald-100/80"
+                                    }`}
+                                >
+                                  <div className="space-y-2">
+                                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                                      Reception audit
+                                    </p>
+                                    <div>
+                                      <h4 className="text-lg font-semibold text-ink">
+                                        Decision recorded
+                                      </h4>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isCostingReviewRejected
+                                      ? "border-red-200 bg-red-50 text-red-700"
+                                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                      }`}
+                                  >
+                                    {isCostingReviewRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                                    {isCostingReviewRejected ? "Rejected" : "Approved"}
+                                  </span>
+                                </div>
 
-                            <div className="mt-5 grid gap-4 md:grid-cols-2">
-                              {isCostingReviewRejected ? (
-                                <>
-                                  <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                      Rejected at
-                                    </p>
-                                    <p className="mt-2 text-base font-semibold text-ink">
-                                      {formatValidationAuditDate(costingReviewAudit.rejectedAt)}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                      Rejected by
-                                    </p>
-                                    <p className="mt-2 text-base font-semibold text-ink">
-                                      {formatValidationAuditValue(costingReviewAudit.rejectedBy)}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                      Rejection reason
-                                    </p>
-                                    <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
-                                      {formatValidationAuditValue(costingReviewAudit.rejectionReason)}
-                                    </p>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                      Approved at
-                                    </p>
-                                    <p className="mt-2 text-base font-semibold text-ink">
-                                      {formatValidationAuditDate(costingReviewAudit.approvedAt)}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                      Approved by
-                                    </p>
-                                    <p className="mt-2 text-base font-semibold text-ink">
-                                      {formatValidationAuditValue(costingReviewAudit.approvedBy)}
-                                    </p>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </section>
-                        ) : (
-                          <div className="mt-5 flex flex-wrap items-center gap-3">
-                            <button
-                              type="button"
-                              className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleRejectCostingReview}
-                              disabled={costingReviewButtonsDisabled}
-                              title={
-                                canReviewCostingFeasability
-                                  ? "Reject feasibility"
-                                  : "Only the owner or costing team can review feasibility."
-                              }
-                            >
-                              <X className="h-4 w-4" />
-                              {costingReviewActionId === "reject" ? "Rejecting..." : "Reject"}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleApproveCostingReview}
-                              disabled={costingReviewButtonsDisabled}
-                              title={
-                                canReviewCostingFeasability
-                                  ? "Approve feasibility"
-                                  : "Only the owner or costing team can review feasibility."
-                              }
-                            >
-                              <Check className="h-4 w-4" />
-                              {costingReviewActionId === "approve" ? "Approving..." : "Approve"}
-                            </button>
+                                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                                  {isCostingReviewRejected ? (
+                                    <>
+                                      <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Rejected at
+                                        </p>
+                                        <p className="mt-2 text-base font-semibold text-ink">
+                                          {formatValidationAuditDate(costingReviewAudit.rejectedAt)}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Rejected by
+                                        </p>
+                                        <p className="mt-2 text-base font-semibold text-ink">
+                                          {formatValidationAuditValue(costingReviewAudit.rejectedBy)}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Rejection reason
+                                        </p>
+                                        <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
+                                          {formatValidationAuditValue(costingReviewAudit.rejectionReason)}
+                                        </p>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Approved at
+                                        </p>
+                                        <p className="mt-2 text-base font-semibold text-ink">
+                                          {formatValidationAuditDate(costingReviewAudit.approvedAt)}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Approved by
+                                        </p>
+                                        <p className="mt-2 text-base font-semibold text-ink">
+                                          {formatValidationAuditValue(costingReviewAudit.approvedBy)}
+                                        </p>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </section>
+                            ) : (
+                              <div className="mt-5 flex flex-wrap items-center gap-3">
+                                <button
+                                  type="button"
+                                  className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={handleRejectCostingReview}
+                                  disabled={costingReviewButtonsDisabled}
+                                  title={
+                                    canReviewCostingFeasability
+                                      ? "Reject feasibility"
+                                      : "Only the owner or costing team can review feasibility."
+                                  }
+                                >
+                                  <X className="h-4 w-4" />
+                                  {costingReviewActionId === "reject" ? "Rejecting..." : "Reject"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={handleApproveCostingReview}
+                                  disabled={costingReviewButtonsDisabled}
+                                  title={
+                                    canReviewCostingFeasability
+                                      ? "Approve feasibility"
+                                      : "Only the owner or costing team can review feasibility."
+                                  }
+                                >
+                                  <Check className="h-4 w-4" />
+                                  {costingReviewActionId === "approve" ? "Approving..." : "Approve"}
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
 
-                      {hasRecordedCostingReviewDecision && !isCostingReviewRejected ? (
-                        <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 shadow-soft">
+                          {hasRecordedCostingReviewDecision && !isCostingReviewRejected ? (
+                            <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 shadow-soft">
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="max-w-2xl">
+                                  <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                    Feasibility file
+                                  </h2>
+                                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                                    Upload the feasibility document, then click Save to move this RFQ to pricing.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
+                                <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                  Required Templates
+                                </h3>
+                                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                                  Please download and complete these templates before uploading your final feasibility analysis.
+                                </p>
+                                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                                  <a
+                                    href={costingTemplate}
+                                    download="Avocarbon_Costing_Template.xlsm"
+                                    className="inline-flex items-center justify-center rounded-2xl border border-tide/20 bg-tide/10 px-4 py-3 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                  >
+                                    Download Costing
+                                  </a>
+                                  <a
+                                    href={feasibilityTemplate}
+                                    download="Avocarbon_Feasibility_Template.xlsm"
+                                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                                  >
+                                    Download Feasibility
+                                  </a>
+                                </div>
+                              </div>
+
+                              <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="max-w-2xl">
+                                  <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                    Complete feasibility handoff
+                                  </h3>
+                                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                                    Upload the finished feasibility file or mark the requirement as not applicable with a note.
+                                  </p>
+                                </div>
+                                {!hasCompletedCostingFileAction ? (
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => openCostingFileActionModal("UPLOADED")}
+                                      disabled={!canReviewCostingFeasability || costingSavePending}
+                                    >
+                                      <Upload className="h-4 w-4" />
+                                      Add feasibility file
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => openCostingFileActionModal("NA")}
+                                      disabled={!canReviewCostingFeasability || costingSavePending}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                      Not Applicable
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {hasCompletedCostingFileAction ? (
+                                <div className="mt-5 rounded-[24px] border border-emerald-200/80 bg-white/95 p-5 shadow-soft">
+                                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                    <div className="max-w-2xl">
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                          Completed
+                                        </span>
+                                        <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${effectiveCostingFileState?.fileStatus === "NA"
+                                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                                          : "border-sky-200 bg-sky-50 text-sky-700"
+                                          }`}>
+                                          {effectiveCostingFileState?.fileStatus === "NA"
+                                            ? "Not Applicable"
+                                            : "Uploaded"}
+                                        </span>
+                                      </div>
+                                      <h3 className="mt-3 text-lg font-semibold text-ink">
+                                        {effectiveCostingFileState?.fileStatus === "NA"
+                                          ? "Feasibility file bypass recorded"
+                                          : "Feasibility file received"}
+                                      </h3>
+                                      <p className="mt-2 text-sm leading-7 text-slate-600">
+                                        {effectiveCostingFileState?.note || "No note recorded."}
+                                      </p>
+                                    </div>
+
+                                    {effectiveCostingFileState?.file ? (
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        {effectiveCostingFileState.file.url ? (
+                                          <button
+                                            type="button"
+                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                            onClick={() => handlePreviewFile(effectiveCostingFileState.file)}
+                                          >
+                                            <Eye className="h-4 w-4" />
+                                            Preview
+                                          </button>
+                                        ) : null}
+                                        {effectiveCostingFileState.file.url ? (
+                                          <a
+                                            href={effectiveCostingFileState.file.url}
+                                            download={effectiveCostingFileState.file.name}
+                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                          >
+                                            Download
+                                          </a>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        Action by
+                                      </p>
+                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                        {effectiveCostingFileState?.actionBy || "Unavailable"}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        Recorded at
+                                      </p>
+                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                        {formatFileDate(effectiveCostingFileState?.actionAt, { withTime: true })}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        File
+                                      </p>
+                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                        {effectiveCostingFileState?.file?.name ||
+                                          (effectiveCostingFileState?.fileStatus === "NA"
+                                            ? "No file required"
+                                            : "Unavailable")}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
+                                  <p className="text-sm font-semibold text-ink">
+                                    No feasibility action recorded yet
+                                  </p>
+                                  <p className="mt-2 text-sm text-slate-500">
+                                    Choose Upload or Not Applicable, add your note, then save to move forward.
+                                  </p>
+                                </div>
+                              )}
+
+                              {!hasSavedCostingFeasability ? (
+                                <div className="mt-5 flex justify-end">
+                                  <button
+                                    type="button"
+                                    className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={handleSaveCostingFeasability}
+                                    disabled={!canSaveCostingFeasability}
+                                    title={
+                                      canSaveCostingFeasability
+                                        ? "Save feasibility and move to pricing"
+                                        : "Approve reception and complete the file action before saving."
+                                    }
+                                  >
+                                    <Check className="h-4 w-4" />
+                                    {costingSavePending ? "Saving..." : "Save"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
+
+                      {isCostingPricingView ? (
+                        <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div className="max-w-2xl">
                               <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
-                                Feasibility file
+                                Costing file with BOM data
                               </h2>
                               <p className="mt-2 text-sm leading-7 text-slate-600">
-                                Upload the feasibility document, then click Save to move this RFQ to pricing.
+                                Upload the costing package used for pricing with its BOM note from this tab.
                               </p>
                             </div>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={openPricingBomModal}
+                              disabled={!canManagePricingBom || pricingBomPending}
+                              title={
+                                canManagePricingBom
+                                  ? "Upload costing file with BOM data"
+                                  : "Only the owner or costing team can upload the pricing BOM file."
+                              }
+                            >
+                              <Upload className="h-4 w-4" />
+                              {pricingBomUpload?.file ? "Replace costing file" : "Upload costing file"}
+                            </button>
                           </div>
 
-                          <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
-                            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                              Required Templates
-                            </h3>
-                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-                              Please download and complete these templates before uploading your final feasibility analysis.
-                            </p>
-                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                              <a
-                                href={costingTemplate}
-                                download="Avocarbon_Costing_Template.xlsm"
-                                className="inline-flex items-center justify-center rounded-2xl border border-tide/20 bg-tide/10 px-4 py-3 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
-                              >
-                                Download Costing
-                              </a>
-                              <a
-                                href={feasibilityTemplate}
-                                download="Avocarbon_Feasibility_Template.xlsm"
-                                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
-                              >
-                                Download Feasibility
-                              </a>
-                            </div>
-                          </div>
-
-                          <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="max-w-2xl">
-                              <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                                Complete feasibility handoff
-                              </h3>
-                              <p className="mt-2 text-sm leading-7 text-slate-600">
-                                Upload the finished feasibility file or mark the requirement as not applicable with a note.
-                              </p>
-                            </div>
-                            {!hasCompletedCostingFileAction ? (
-                              <div className="flex flex-wrap items-center gap-3">
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                  onClick={() => openCostingFileActionModal("UPLOADED")}
-                                  disabled={!canReviewCostingFeasability || costingSavePending}
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  Add feasibility file
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  onClick={() => openCostingFileActionModal("NA")}
-                                  disabled={!canReviewCostingFeasability || costingSavePending}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                  Not Applicable
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          {hasCompletedCostingFileAction ? (
-                            <div className="mt-5 rounded-[24px] border border-emerald-200/80 bg-white/95 p-5 shadow-soft">
+                          {pricingBomUpload?.file ? (
+                            <div className="mt-5 rounded-[24px] border border-sky-200/80 bg-white/95 p-5 shadow-soft">
                               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="max-w-2xl">
                                   <div className="flex flex-wrap items-center gap-3">
-                                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                                      Completed
-                                    </span>
-                                    <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${effectiveCostingFileState?.fileStatus === "NA"
-                                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                                      : "border-sky-200 bg-sky-50 text-sky-700"
-                                      }`}>
-                                      {effectiveCostingFileState?.fileStatus === "NA"
-                                        ? "Not Applicable"
-                                        : "Uploaded"}
+                                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                                      Uploaded
                                     </span>
                                   </div>
                                   <h3 className="mt-3 text-lg font-semibold text-ink">
-                                    {effectiveCostingFileState?.fileStatus === "NA"
-                                      ? "Feasibility file bypass recorded"
-                                      : "Feasibility file received"}
+                                    BOM costing package received
                                   </h3>
                                   <p className="mt-2 text-sm leading-7 text-slate-600">
-                                    {effectiveCostingFileState?.note || "No note recorded."}
+                                    {pricingBomUpload.note || "No note recorded."}
                                   </p>
                                 </div>
 
-                                {effectiveCostingFileState?.file ? (
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    {effectiveCostingFileState.file.url ? (
-                                      <button
-                                        type="button"
-                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                                        onClick={() => handlePreviewFile(effectiveCostingFileState.file)}
-                                      >
-                                        <Eye className="h-4 w-4" />
-                                        Preview
-                                      </button>
-                                    ) : null}
-                                    {effectiveCostingFileState.file.url ? (
-                                      <a
-                                        href={effectiveCostingFileState.file.url}
-                                        download={effectiveCostingFileState.file.name}
-                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
-                                      >
-                                        Download
-                                      </a>
-                                    ) : null}
-                                  </div>
-                                ) : null}
+                                <div className="flex flex-wrap items-center gap-3">
+                                  {pricingBomUpload.file.url ? (
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                      onClick={() => handlePreviewFile(pricingBomUpload.file)}
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      Preview
+                                    </button>
+                                  ) : null}
+                                  {pricingBomUpload.file.url ? (
+                                    <a
+                                      href={pricingBomUpload.file.url}
+                                      download={pricingBomUpload.file.name}
+                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                    >
+                                      Download
+                                    </a>
+                                  ) : null}
+                                </div>
                               </div>
 
                               <div className="mt-5 grid gap-4 md:grid-cols-3">
                                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                    Action by
+                                    Uploaded by
                                   </p>
                                   <p className="mt-2 text-sm font-semibold text-ink">
-                                    {effectiveCostingFileState?.actionBy || "Unavailable"}
+                                    {pricingBomUpload.uploadedBy || "Unavailable"}
                                   </p>
                                 </div>
                                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                    Recorded at
+                                    Uploaded at
                                   </p>
                                   <p className="mt-2 text-sm font-semibold text-ink">
-                                    {formatFileDate(effectiveCostingFileState?.actionAt, { withTime: true })}
+                                    {formatFileDate(pricingBomUpload.uploadedAt, { withTime: true })}
                                   </p>
                                 </div>
                                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
@@ -3432,10 +3837,7 @@ export default function NewRfq() {
                                     File
                                   </p>
                                   <p className="mt-2 text-sm font-semibold text-ink">
-                                    {effectiveCostingFileState?.file?.name ||
-                                      (effectiveCostingFileState?.fileStatus === "NA"
-                                        ? "No file required"
-                                        : "Unavailable")}
+                                    {pricingBomUpload.file?.name || "Unavailable"}
                                   </p>
                                 </div>
                               </div>
@@ -3443,32 +3845,13 @@ export default function NewRfq() {
                           ) : (
                             <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
                               <p className="text-sm font-semibold text-ink">
-                                No feasibility action recorded yet
+                                No costing BOM file uploaded yet
                               </p>
                               <p className="mt-2 text-sm text-slate-500">
-                                Choose Upload or Not Applicable, add your note, then save to move forward.
+                                Use the upload button to add the costing file with BOM data and its note.
                               </p>
                             </div>
                           )}
-
-                          {isCostingFeasabilityView ? (
-                            <div className="mt-5 flex justify-end">
-                              <button
-                                type="button"
-                                className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
-                                onClick={handleSaveCostingFeasability}
-                                disabled={!canSaveCostingFeasability}
-                                title={
-                                  canSaveCostingFeasability
-                                    ? "Save feasibility and move to pricing"
-                                    : "Approve reception and complete the file action before saving."
-                                }
-                              >
-                                <Check className="h-4 w-4" />
-                                {costingSavePending ? "Saving..." : "Save"}
-                              </button>
-                            </div>
-                          ) : null}
                         </div>
                       ) : null}
 
@@ -4421,35 +4804,37 @@ export default function NewRfq() {
                       </div>
                     </section>
 
-                    <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-2">
-                      <button
-                        type="button"
-                        className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={handleValidationUpdate}
-                        disabled={validationButtonsDisabled}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Update
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={handleRejectValidation}
-                        disabled={validationButtonsDisabled}
-                      >
-                        <X className="h-4 w-4" />
-                        {validationActionId === "reject" ? "Rejecting..." : "Reject"}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={handleApproveValidation}
-                        disabled={validationButtonsDisabled}
-                      >
-                        <Check className="h-4 w-4" />
-                        {validationActionId === "approve" ? "Approving..." : "Approve"}
-                      </button>
-                    </div>
+                    {!hideValidationActionButtons ? (
+                      <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-2">
+                        <button
+                          type="button"
+                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={handleValidationUpdate}
+                          disabled={validationButtonsDisabled}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Update
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={handleRejectValidation}
+                          disabled={validationButtonsDisabled}
+                        >
+                          <X className="h-4 w-4" />
+                          {validationActionId === "reject" ? "Rejecting..." : "Reject"}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={handleApproveValidation}
+                          disabled={validationButtonsDisabled}
+                        >
+                          <Check className="h-4 w-4" />
+                          {validationActionId === "approve" ? "Approving..." : "Approve"}
+                        </button>
+                      </div>
+                    ) : null}
 
                     {hasRecordedValidationDecision ? (
                       <section
@@ -4570,6 +4955,7 @@ export default function NewRfq() {
                         <ChatPanel
                           messages={chatFeed}
                           onSend={handleChatSend}
+                          onEditMessage={activeRfqTab === "new" ? handleRfqChatEdit : undefined}
                           readOnly={isChatLocked}
                           readOnlyMessage={chatReadOnlyMessage}
                           onCollapse={() => setChatCollapsed(true)}
@@ -5295,6 +5681,86 @@ export default function NewRfq() {
                       : costingFileActionMode === "NA"
                         ? "Save note"
                         : "Upload and save"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pricingBomModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleClosePricingBomModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Upload pricing BOM file"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">Upload Costing File With BOM Data</p>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={handleClosePricingBomModal}
+                aria-label="Close pricing BOM modal"
+                disabled={pricingBomPending}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <form className="chat-modal-fallback w-full" onSubmit={handleSubmitPricingBomUpload}>
+                <p className="text-slate-600">
+                  Upload the costing file with BOM data and add a note describing what is included.
+                </p>
+                <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  <span>File</span>
+                  <input
+                    className="input-field"
+                    type="file"
+                    onChange={handlePricingBomDraftChange}
+                    disabled={pricingBomPending}
+                  />
+                  {pricingBomDraft ? (
+                    <span className="text-[11px] normal-case tracking-normal text-slate-500">
+                      {pricingBomDraft.name}
+                    </span>
+                  ) : null}
+                </label>
+                <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  <span>Note</span>
+                  <textarea
+                    className="textarea-field min-h-[140px]"
+                    value={pricingBomNote}
+                    onChange={(event) => setPricingBomNote(event.target.value)}
+                    placeholder="Describe the costing BOM package..."
+                    disabled={pricingBomPending}
+                  />
+                </label>
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={handleClosePricingBomModal}
+                    disabled={pricingBomPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pricingBomPending}
+                  >
+                    {pricingBomPending ? "Uploading..." : "Upload and save"}
                   </button>
                 </div>
               </form>
