@@ -16,25 +16,25 @@ const PHASES = [
   {
     key: "In costing",
     label: "In costing",
-    statuses: ["Feasability", "Pricing"],
+    statuses: ["Feasability", "Pricing", "Cancelled"],
     subPhases: ["Feasability", "Pricing"]
   },
   {
     key: "Offer",
     label: "Offer",
-    statuses: ["Offer preparation", "Offer validation"],
+    statuses: ["Offer preparation", "Offer validation", "Cancelled"],
     subPhases: ["Offer preparation", "Offer validation"]
   },
   {
     key: "PO",
     label: "PO",
-    statuses: ["Get PO", "PO accepted", "Mission accepted", "Mission not accepted"],
+    statuses: ["Get PO", "PO accepted", "Mission accepted", "Mission not accepted", "Cancelled"],
     subPhases: ["Get PO", "PO accepted", "Mission status"]
   },
   {
     key: "Prototype",
     label: "Prototype",
-    statuses: ["Get prototype orders", "Prototype ongoing"],
+    statuses: ["Get prototype orders", "Prototype ongoing", "Cancelled"],
     subPhases: ["Get prototype orders", "Prototype ongoing"]
   },
 ];
@@ -136,7 +136,12 @@ export default function Dashboard() {
   const filteredRfqs = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return normalizedRfqs.filter((rfq) => {
-      if (!activePhase.statuses.includes(rfq.status)) return false;
+      const isTerminal = rfq.status === "Cancelled" || rfq.status === "Lost";
+      if (isTerminal) {
+        if (rfq.pipelineStage !== activePhase.key) return false;
+      } else {
+        if (!activePhase.statuses.includes(rfq.status)) return false;
+      }
       if (activeSubStatus !== "all" && rfq.status !== activeSubStatus) return false;
       if (!term) return true;
       const haystack = [

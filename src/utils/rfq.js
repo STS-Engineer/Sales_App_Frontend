@@ -6,6 +6,7 @@ const STATUS_MAP = {
   POTENTIAL: "Potential",
   NEW_RFQ: "New RFQ",
   PENDING_FOR_VALIDATION: "Validation",
+  REVISION_REQUESTED: "Validation",
   IN_COSTING_FEASIBILITY: "Feasability",
   IN_COSTING_PRICING: "Pricing",
   FEASIBILITY: "Feasability",
@@ -43,6 +44,7 @@ const PIPELINE_STAGE_MAP = {
   POTENTIAL: "RFQ",
   NEW_RFQ: "RFQ",
   PENDING_FOR_VALIDATION: "RFQ",
+  REVISION_REQUESTED: "RFQ",
   IN_COSTING_FEASIBILITY: "In costing",
   IN_COSTING_PRICING: "In costing",
   FEASIBILITY: "In costing",
@@ -75,23 +77,71 @@ const PIPELINE_STAGE_MAP = {
 const normalizeStatusValue = (value) =>
   typeof value === "string" ? value : value?.value;
 
-const normalizeDateInputValue = (value) => {
-  if (value === null || value === undefined) return undefined;
-  const text = String(value).trim();
-  if (!text) return undefined;
+const formatDateParts = (date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 
-  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+export const sanitizeDateForInput = (dateStr) => {
+  if (dateStr === null || dateStr === undefined) return "";
+  const text = String(dateStr).trim();
+  if (!text) return "";
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
   if (isoMatch) {
-    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-  }
-
-  const slashMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (slashMatch) {
-    const [, day, month, year] = slashMatch;
+    const [, year, month, day] = isoMatch;
+    const parsedIsoDate = new Date(`${year}-${month}-${day}T00:00:00`);
+    if (Number.isNaN(parsedIsoDate.getTime())) return "";
+    if (
+      parsedIsoDate.getFullYear() !== Number(year) ||
+      parsedIsoDate.getMonth() + 1 !== Number(month) ||
+      parsedIsoDate.getDate() !== Number(day)
+    ) {
+      return "";
+    }
     return `${year}-${month}-${day}`;
   }
 
-  return text;
+  const parsedDate = new Date(text);
+  if (Number.isNaN(parsedDate.getTime())) return "";
+  return formatDateParts(parsedDate);
+};
+
+export const sanitizeNumberForInput = (value) => {
+  if (value === null || value === undefined) return "";
+  let text = String(value).trim();
+  if (!text) return "";
+  text = text.replace(/\s/g, "");
+
+  const lastComma = text.lastIndexOf(",");
+  const lastDot = text.lastIndexOf(".");
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    if (lastComma > lastDot) {
+      text = text.replace(/\./g, "").replace(",", ".");
+    } else {
+      text = text.replace(/,/g, "");
+    }
+  } else if (lastComma !== -1) {
+    const commaCount = (text.match(/,/g) || []).length;
+    if (commaCount === 1 && /,\d{1,2}$/.test(text)) {
+      text = text.replace(",", ".");
+    } else {
+      text = text.replace(/,/g, "");
+    }
+  }
+
+  const parsed = parseFloat(text);
+  return Number.isNaN(parsed) ? "" : parsed;
+};
+
+const sanitizeIntegerForInput = (value) => {
+  if (value === null || value === undefined) return "";
+  const cleaned = String(value).replace(/[\s,]/g, "");
+  const parsed = parseInt(cleaned, 10);
+  return Number.isNaN(parsed) ? "" : parsed;
 };
  
 const resolveBackendStateKey = (rfqOrStatus) => {
@@ -115,6 +165,14 @@ export const mapBackendStatusToUi = (rfqOrStatus) => {
 export const mapBackendStatusToPipelineStage = (rfqOrStatus) => {
   const raw = resolveBackendStateKey(rfqOrStatus);
   if (!raw) return "RFQ";
+
+  const TERMINAL_SUBS = new Set(["CANCELED", "CANCELLED", "LOST"]);
+  if (TERMINAL_SUBS.has(raw) && rfqOrStatus && typeof rfqOrStatus === "object") {
+    const PHASE_MAP = { RFQ: "RFQ", COSTING: "In costing", OFFER: "Offer", PO: "PO", PROTOTYPE: "Prototype", CLOSED: "RFQ" };
+    const phase = typeof rfqOrStatus.phase === "string" ? rfqOrStatus.phase : rfqOrStatus.phase?.value;
+    if (phase && PHASE_MAP[phase]) return PHASE_MAP[phase];
+  }
+
   return PIPELINE_STAGE_MAP[raw] || raw;
 };
  
@@ -148,25 +206,31 @@ export const mapRfqDataToForm = (rfq) => {
     deliveryZone: pickFirst(data.delivery_zone, data.deliveryZone),
     plant: pickFirst(data.delivery_plant, data.plant),
     country: pickFirst(data.country),
-    poDate: normalizeDateInputValue(
+    poDate: sanitizeDateForInput(
       pickFirst(data.po_date, data.poDate)
     ),
-    ppapDate: normalizeDateInputValue(
+    ppapDate: sanitizeDateForInput(
       pickFirst(data.ppap_date, data.ppapDate)
     ),
-    sop: pickFirst(data.sop_year, data.sop),
-    qtyPerYear: pickFirst(data.annual_volume, data.qty_per_year, data.qtyPerYear),
-    rfqReceptionDate: normalizeDateInputValue(
+    sop: sanitizeIntegerForInput(
+      pickFirst(data.sop_year, data.sop)
+    ),
+    qtyPerYear: sanitizeIntegerForInput(
+      pickFirst(data.annual_volume, data.qty_per_year, data.qtyPerYear)
+    ),
+    rfqReceptionDate: sanitizeDateForInput(
       pickFirst(data.rfq_reception_date, data.rfqReceptionDate)
     ),
-    expectedQuotationDate: normalizeDateInputValue(
+    expectedQuotationDate: sanitizeDateForInput(
       pickFirst(data.quotation_expected_date, data.expectedQuotationDate)
     ),
     contactName: pickFirst(data.contact_name, data.contact_first_name, data.contactName),
     contactFunction: pickFirst(data.contact_role, data.contactFunction),
     contactPhone: pickFirst(data.contact_phone, data.contactPhone),
     contactEmail: pickFirst(data.contact_email, data.contactEmail),
-    targetPrice: pickFirst(data.target_price_eur, data.targetPrice),
+    targetPrice: sanitizeNumberForInput(
+      pickFirst(data.target_price_eur, data.targetPrice)
+    ),
     expectedDeliveryConditions: pickFirst(
       data.expected_delivery_conditions,
       data.expectedDeliveryConditions
@@ -218,7 +282,9 @@ export const mapRfqDataToForm = (rfq) => {
       data.final_recommendation,
       data.finalRecommendation
     ),
-    toTotal: pickFirst(data.to_total, data.toTotal),
+    toTotal: sanitizeNumberForInput(
+      pickFirst(data.to_total, data.toTotal)
+    ),
     validatorEmail: pickFirst(
       data.zone_manager_email,
       rfq?.zone_manager_email,
@@ -349,6 +415,7 @@ export const mapRfqToRow = (rfq) => {
     location: data.delivery_zone || potential.customer_location,
     toTotal: Number.isFinite(toTotal) ? toTotal : toTotalRaw,
     status: mapBackendStatusToUi(rfq),
+    pipelineStage: mapBackendStatusToPipelineStage(rfq),
     potentialSystematicId: potential.potential_systematic_id || "",
     potentialCustomer: potential.customer || "",
     potentialApplication: potential.application || "",

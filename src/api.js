@@ -1,7 +1,7 @@
 import { getToken, setToken } from "./utils/session.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
-const REQUEST_TIMEOUT_MS = 15000;
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const REQUEST_TIMEOUT_MS = 300000;
 
 async function handleJson(response) {
   if (!response.ok) {
@@ -194,8 +194,32 @@ export async function validateRfq(rfqId, payload) {
   });
 }
 
+export async function requestRevision(rfqId, payload) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/request-revision`, {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function submitRevision(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/submit-revision`, {
+    method: "POST"
+  });
+}
+
 export async function postRfqDiscussion(rfqId, payload) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/discussion`, {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function getCostingMessages(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing-messages`);
+}
+
+export async function postCostingMessage(rfqId, payload) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing-messages`, {
     method: "POST",
     body: payload
   });
@@ -253,6 +277,20 @@ export async function uploadCostingFile(rfqId, file) {
   const formData = new FormData();
   formData.append("file", file);
   return request(`/api/actions/upload-costing?rfq_id=${encodeURIComponent(rfqId)}`, {
+    method: "POST",
+    body: formData,
+    isForm: true
+  });
+}
+
+export async function submitCostingFileAction(rfqId, payload) {
+  const formData = new FormData();
+  formData.append("action", payload.action);
+  formData.append("note", payload.note);
+  if (payload.file) {
+    formData.append("file", payload.file);
+  }
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing-file-action`, {
     method: "POST",
     body: formData,
     isForm: true

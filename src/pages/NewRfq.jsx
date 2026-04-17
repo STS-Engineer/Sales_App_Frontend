@@ -13,16 +13,20 @@ import {
   createRfq,
   downloadCostingTemplate,
   deleteRfqFile,
+  getCostingMessages,
   getRfqAuditLogs,
   getRfqDiscussion,
   getRfq,
+  postCostingMessage,
   postRfqDiscussion,
   proceedToFormalRfq,
+  requestRevision,
   sendChat,
   sendPotentialChat,
+  submitCostingFileAction,
   submitCostingReview,
+  submitRevision,
   updateRfqData,
-  uploadCostingFile,
   validateRfq,
   uploadRfqFile
 } from "../api";
@@ -380,6 +384,7 @@ const RFQ_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
 const POTENTIAL_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your potential opportunity assistant. I'll help you assess this opportunity before we open the formal RFQ.\n1. Guide me step by step\n2. I will provide a whole paragraph";
+const SELF_REVISION_REQUEST_COMMENT = "Self-update initiated by assigned validator.";
 const SHARED_POTENTIAL_FIELDS = [
   { key: "potentialCustomer", label: "customer" },
   { key: "potentialCustomerLocation", label: "customer location" },
@@ -501,11 +506,19 @@ const normalizeCostingFiles = (rfq) => {
       entry?.original_name ||
       entry?.file_name ||
       `costing-file-${index + 1}`;
+    const url =
+      entry?.url ||
+      entry?.file_url ||
+      entry?.download_url ||
+      entry?.path ||
+      entry?.link ||
+      "";
     const id =
       entry?.id || entry?.file_id || entry?.uuid || entry?.path || name || index;
     return {
       id,
       name,
+      url,
       source: "server",
       size:
         entry?.size ||
@@ -522,6 +535,89 @@ const normalizeCostingFiles = (rfq) => {
       owner: entry?.uploaded_by || entry?.owner || entry?.created_by || ""
     };
   });
+};
+
+const normalizeCostingFileState = (rfq) => {
+  const raw = rfq?.costing_file_state;
+  if (!raw || typeof raw !== "object") return null;
+  const normalizedFile =
+    raw?.file && typeof raw.file === "object"
+      ? {
+        id:
+          raw.file?.id ||
+          raw.file?.file_id ||
+          raw.file?.uuid ||
+          raw.file?.path ||
+          raw.file?.filename ||
+          "costing-file-state",
+        name:
+          raw.file?.name ||
+          raw.file?.filename ||
+          raw.file?.original_name ||
+          raw.file?.file_name ||
+          "Costing file",
+        url:
+          raw.file?.url ||
+          raw.file?.file_url ||
+          raw.file?.download_url ||
+          raw.file?.path ||
+          raw.file?.link ||
+          "",
+        source: "server",
+        size:
+          raw.file?.size ||
+          raw.file?.file_size ||
+          raw.file?.content_length ||
+          raw.file?.contentLength ||
+          "",
+        updatedAt:
+          raw.file?.uploaded_at ||
+          raw.file?.updated_at ||
+          raw.file?.last_modified ||
+          raw.file?.lastModified ||
+          raw?.action_at ||
+          "",
+        owner:
+          raw.file?.uploaded_by ||
+          raw.file?.owner ||
+          raw.file?.created_by ||
+          raw?.action_by ||
+          ""
+      }
+      : null;
+
+  return {
+    fileStatus: String(raw?.file_status || "").trim().toUpperCase() || "PENDING",
+    note: String(raw?.file_note || "").trim(),
+    actionBy: String(raw?.action_by || "").trim(),
+    actionAt: String(raw?.action_at || "").trim(),
+    file: normalizedFile
+  };
+};
+
+const buildLegacyCostingFileState = (files = []) => {
+  if (!Array.isArray(files) || !files.length) {
+    return {
+      fileStatus: "PENDING",
+      note: "",
+      actionBy: "",
+      actionAt: "",
+      file: null
+    };
+  }
+  const latest = files[files.length - 1];
+  const safeLegacyUrl =
+    typeof latest?.url === "string" &&
+      (/^https?:\/\//i.test(latest.url) || latest.url.startsWith("/"))
+      ? latest.url
+      : "";
+  return {
+    fileStatus: "UPLOADED",
+    note: "Legacy costing upload recorded before notes were required.",
+    actionBy: String(latest?.owner || "").trim(),
+    actionAt: String(latest?.updatedAt || "").trim(),
+    file: latest ? { ...latest, url: safeLegacyUrl } : null
+  };
 };
 
 const FILES_PREVIEW_LIMIT = 3;
@@ -609,7 +705,8 @@ const normalizeDiscussionMessage = (entry, index = 0) => {
     createdAt,
     authorEmail: String(entry?.author_email || entry?.authorEmail || "").trim(),
     authorName: String(entry?.author_name || entry?.authorName || "").trim(),
-    authorRole: String(entry?.author_role || entry?.authorRole || "").trim()
+    authorRole: String(entry?.author_role || entry?.authorRole || "").trim(),
+    recipientEmail: String(entry?.recipient_email || entry?.recipientEmail || "").trim()
   };
 };
 
@@ -651,11 +748,59 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
   );
+const buildRfqDataPayloadFromForm = (form = {}) => ({
+  customer_name: form.customer || "",
+  application: form.application || "",
+  product_name: form.productName || "",
+  product_line_acronym: form.productLine || "",
+  project_name: form.projectName || "",
+  costing_data: form.costingData || "",
+  customer_pn: form.customerPn || "",
+  revision_level: form.revisionLevel || "",
+  delivery_zone: form.deliveryZone || "",
+  delivery_plant: form.plant || "",
+  country: form.country || "",
+  po_date: form.poDate || "",
+  ppap_date: form.ppapDate || "",
+  sop_year: form.sop || "",
+  annual_volume: form.qtyPerYear || "",
+  rfq_reception_date: form.rfqReceptionDate || "",
+  quotation_expected_date: form.expectedQuotationDate || "",
+  contact_name: form.contactName || "",
+  contact_role: form.contactFunction || "",
+  contact_phone: form.contactPhone || "",
+  contact_email: form.contactEmail || "",
+  target_price_eur: form.targetPrice || "",
+  expected_delivery_conditions: form.expectedDeliveryConditions || "",
+  expected_payment_terms: form.expectedPaymentTerms || "",
+  type_of_packaging: form.typeOfPackaging || "",
+  business_trigger: form.businessTrigger || "",
+  customer_tooling_conditions: form.customerToolingConditions || "",
+  entry_barriers: form.entryBarriers || "",
+  responsibility_design: form.designResponsible || "",
+  responsibility_validation: form.validationResponsible || "",
+  product_ownership: form.designOwner || "",
+  pays_for_development: form.developmentCosts || "",
+  capacity_available: form.technicalCapacity || "",
+  scope: form.scope || "",
+  customer_status: form.customerStatus || "",
+  strategic_note: form.strategicNote || "",
+  final_recommendation: form.finalRecommendation || "",
+  to_total: form.toTotal || "",
+  zone_manager_email: form.validatorEmail || ""
+});
+const buildRevisionGreeting = (revisionNotes = "") => {
+  const note = String(revisionNotes || "").trim();
+  if (!note || note === SELF_REVISION_REQUEST_COMMENT) {
+    return "Please tell me your updates.";
+  }
+  return `The validator requested the following updates: ${note}. What would you like to change?`;
+};
 const withInitialChatMessage = (messages = [], greeting) => {
   const initialMessage = {
     role: "assistant",
@@ -814,10 +959,12 @@ export default function NewRfq() {
     currentUserProfile?.name || currentUserProfile?.email || "You";
   const currentUserEmail = String(currentUserProfile?.email || "").trim();
   const currentUserRole = String(currentUserProfile?.role || "").trim();
+  const normalizedCurrentUserEmail = normalizeEmailValue(currentUserEmail);
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
   const [form, setForm] = useState(() => ({ ...initialForm }));
   const [saving, setSaving] = useState(false);
   const [rfqId, setRfqId] = useState("");
+  const [rfqCreatorEmail, setRfqCreatorEmail] = useState("");
   const [potentialChatMessages, setPotentialChatMessages] = useState([]);
   const [rfqChatMessages, setRfqChatMessages] = useState([]);
   const [loadingRfq, setLoadingRfq] = useState(false);
@@ -835,13 +982,25 @@ export default function NewRfq() {
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
   const [costingFiles, setCostingFiles] = useState([]);
-  const [pendingCostingFiles, setPendingCostingFiles] = useState([]);
+  const [costingFileState, setCostingFileState] = useState(null);
+  const [costingFileActionModalOpen, setCostingFileActionModalOpen] = useState(false);
+  const [costingFileActionMode, setCostingFileActionMode] = useState("UPLOADED");
+  const [costingFileActionNote, setCostingFileActionNote] = useState("");
+  const [costingFileActionDraft, setCostingFileActionDraft] = useState(null);
+  const [costingFileActionPending, setCostingFileActionPending] = useState(false);
   const [discussionMessages, setDiscussionMessages] = useState([]);
   const [discussionDraft, setDiscussionDraft] = useState("");
   const [discussionSending, setDiscussionSending] = useState(false);
   const [discussionLoading, setDiscussionLoading] = useState(false);
   const [discussionError, setDiscussionError] = useState("");
   const [discussionModalOpen, setDiscussionModalOpen] = useState(false);
+  const [costingDiscussionMessages, setCostingDiscussionMessages] = useState([]);
+  const [costingDiscussionDraft, setCostingDiscussionDraft] = useState("");
+  const [costingDiscussionRecipient, setCostingDiscussionRecipient] = useState("");
+  const [costingDiscussionSending, setCostingDiscussionSending] = useState(false);
+  const [costingDiscussionLoading, setCostingDiscussionLoading] = useState(false);
+  const [costingDiscussionError, setCostingDiscussionError] = useState("");
+  const [isCostingDiscussionOpen, setIsCostingDiscussionOpen] = useState(false);
   const [filePreview, setFilePreview] = useState(null);
   const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
@@ -849,6 +1008,11 @@ export default function NewRfq() {
   const [filePreviewLoadingId, setFilePreviewLoadingId] = useState("");
   const [validationActionId, setValidationActionId] = useState("");
   const [validationSuccess, setValidationSuccess] = useState("");
+  const [revisionNotes, setRevisionNotes] = useState("");
+  const [revisionRequestModalOpen, setRevisionRequestModalOpen] = useState(false);
+  const [revisionComment, setRevisionComment] = useState("");
+  const [revisionActionId, setRevisionActionId] = useState("");
+  const [optimisticRevisionMode, setOptimisticRevisionMode] = useState(false);
   const [templateDownloadPending, setTemplateDownloadPending] = useState(false);
   const [templatePreviewPending, setTemplatePreviewPending] = useState(false);
   const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
@@ -868,7 +1032,6 @@ export default function NewRfq() {
   const [proceedingToFormalRfq, setProceedingToFormalRfq] = useState(false);
   const [costingSavePending, setCostingSavePending] = useState(false);
   const rfqFileInputRef = useRef(null);
-  const costingFileInputRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
   const resizeState = useRef({ startX: 0, startWidth: 420 });
@@ -926,6 +1089,12 @@ export default function NewRfq() {
   );
   const hasPersistedDraft = Boolean(rfqId || rfqIdParam || form.id);
   const isPotentialDraft = form.status === "Potential";
+  const isRevisionRequested = rfqSubStatus === "REVISION_REQUESTED";
+  const isRevisionModeActive = isRevisionRequested || optimisticRevisionMode;
+  const assignedValidatorEmail = normalizeEmailValue(form.validatorEmail);
+  const isAssignedValidatorUser =
+    Boolean(assignedValidatorEmail) &&
+    assignedValidatorEmail === normalizedCurrentUserEmail;
   const isPotentialTabLocked = false;
   const isNewRfqTabLocked = hasPersistedDraft && isPotentialDraft;
   const isPotentialAssistantLocked =
@@ -954,9 +1123,9 @@ export default function NewRfq() {
     costingReviewAudit.approvedAt || costingReviewAudit.rejectedAt
   );
   const isCostingReviewRejected = Boolean(costingReviewAudit.rejectedAt);
-  const allCostingFiles = useMemo(
-    () => [...costingFiles, ...pendingCostingFiles],
-    [costingFiles, pendingCostingFiles]
+  const effectiveCostingFileState = useMemo(
+    () => costingFileState || buildLegacyCostingFileState(costingFiles),
+    [costingFileState, costingFiles]
   );
   const validationButtonsDisabled = Boolean(
     validationActionId || hasRecordedValidationDecision
@@ -978,7 +1147,9 @@ export default function NewRfq() {
   const activeChatGreeting =
     activeRfqTab === "potential"
       ? POTENTIAL_CHATBOT_INITIAL_GREETING
-      : RFQ_CHATBOT_INITIAL_GREETING;
+      : isRevisionModeActive && activeRfqTab === "new"
+        ? buildRevisionGreeting(revisionNotes)
+        : RFQ_CHATBOT_INITIAL_GREETING;
   const activeChatMessages =
     activeRfqTab === "potential" ? potentialChatMessages : rfqChatMessages;
   const chatFeed = useMemo(
@@ -1040,26 +1211,34 @@ export default function NewRfq() {
   }, [stepCompletion, fulfilledSteps]);
   const hasWorkflowMovedBeyondRfq = Boolean(activeStage && activeStage !== "RFQ");
   const hasValidationLock =
-    activeSubPhase === "Validation" ||
-    rfqValidationReached ||
-    hasWorkflowMovedBeyondRfq;
+    !isRevisionModeActive &&
+    (
+      activeSubPhase === "Validation" ||
+      rfqValidationReached ||
+      hasWorkflowMovedBeyondRfq
+    );
 
   const reviewNavigationUnlocked =
     isRfqStage &&
     (hasValidationLock || selectedSubPhase === "Validation");
 
   const getActiveDisplaySubPhase = (stageKey) => {
+    if (stageKey === "RFQ" && isRevisionModeActive) {
+      return "RFQ form";
+    }
     if (stageKey !== groupedActiveStage) return "";
     return activeSubPhase;
   };
   const rfqDisplaySubPhase = isRfqStage
-    ? selectedSubPhase || getActiveDisplaySubPhase("RFQ") || "RFQ form"
+    ? isRevisionModeActive
+      ? "RFQ form"
+      : selectedSubPhase || getActiveDisplaySubPhase("RFQ") || "RFQ form"
     : "";
   const isRfqFormView = isRfqStage && rfqDisplaySubPhase === "RFQ form";
   const unlockAllNewRfqSteps =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
   const isRfqValidationView =
-    isRfqStage && rfqDisplaySubPhase === "Validation";
+    isRfqStage && !isRevisionModeActive && rfqDisplaySubPhase === "Validation";
   const highestUnlockedStepIndex = useMemo(() => {
     if (reviewNavigationUnlocked || unlockAllNewRfqSteps) {
       return lastStepIndex;
@@ -1105,12 +1284,35 @@ export default function NewRfq() {
     canReviewCostingFeasability &&
     hasRecordedCostingReviewDecision &&
     !isCostingReviewRejected &&
-    allCostingFiles.length &&
+    ["UPLOADED", "NA"].includes(effectiveCostingFileState?.fileStatus || "") &&
     !costingSavePending
   );
+  const hasCompletedCostingFileAction = Boolean(
+    effectiveCostingFileState?.fileStatus &&
+    effectiveCostingFileState.fileStatus !== "PENDING"
+  );
+  const knownCostingRecipients = useMemo(() => {
+    const candidates = [
+      currentUserEmail,
+      rfqCreatorEmail,
+      form.validatorEmail,
+      ...costingDiscussionMessages.map((message) => message.authorEmail),
+      ...costingDiscussionMessages.map((message) => message.recipientEmail)
+    ];
+    return [...new Set(
+      candidates
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )];
+  }, [
+    costingDiscussionMessages,
+    currentUserEmail,
+    form.validatorEmail,
+    rfqCreatorEmail
+  ]);
   const isRfqFormReadOnly =
     hasValidationLock && !rfqFormEditEnabled;
-  const lockNewRfqFields = true;
+  const lockNewRfqFields = !isRevisionModeActive;
   const potentialFieldReadOnly = true;
   const isChatLocked =
     isChatOnly || hasValidationLock || proceedingToFormalRfq || isPotentialAssistantLocked;
@@ -1161,6 +1363,7 @@ export default function NewRfq() {
   }, [
     activeStage,
     hasRecordedValidationDecision,
+    isRevisionModeActive,
     persistValidationView,
     persistCostingReviewView
   ]);
@@ -1180,6 +1383,7 @@ export default function NewRfq() {
     activeSubPhase,
     allStepsComplete,
     activeStage,
+    isRevisionModeActive,
     selectedStage,
     persistValidationView,
     persistCostingReviewView
@@ -1190,13 +1394,21 @@ export default function NewRfq() {
     setRfqValidationReached(false);
     setPersistValidationView(false);
     setPersistCostingReviewView(false);
+    setRevisionRequestModalOpen(false);
+    setRevisionComment("");
+    setRevisionActionId("");
+    setOptimisticRevisionMode(false);
   }, [rfqId]);
 
   useEffect(() => {
+    if (isRevisionModeActive) {
+      setRfqValidationReached(false);
+      return;
+    }
     if (activeSubPhase === "Validation") {
       setRfqValidationReached(true);
     }
-  }, [activeSubPhase]);
+  }, [activeSubPhase, isRevisionModeActive]);
 
   useEffect(() => {
     const previousCompletion = previousStepCompletionRef.current;
@@ -1248,6 +1460,7 @@ export default function NewRfq() {
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
     const isPotentialRecord = subStatusValue === "POTENTIAL";
+    const isRevisionRecord = subStatusValue === "REVISION_REQUESTED";
     const mappedFields = omitUndefinedValues({
       ...mapRfqDataToForm(rfq),
       ...mapPotentialToForm(rfq?.potential)
@@ -1257,8 +1470,15 @@ export default function NewRfq() {
     setValidationAudit(extractValidationAudit(rfq, auditLogs));
     setCostingReviewAudit(extractCostingReviewAudit(rfq, auditLogs));
     setCostingFiles(normalizeCostingFiles(rfq));
-    setPendingCostingFiles([]);
+    setCostingFileState(normalizeCostingFileState(rfq));
+    setCostingFileActionModalOpen(false);
+    setCostingFileActionMode("UPLOADED");
+    setCostingFileActionNote("");
+    setCostingFileActionDraft(null);
+    setCostingFileActionPending(false);
     setRfqSubStatus(subStatusValue || "");
+    setRfqCreatorEmail(String(rfq?.created_by_email || ""));
+    setRevisionNotes(String(rfq?.revision_notes || ""));
     setDiscussionMessages([]);
     setDiscussionError("");
     setForm({
@@ -1268,13 +1488,25 @@ export default function NewRfq() {
       status: nextUiStatus
     });
     setActiveStage(nextPipelineStage);
+    if (nextUiStatus === "Cancelled" || nextUiStatus === "Lost") {
+      const canceledStageKey = normalizePipelineStageKey(nextPipelineStage) || nextPipelineStage || "RFQ";
+      setSelectedStage(canceledStageKey);
+      setSelectedSubPhase("");
+    }
     setActiveRfqTab((prev) => {
       if (preserveActiveTab && prev === "files") {
         return prev;
       }
       return isPotentialRecord ? "potential" : "new";
     });
-    if (nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
+    if (isRevisionRecord) {
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("RFQ form");
+      setActiveStep((prev) => (stepIds.includes(prev) ? prev : "step-client"));
+      setRfqValidationReached(false);
+      setRfqFormEditEnabled(true);
+      setPersistValidationView(false);
+    } else if (nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
       setSelectedStage("RFQ");
       setSelectedSubPhase("Validation");
       setActiveStep("step-notes");
@@ -1366,6 +1598,11 @@ export default function NewRfq() {
           setPotentialChatMessages([]);
           setRfqChatMessages([]);
           setRfqSubStatus("");
+          setRevisionNotes("");
+          setRevisionRequestModalOpen(false);
+          setRevisionComment("");
+          setRevisionActionId("");
+          setOptimisticRevisionMode(false);
           setActiveStage("RFQ");
           setSelectedStage("RFQ");
           setSelectedSubPhase("RFQ form");
@@ -1374,18 +1611,33 @@ export default function NewRfq() {
           setServerFiles([]);
           setLocalFiles([]);
           setCostingFiles([]);
-          setPendingCostingFiles([]);
+          setCostingFileState(null);
+          setCostingFileActionModalOpen(false);
+          setCostingFileActionMode("UPLOADED");
+          setCostingFileActionNote("");
+          setCostingFileActionDraft(null);
+          setCostingFileActionPending(false);
           setDiscussionMessages([]);
           setDiscussionDraft("");
           setDiscussionSending(false);
           setDiscussionLoading(false);
           setDiscussionError("");
           setDiscussionModalOpen(false);
+          setCostingDiscussionMessages([]);
+          setCostingDiscussionDraft("");
+          setCostingDiscussionRecipient("");
+          setCostingDiscussionSending(false);
+          setCostingDiscussionLoading(false);
+          setCostingDiscussionError("");
+          setIsCostingDiscussionOpen(false);
+          setRfqCreatorEmail("");
           setValidationSuccess("");
           setValidationAudit(createEmptyValidationAudit());
           setCostingReviewAudit(createEmptyValidationAudit());
           setRejectModalOpen(false);
           setRejectReason("");
+          setRevisionRequestModalOpen(false);
+          setRevisionComment("");
           setRfqFormEditEnabled(false);
           setRfqValidationReached(false);
           setPersistValidationView(false);
@@ -1402,8 +1654,25 @@ export default function NewRfq() {
       } catch {
         if (!alive) return;
         setRfqSubStatus("");
+        setRfqCreatorEmail("");
+        setRevisionNotes("");
+        setRevisionRequestModalOpen(false);
+        setRevisionComment("");
+        setRevisionActionId("");
+        setOptimisticRevisionMode(false);
+        setCostingFiles([]);
+        setCostingFileState(null);
+        setCostingFileActionModalOpen(false);
+        setCostingFileActionMode("UPLOADED");
+        setCostingFileActionNote("");
+        setCostingFileActionDraft(null);
+        setCostingFileActionPending(false);
         setDiscussionMessages([]);
         setDiscussionError("");
+        setCostingDiscussionMessages([]);
+        setCostingDiscussionRecipient("");
+        setCostingDiscussionError("");
+        setIsCostingDiscussionOpen(false);
         setRfqError("Unable to load the RFQ. Please try again.");
       } finally {
         if (alive) {
@@ -1460,6 +1729,45 @@ export default function NewRfq() {
   }, [activeDiscussionPhase, discussionModalOpen, rfqId, rfqIdParam]);
 
   useEffect(() => {
+    let alive = true;
+    const currentRfqId = rfqId || rfqIdParam;
+
+    if (!currentRfqId || !isCostingStage) {
+      setCostingDiscussionMessages([]);
+      setCostingDiscussionLoading(false);
+      setCostingDiscussionError("");
+      return () => {
+        alive = false;
+      };
+    }
+
+    const loadCostingDiscussion = async () => {
+      setCostingDiscussionLoading(true);
+      setCostingDiscussionError("");
+      try {
+        const messages = await getCostingMessages(currentRfqId);
+        if (!alive) return;
+        setCostingDiscussionMessages(mapDiscussionMessages(messages));
+      } catch (error) {
+        if (!alive) return;
+        setCostingDiscussionMessages([]);
+        setCostingDiscussionError(
+          error?.message || "Unable to load the costing discussion."
+        );
+      } finally {
+        if (alive) {
+          setCostingDiscussionLoading(false);
+        }
+      }
+    };
+
+    loadCostingDiscussion();
+    return () => {
+      alive = false;
+    };
+  }, [isCostingStage, rfqId, rfqIdParam]);
+
+  useEffect(() => {
     return () => {
       localFilesRef.current.forEach((file) => {
         if (file?.url) {
@@ -1504,7 +1812,6 @@ export default function NewRfq() {
     setCostingReviewActionId("");
     setCostingRejectModalOpen(false);
     setCostingRejectReason("");
-    setPendingCostingFiles([]);
     setCostingSavePending(false);
     setTemplatePreviewUrl((current) => {
       if (current) {
@@ -1888,13 +2195,105 @@ export default function NewRfq() {
     }
   };
 
-  const handleValidationUpdate = () => {
-    setValidationSuccess("RFQ returned to the RFQ form for updates.");
+  const handleCloseRevisionRequestModal = () => {
+    if (revisionActionId === "request") return;
+    setRevisionRequestModalOpen(false);
+    setRevisionComment("");
+  };
+
+  const handleSubmitRevisionRequest = async () => {
+    if (!rfqId || revisionActionId) return;
+    const comment = String(revisionComment || "").trim();
+    if (!comment) {
+      setRfqError("Please provide revision instructions.");
+      return;
+    }
+
+    setRevisionActionId("request");
     setRfqError("");
+    try {
+      const updatedRfq = await requestRevision(rfqId, { comment });
+      const auditLogs = await getRfqAuditLogs(rfqId).catch(() => []);
+      applyRfq(updatedRfq, { auditLogs, preserveActiveTab: true });
+      setRevisionRequestModalOpen(false);
+      setRevisionComment("");
+      showToast("Revision requested successfully.", {
+        type: "success",
+        title: "Revision requested"
+      });
+    } catch (error) {
+      setRfqError(error?.message || "Unable to request a revision.");
+    } finally {
+      setRevisionActionId("");
+    }
+  };
+
+  const handleSubmitRevisionUpdates = async () => {
+    if (!rfqId || revisionActionId) return;
+    setRevisionActionId("submit");
+    setRfqError("");
+    try {
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      const updatedRfq = await submitRevision(rfqId);
+      const auditLogs = await getRfqAuditLogs(rfqId).catch(() => []);
+      applyRfq(updatedRfq, { auditLogs });
+      showToast("Updates submitted for validation.", {
+        type: "success",
+        title: "Updates submitted"
+      });
+    } catch (error) {
+      setRfqError(error?.message || "Unable to submit updates.");
+    } finally {
+      setRevisionActionId("");
+      setOptimisticRevisionMode(false);
+    }
+  };
+
+  const handleValidationUpdate = async () => {
+    if (!rfqId) return;
+    setRfqError("");
+    if (currentUserRole !== "OWNER" && !isAssignedValidatorUser) {
+      showToast("Only the assigned validator or the owner can request revisions.", {
+        type: "error",
+        title: "Access denied"
+      });
+      return;
+    }
+
+    if (!isAssignedValidatorUser) {
+      setRevisionComment("");
+      setRevisionRequestModalOpen(true);
+      return;
+    }
+
+    setOptimisticRevisionMode(true);
     setRfqFormEditEnabled(true);
     setPersistValidationView(false);
     setActiveRfqTab("new");
-    handleSubPhaseChange("RFQ", "RFQ form");
+    setSelectedStage("RFQ");
+    setSelectedSubPhase("RFQ form");
+    setActiveStep((prev) => (stepIds.includes(prev) ? prev : "step-client"));
+    setRevisionNotes("");
+    setRevisionActionId("self");
+
+    try {
+      const updatedRfq = await requestRevision(rfqId, {
+        comment: SELF_REVISION_REQUEST_COMMENT
+      });
+      const auditLogs = await getRfqAuditLogs(rfqId).catch(() => []);
+      applyRfq(updatedRfq, { auditLogs, preserveActiveTab: true });
+      showToast("Revision mode enabled. Update the RFQ and submit your changes when ready.", {
+        type: "success",
+        title: "Revision mode"
+      });
+    } catch (error) {
+      setOptimisticRevisionMode(false);
+      await syncRfq(rfqId);
+      setRfqError(error?.message || "Unable to enable revision mode.");
+    } finally {
+      setRevisionActionId("");
+      setOptimisticRevisionMode(false);
+    }
   };
 
   const handleApproveValidation = async () => {
@@ -1996,7 +2395,9 @@ export default function NewRfq() {
       setPersistCostingReviewView(true);
       setSelectedStage("In costing");
       setSelectedSubPhase("Feasability");
-      setValidationSuccess("Feasibility approved. Upload the feasibility file and click Save to move to pricing.");
+      setValidationSuccess(
+        "Feasibility approved. Upload the file or mark it as not applicable, then click Save to move to pricing."
+      );
     } catch (error) {
       setRfqError(error?.message || "Unable to approve this feasibility review.");
     } finally {
@@ -2046,28 +2447,72 @@ export default function NewRfq() {
     }
   };
 
-  const handleCostingFilesChange = (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-    const nextFiles = files.map((file) => ({
-      id: `costing-local-${file.name}-${file.size}-${file.lastModified}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`,
-      name: file.name,
-      file,
-      source: "local",
-      size: file.size,
-      updatedAt: file.lastModified ? new Date(file.lastModified).toISOString() : "",
-      owner: currentUserLabel
-    }));
-    setPendingCostingFiles((prev) => [...prev, ...nextFiles]);
-    if (costingFileInputRef.current) {
-      costingFileInputRef.current.value = "";
+  const openCostingFileActionModal = (mode) => {
+    if (!canReviewCostingFeasability || costingSavePending || costingFileActionPending) {
+      return;
     }
+    setRfqError("");
+    setCostingFileActionMode(mode);
+    setCostingFileActionNote("");
+    setCostingFileActionDraft(null);
+    setCostingFileActionModalOpen(true);
   };
 
-  const handleRemovePendingCostingFile = (fileId) => {
-    setPendingCostingFiles((prev) => prev.filter((file) => file.id !== fileId));
+  const handleCloseCostingFileActionModal = () => {
+    if (costingFileActionPending) return;
+    setCostingFileActionModalOpen(false);
+    setCostingFileActionMode("UPLOADED");
+    setCostingFileActionNote("");
+    setCostingFileActionDraft(null);
+  };
+
+  const handleCostingFileDraftChange = (event) => {
+    const nextFile = event.target.files?.[0] || null;
+    setCostingFileActionDraft(nextFile);
+  };
+
+  const handleSubmitCostingFileAction = async (event) => {
+    event.preventDefault();
+    if (!rfqId || costingFileActionPending) return;
+
+    const trimmedNote = String(costingFileActionNote || "").trim();
+    if (!trimmedNote) {
+      setRfqError("Please provide a note for this costing action.");
+      return;
+    }
+    if (costingFileActionMode === "UPLOADED" && !costingFileActionDraft) {
+      setRfqError("Please choose the completed feasibility file before submitting.");
+      return;
+    }
+
+    setCostingFileActionPending(true);
+    setRfqError("");
+
+    try {
+      await submitCostingFileAction(rfqId, {
+        action: costingFileActionMode,
+        note: trimmedNote,
+        file: costingFileActionMode === "UPLOADED" ? costingFileActionDraft : null
+      });
+      await syncRfq(rfqId);
+      setCostingFileActionModalOpen(false);
+      setCostingFileActionMode("UPLOADED");
+      setCostingFileActionNote("");
+      setCostingFileActionDraft(null);
+      showToast(
+        costingFileActionMode === "NA"
+          ? "Marked as not applicable with your note."
+          : "Feasibility file submitted successfully.",
+        {
+          type: "success",
+          title: "Costing updated"
+        }
+      );
+    } catch (error) {
+      setRfqError(error?.message || "Unable to save this costing file action.");
+    } finally {
+      setCostingFileActionPending(false);
+    }
   };
 
   const handleSaveCostingFeasability = async () => {
@@ -2076,8 +2521,10 @@ export default function NewRfq() {
       setRfqError("Only an approved feasibility review can be saved to pricing.");
       return;
     }
-    if (!allCostingFiles.length) {
-      setRfqError("Please upload at least one feasibility file before saving.");
+    if (!["UPLOADED", "NA"].includes(effectiveCostingFileState?.fileStatus || "")) {
+      setRfqError(
+        "Complete the feasibility file action by uploading the file or marking it as not applicable."
+      );
       return;
     }
 
@@ -2086,10 +2533,6 @@ export default function NewRfq() {
     setRfqError("");
 
     try {
-      for (const file of pendingCostingFiles) {
-        await uploadCostingFile(rfqId, file.file);
-      }
-
       await advanceRfqStatus(rfqId, {
         target_phase: "COSTING",
         target_sub_status: "PRICING"
@@ -2099,11 +2542,48 @@ export default function NewRfq() {
       await syncRfq(rfqId);
       setSelectedStage("In costing");
       setSelectedSubPhase("Pricing");
-      setValidationSuccess("Feasibility file saved and RFQ moved to pricing.");
+      setValidationSuccess("Costing moved to pricing successfully.");
     } catch (error) {
-      setRfqError(error?.message || "Unable to save the feasibility file and move to pricing.");
+      setRfqError(error?.message || "Unable to move this RFQ to pricing.");
     } finally {
       setCostingSavePending(false);
+    }
+  };
+
+  const handleCostingDiscussionSend = async (event) => {
+    event.preventDefault();
+    const content = String(costingDiscussionDraft || "").trim();
+    const recipientEmail = String(costingDiscussionRecipient || "").trim();
+
+    if (!content || !recipientEmail || costingDiscussionSending) {
+      return;
+    }
+
+    let currentRfqId = rfqId;
+    setCostingDiscussionSending(true);
+    setCostingDiscussionError("");
+
+    try {
+      currentRfqId = await ensureRfqExists();
+      const createdMessage = await postCostingMessage(currentRfqId, {
+        message: content,
+        recipient_email: recipientEmail
+      });
+      setCostingDiscussionMessages((prev) =>
+        mapDiscussionMessages([...prev, createdMessage])
+      );
+      setCostingDiscussionDraft("");
+      setCostingDiscussionRecipient("");
+      showToast(`User ${recipientEmail} has been successfully notified.`, {
+        type: "success",
+        title: "Notification sent"
+      });
+    } catch (error) {
+      setCostingDiscussionError(
+        error?.message || "Unable to send this costing discussion message."
+      );
+    } finally {
+      setCostingDiscussionSending(false);
     }
   };
 
@@ -2213,7 +2693,7 @@ export default function NewRfq() {
                           const selectedSubPhaseForStage = isSelected
                             ? selectedSubPhase || effectiveSubPhase || stage.subPhases?.[0] || ""
                             : effectiveSubPhase;
-                          const stepState = isActive && isTerminalStage
+                          const stepState = isTerminalStage && (isActive || isCompleted)
                             ? "pipeline-step-terminal"
                             : isActive
                               ? "pipeline-step-active"
@@ -2266,7 +2746,7 @@ export default function NewRfq() {
                                             key={`segment-${subPhase}`}
                                             className={[
                                               "h-1 flex-1 rounded-full",
-                                              isSubComplete ? "bg-emerald-400" : "bg-white/25"
+                                              isSubComplete ? (isTerminalStage ? "bg-red-400" : "bg-emerald-400") : "bg-white/25"
                                             ].join(" ")}
                                           />
                                         );
@@ -2290,12 +2770,12 @@ export default function NewRfq() {
                                         const dotClass = isSubActive
                                           ? "h-2 w-2 rounded-full bg-white shadow-[0_0_0_2px_rgba(255,255,255,0.35)]"
                                           : isSubComplete
-                                            ? "h-2 w-2 rounded-full bg-emerald-300"
+                                            ? (isTerminalStage ? "h-2 w-2 rounded-full bg-red-300" : "h-2 w-2 rounded-full bg-emerald-300")
                                             : "h-1.5 w-1.5 rounded-full bg-white/70";
                                         const labelClass = isSubActive
                                           ? "mt-0.5 max-w-[120px] text-center font-semibold leading-tight text-white"
                                           : isSubComplete
-                                            ? "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50"
+                                            ? (isTerminalStage ? "mt-0.5 max-w-[120px] text-center leading-tight text-red-100" : "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50")
                                             : "mt-0.5 max-w-[120px] text-center leading-tight text-white/85";
 
                                         return (
@@ -2348,6 +2828,27 @@ export default function NewRfq() {
                           : "bg-coral text-white"
                           }`}>
                           {discussionMessages.length > 99 ? "99+" : discussionMessages.length}
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : isCostingStage ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCostingDiscussionOpen(true)}
+                      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:h-14 sm:w-14 ${isCostingDiscussionOpen
+                        ? "border-tide/30 bg-tide text-white"
+                        : "border-slate-200/80 bg-white/90 text-slate-600 hover:-translate-y-0.5 hover:border-tide/35 hover:text-tide"
+                        }`}
+                      aria-label="Open costing discussion"
+                      title="Open costing discussion"
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                      {costingDiscussionMessages.length ? (
+                        <span className={`absolute -right-1.5 -top-1.5 inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${isCostingDiscussionOpen
+                          ? "bg-white text-tide"
+                          : "bg-coral text-white"
+                          }`}>
+                          {costingDiscussionMessages.length > 99 ? "99+" : costingDiscussionMessages.length}
                         </span>
                       ) : null}
                     </button>
@@ -2556,7 +3057,7 @@ export default function NewRfq() {
                 }}
               >
                 {!isRfqStage ? (
-                  isCostingFeasabilityView ? (
+                  isCostingStage ? (
                     <section className="card col-span-full flex min-h-[280px] flex-col gap-6 overflow-x-hidden overflow-y-auto p-6 sm:p-8 lg:h-full lg:min-h-0">
                       <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2673,8 +3174,8 @@ export default function NewRfq() {
                         {hasRecordedCostingReviewDecision ? (
                           <section
                             className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isCostingReviewRejected
-                                ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
-                                : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
+                              ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
+                              : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
                               }`}
                           >
                             <div
@@ -2693,8 +3194,8 @@ export default function NewRfq() {
                               </div>
                               <span
                                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isCostingReviewRejected
-                                    ? "border-red-200 bg-red-50 text-red-700"
-                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
                                   }`}
                               >
                                 {isCostingReviewRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
@@ -2827,109 +3328,150 @@ export default function NewRfq() {
                           <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div className="max-w-2xl">
                               <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                                Upload Completed File
+                                Complete feasibility handoff
                               </h3>
                               <p className="mt-2 text-sm leading-7 text-slate-600">
-                                Add the completed feasibility document here, then save to move this RFQ to pricing.
+                                Upload the finished feasibility file or mark the requirement as not applicable with a note.
                               </p>
                             </div>
-                            <div className="flex flex-wrap items-center gap-3">
-                              <button
-                                type="button"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                onClick={() => costingFileInputRef.current?.click()}
-                                disabled={!canReviewCostingFeasability || costingSavePending}
-                              >
-                                <Upload className="h-4 w-4" />
-                                Add feasibility file
-                              </button>
-                              <input
-                                ref={costingFileInputRef}
-                                type="file"
-                                multiple
-                                className="hidden"
-                                onChange={handleCostingFilesChange}
-                                disabled={!canReviewCostingFeasability || costingSavePending}
-                              />
-                            </div>
+                            {!hasCompletedCostingFileAction ? (
+                              <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => openCostingFileActionModal("UPLOADED")}
+                                  disabled={!canReviewCostingFeasability || costingSavePending}
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  Add feasibility file
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => openCostingFileActionModal("NA")}
+                                  disabled={!canReviewCostingFeasability || costingSavePending}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  Not Applicable
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
 
-                          {allCostingFiles.length ? (
-                            <div className="mt-5 divide-y divide-slate-200/70 rounded-2xl border border-slate-200/80 bg-white/90 px-4">
-                              {allCostingFiles.map((file) => {
-                                const isPending = file.source === "local";
-                                return (
-                                  <div
-                                    key={`feasibility-file-${file.id}`}
-                                    className="flex flex-col gap-3 py-4 first:pt-4 last:pb-4 sm:flex-row sm:items-center sm:justify-between"
-                                  >
-                                    <div className="min-w-0 flex items-center gap-3">
-                                      <span
-                                        className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
-                                      >
-                                        {getFileExtension(file.name).slice(0, 4)}
-                                      </span>
-                                      <div className="min-w-0">
-                                        <p className="truncate text-sm font-semibold text-ink">
-                                          {file.name}
-                                        </p>
-                                        <p className="mt-1 text-xs text-slate-500">
-                                          {[formatFileDate(file.updatedAt), formatFileSize(file.size), isPending ? "Pending upload" : "Uploaded"]
-                                            .filter(Boolean)
-                                            .join(" | ")}
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      {isPending ? (
-                                        <button
-                                          type="button"
-                                          className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                          onClick={() => handleRemovePendingCostingFile(file.id)}
-                                          disabled={costingSavePending}
-                                        >
-                                          Remove
-                                        </button>
-                                      ) : (
-                                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
-                                          Uploaded
-                                        </span>
-                                      )}
-                                    </div>
+                          {hasCompletedCostingFileAction ? (
+                            <div className="mt-5 rounded-[24px] border border-emerald-200/80 bg-white/95 p-5 shadow-soft">
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="max-w-2xl">
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                      Completed
+                                    </span>
+                                    <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${effectiveCostingFileState?.fileStatus === "NA"
+                                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                                      : "border-sky-200 bg-sky-50 text-sky-700"
+                                      }`}>
+                                      {effectiveCostingFileState?.fileStatus === "NA"
+                                        ? "Not Applicable"
+                                        : "Uploaded"}
+                                    </span>
                                   </div>
-                                );
-                              })}
+                                  <h3 className="mt-3 text-lg font-semibold text-ink">
+                                    {effectiveCostingFileState?.fileStatus === "NA"
+                                      ? "Feasibility file bypass recorded"
+                                      : "Feasibility file received"}
+                                  </h3>
+                                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                                    {effectiveCostingFileState?.note || "No note recorded."}
+                                  </p>
+                                </div>
+
+                                {effectiveCostingFileState?.file ? (
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    {effectiveCostingFileState.file.url ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                        onClick={() => handlePreviewFile(effectiveCostingFileState.file)}
+                                      >
+                                        <Eye className="h-4 w-4" />
+                                        Preview
+                                      </button>
+                                    ) : null}
+                                    {effectiveCostingFileState.file.url ? (
+                                      <a
+                                        href={effectiveCostingFileState.file.url}
+                                        download={effectiveCostingFileState.file.name}
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                      >
+                                        Download
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    Action by
+                                  </p>
+                                  <p className="mt-2 text-sm font-semibold text-ink">
+                                    {effectiveCostingFileState?.actionBy || "Unavailable"}
+                                  </p>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    Recorded at
+                                  </p>
+                                  <p className="mt-2 text-sm font-semibold text-ink">
+                                    {formatFileDate(effectiveCostingFileState?.actionAt, { withTime: true })}
+                                  </p>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    File
+                                  </p>
+                                  <p className="mt-2 text-sm font-semibold text-ink">
+                                    {effectiveCostingFileState?.file?.name ||
+                                      (effectiveCostingFileState?.fileStatus === "NA"
+                                        ? "No file required"
+                                        : "Unavailable")}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           ) : (
                             <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
                               <p className="text-sm font-semibold text-ink">
-                                No feasibility file uploaded yet
+                                No feasibility action recorded yet
                               </p>
                               <p className="mt-2 text-sm text-slate-500">
-                                Add the feasibility document, then save to move forward.
+                                Choose Upload or Not Applicable, add your note, then save to move forward.
                               </p>
                             </div>
                           )}
 
-                          <div className="mt-5 flex justify-end">
-                            <button
-                              type="button"
-                              className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleSaveCostingFeasability}
-                              disabled={!canSaveCostingFeasability}
-                              title={
-                                canSaveCostingFeasability
-                                  ? "Save feasibility and move to pricing"
-                                  : "Approve feasibility and upload at least one file before saving."
-                              }
-                            >
-                              <Check className="h-4 w-4" />
-                              {costingSavePending ? "Saving..." : "Save"}
-                            </button>
-                          </div>
+                          {isCostingFeasabilityView ? (
+                            <div className="mt-5 flex justify-end">
+                              <button
+                                type="button"
+                                className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={handleSaveCostingFeasability}
+                                disabled={!canSaveCostingFeasability}
+                                title={
+                                  canSaveCostingFeasability
+                                    ? "Save feasibility and move to pricing"
+                                    : "Approve reception and complete the file action before saving."
+                                }
+                              >
+                                <Check className="h-4 w-4" />
+                                {costingSavePending ? "Saving..." : "Save"}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
+
                     </section>
                   ) : (
                     <div className="col-span-full flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200/80 bg-white/70 text-sm font-medium text-slate-500">
@@ -3609,13 +4151,24 @@ export default function NewRfq() {
                               Step {stepIndex + 1}: {activeStepData.label}
                             </h2>
                             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-                              The New RFQ form is locked for direct editing and mirrors the chatbot.
-                              Use the chat panel to update these fields.
+                              {isRevisionModeActive
+                                ? "Revision mode is active. Update the form directly or use the chat panel, then submit your updates."
+                                : "The New RFQ form is locked for direct editing and mirrors the chatbot. Use the chat panel to update these fields."}
                             </p>
                           </div>
                         </div>
 
                         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                          {isRevisionModeActive ? (
+                            <button
+                              type="button"
+                              className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleSubmitRevisionUpdates}
+                              disabled={!rfqId || Boolean(revisionActionId)}
+                            >
+                              {revisionActionId === "submit" ? "Submitting..." : "Submit Updates"}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="prev-button disabled:cursor-not-allowed disabled:opacity-50"
@@ -4031,11 +4584,11 @@ export default function NewRfq() {
                     )}
                   </div>
                 ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {discussionModalOpen ? (
         <div
@@ -4186,6 +4739,185 @@ export default function NewRfq() {
                       >
                         <SendHorizontal className="h-4 w-4" />
                         {discussionSending ? "Sending..." : "Send message"}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCostingDiscussionOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => setIsCostingDiscussionOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="chat-modal chat-modal--discussion"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Costing discussion"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <div>
+                <p className="chat-modal-title mt-1">Discussion</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Exchange targeted messages for the Costing phase in a clear and centralized space.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                  {costingDiscussionMessages.length} message{costingDiscussionMessages.length > 1 ? "s" : ""}
+                </span>
+
+                <button
+                  type="button"
+                  className="chat-modal-close"
+                  onClick={() => setIsCostingDiscussionOpen(false)}
+                  aria-label="Close costing discussion"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="chat-modal-body p-0">
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
+                  {costingDiscussionLoading ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
+                        <MessageSquare className="h-6 w-6" />
+                      </div>
+                      <p className="mt-4 text-base font-semibold text-ink">
+                        Loading costing discussion
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Fetching the latest costing messages.
+                      </p>
+                    </div>
+                  ) : costingDiscussionMessages.length ? (
+                    <div className="flex flex-col gap-4">
+                      {costingDiscussionMessages.map((message) => {
+                        const isCurrentUser =
+                          normalizeEmailValue(message.authorEmail) ===
+                          normalizeEmailValue(currentUserEmail);
+                        const authorLabel =
+                          message.authorName || message.authorEmail || "User";
+
+                        return (
+                          <div
+                            key={message.id}
+                            className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}
+                          >
+                            <article
+                              className={`max-w-[min(100%,42rem)] rounded-[26px] border px-4 py-3 shadow-sm ${isCurrentUser
+                                ? "border-tide/30 bg-tide text-white"
+                                : "border-slate-200/80 bg-white/95 text-ink"
+                                }`}
+                            >
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className={`font-semibold ${isCurrentUser ? "text-white" : "text-slate-700"}`}>
+                                  {authorLabel}
+                                </span>
+                                {message.recipientEmail ? (
+                                  <span className={`rounded-full border px-2 py-0.5 font-semibold ${isCurrentUser
+                                    ? "border-white/20 bg-white/15 text-white"
+                                    : "border-slate-200 bg-slate-50 text-slate-600"
+                                    }`}>
+                                    To {message.recipientEmail}
+                                  </span>
+                                ) : null}
+                                <span className={isCurrentUser ? "text-white/75" : "text-slate-400"}>
+                                  {formatDiscussionDate(message.createdAt)}
+                                </span>
+                              </div>
+                              <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isCurrentUser ? "text-white" : "text-slate-700"}`}>
+                                {message.content}
+                              </p>
+                            </article>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-6 py-12 text-center shadow-soft">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-tide/10 text-tide">
+                        <MessageSquare className="h-6 w-6" />
+                      </div>
+                      <p className="mt-4 text-base font-semibold text-ink">
+                        No discussion yet
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Start the conversation for this phase with a new message.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <form
+                  onSubmit={handleCostingDiscussionSend}
+                  className="border-t border-slate-200/70 bg-white/90 p-5 sm:p-6"
+                >
+                  <div className="space-y-3">
+                    {costingDiscussionError ? (
+                      <p className="text-sm font-medium text-red-600">
+                        {costingDiscussionError}
+                      </p>
+                    ) : null}
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                      <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                          Recipient email
+                        </label>
+                        <input
+                          className="input-field"
+                          type="email"
+                          list="costing-recipient-options"
+                          value={costingDiscussionRecipient}
+                          onChange={(event) => setCostingDiscussionRecipient(event.target.value)}
+                          disabled={costingDiscussionSending}
+                          placeholder="recipient@avocarbon.com"
+                        />
+                        <datalist id="costing-recipient-options">
+                          {knownCostingRecipients.map((email) => (
+                            <option key={email} value={email} />
+                          ))}
+                        </datalist>
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                          Message
+                        </label>
+                        <textarea
+                          className="textarea-field min-h-[110px]"
+                          value={costingDiscussionDraft}
+                          onChange={(event) => setCostingDiscussionDraft(event.target.value)}
+                          disabled={costingDiscussionSending}
+                          placeholder="Write the costing note you want to send..."
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-slate-500">
+                        The recipient will receive a notification email and the message will stay in this thread.
+                      </p>
+                      <button
+                        type="submit"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-tide bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={
+                          costingDiscussionSending ||
+                          !String(costingDiscussionDraft || "").trim() ||
+                          !String(costingDiscussionRecipient || "").trim()
+                        }
+                      >
+                        <SendHorizontal className="h-4 w-4" />
+                        {costingDiscussionSending ? "Sending..." : "Send message"}
                       </button>
                     </div>
                   </div>
@@ -4473,6 +5205,163 @@ export default function NewRfq() {
                     disabled={fileActionId === fileDeleteTarget.id}
                   >
                     {fileActionId === fileDeleteTarget.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {costingFileActionModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleCloseCostingFileActionModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Costing file action"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">
+                {costingFileActionMode === "NA" ? "Mark As Not Applicable" : "Upload Feasibility File"}
+              </p>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={handleCloseCostingFileActionModal}
+                aria-label="Close costing action modal"
+                disabled={costingFileActionPending}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <form className="chat-modal-fallback w-full" onSubmit={handleSubmitCostingFileAction}>
+                <p className="text-slate-600">
+                  {costingFileActionMode === "NA"
+                    ? "Explain why the feasibility file is not applicable for this RFQ."
+                    : "Upload the completed feasibility file and add a note explaining what was submitted."}
+                </p>
+                {costingFileActionMode === "UPLOADED" ? (
+                  <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    <span>File</span>
+                    <input
+                      className="input-field"
+                      type="file"
+                      onChange={handleCostingFileDraftChange}
+                      disabled={costingFileActionPending}
+                    />
+                    {costingFileActionDraft ? (
+                      <span className="text-[11px] normal-case tracking-normal text-slate-500">
+                        {costingFileActionDraft.name}
+                      </span>
+                    ) : null}
+                  </label>
+                ) : null}
+                <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  <span>Note</span>
+                  <textarea
+                    className="textarea-field min-h-[140px]"
+                    value={costingFileActionNote}
+                    onChange={(event) => setCostingFileActionNote(event.target.value)}
+                    placeholder="Describe the file or explain why it is not applicable..."
+                    disabled={costingFileActionPending}
+                  />
+                </label>
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={handleCloseCostingFileActionModal}
+                    disabled={costingFileActionPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={costingFileActionPending}
+                  >
+                    {costingFileActionPending
+                      ? "Saving..."
+                      : costingFileActionMode === "NA"
+                        ? "Save note"
+                        : "Upload and save"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {revisionRequestModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleCloseRevisionRequestModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Request revision"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">Request Revision</p>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={handleCloseRevisionRequestModal}
+                aria-label="Close revision request modal"
+                disabled={revisionActionId === "request"}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <div className="chat-modal-fallback w-full">
+                <p className="text-slate-600">
+                  Tell the sales representative exactly what needs to be updated.
+                </p>
+                <label className="mt-2 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  <span>Instructions</span>
+                  <textarea
+                    className="textarea-field min-h-[140px]"
+                    value={revisionComment}
+                    onChange={(event) => setRevisionComment(event.target.value)}
+                    placeholder="Describe the required changes..."
+                    disabled={revisionActionId === "request"}
+                  />
+                </label>
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={handleCloseRevisionRequestModal}
+                    disabled={revisionActionId === "request"}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleSubmitRevisionRequest}
+                    disabled={revisionActionId === "request"}
+                  >
+                    {revisionActionId === "request" ? "Sending..." : "Send revision request"}
                   </button>
                 </div>
               </div>
