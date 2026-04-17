@@ -748,8 +748,7 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net
-";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
