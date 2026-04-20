@@ -806,7 +806,7 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
@@ -3326,108 +3326,108 @@ export default function NewRfq() {
                     <section className="card col-span-full flex min-h-[280px] flex-col gap-6 overflow-x-hidden overflow-y-auto p-6 sm:p-8 lg:h-full lg:min-h-0">
                       {!isCostingPricingView ? (
                         <>
-                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="max-w-3xl">
-                            <h3 className="mt-2 font-display text-xl text-ink sm:text-2xl">
-                              RFQ Data
-                            </h3>
-                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                              Use Preview to open the PDF in a modal, or Download to save it.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleOpenCostingPdfPreview}
-                              disabled={!canDownloadCostingTemplate || templatePreviewPending}
-                            >
-                              <Eye className="h-4 w-4" />
-                              {templatePreviewPending ? "Preparing preview..." : "Preview PDF"}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleDownloadCostingPdfTemplate}
-                              disabled={!canDownloadCostingTemplate || templateDownloadPending}
-                            >
-                              <Files className="h-4 w-4" />
-                              {templateDownloadPending
-                                ? "Preparing PDF file..."
-                                : "Download PDF"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
-                              RFQ files
-                            </h2>
-                          </div>
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
-                            {sortedFiles.length} file{sortedFiles.length > 1 ? "s" : ""}
-                          </span>
-                        </div>
-
-                        {sortedFiles.length ? (
-                          <div className="mt-5 divide-y divide-slate-200/70 rounded-2xl border border-slate-200/70 bg-white/70 px-4">
-                            {sortedFiles.map((file) => {
-                              const canPreview = Boolean(file.url);
-                              const isPreviewing = filePreviewLoadingId === file.id;
-                              return (
-                                <div
-                                  key={`costing-drawing-${file.id}`}
-                                  className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                          <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="max-w-3xl">
+                                <h3 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                  RFQ Data
+                                </h3>
+                                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                                  Use Preview to open the PDF in a modal, or Download to save it.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={handleOpenCostingPdfPreview}
+                                  disabled={!canDownloadCostingTemplate || templatePreviewPending}
                                 >
-                                  <div className="min-w-0 flex items-center gap-3">
-                                    <span
-                                      className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
-                                    >
-                                      {getFileExtension(file.name).slice(0, 4)}
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-ink">
-                                        {file.name}
-                                      </p>
-                                      <p className="mt-1 text-xs text-slate-500">
-                                        {[formatFileDate(file.updatedAt), formatFileSize(file.size), getFileExtension(file.name).toLowerCase()]
-                                          .filter(Boolean)
-                                          .join(" • ")}
-                                      </p>
-                                    </div>
-                                  </div>
+                                  <Eye className="h-4 w-4" />
+                                  {templatePreviewPending ? "Preparing preview..." : "Preview PDF"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={handleDownloadCostingPdfTemplate}
+                                  disabled={!canDownloadCostingTemplate || templateDownloadPending}
+                                >
+                                  <Files className="h-4 w-4" />
+                                  {templateDownloadPending
+                                    ? "Preparing PDF file..."
+                                    : "Download PDF"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
 
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
-                                      onClick={() => handlePreviewFile(file)}
-                                      disabled={!canPreview || isPreviewing}
+                          <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                  RFQ files
+                                </h2>
+                              </div>
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                                {sortedFiles.length} file{sortedFiles.length > 1 ? "s" : ""}
+                              </span>
+                            </div>
+
+                            {sortedFiles.length ? (
+                              <div className="mt-5 divide-y divide-slate-200/70 rounded-2xl border border-slate-200/70 bg-white/70 px-4">
+                                {sortedFiles.map((file) => {
+                                  const canPreview = Boolean(file.url);
+                                  const isPreviewing = filePreviewLoadingId === file.id;
+                                  return (
+                                    <div
+                                      key={`costing-drawing-${file.id}`}
+                                      className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                                     >
-                                      {isPreviewing ? "Loading..." : "Preview"}
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                      <div className="min-w-0 flex items-center gap-3">
+                                        <span
+                                          className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[11px] font-bold uppercase ${getFileAccentClasses(file.name)}`}
+                                        >
+                                          {getFileExtension(file.name).slice(0, 4)}
+                                        </span>
+                                        <div className="min-w-0">
+                                          <p className="truncate text-sm font-semibold text-ink">
+                                            {file.name}
+                                          </p>
+                                          <p className="mt-1 text-xs text-slate-500">
+                                            {[formatFileDate(file.updatedAt), formatFileSize(file.size), getFileExtension(file.name).toLowerCase()]
+                                              .filter(Boolean)
+                                              .join(" • ")}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                          onClick={() => handlePreviewFile(file)}
+                                          disabled={!canPreview || isPreviewing}
+                                        >
+                                          {isPreviewing ? "Loading..." : "Preview"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="mt-5 px-1 py-2">
+                                <p className="text-sm font-semibold text-ink">
+                                  No drawing files uploaded yet
+                                </p>
+                                <p className="mt-2 text-sm text-slate-500">
+                                  Upload RFQ files in{" "}
+                                  <span className="font-medium text-ink">New RFQ &gt; Step 1</span> and they
+                                  will appear here.
+                                </p>
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div className="mt-5 px-1 py-2">
-                            <p className="text-sm font-semibold text-ink">
-                              No drawing files uploaded yet
-                            </p>
-                            <p className="mt-2 text-sm text-slate-500">
-                              Upload RFQ files in{" "}
-                              <span className="font-medium text-ink">New RFQ &gt; Step 1</span> and they
-                              will appear here.
-                            </p>
-                          </div>
-                        )}
-                      </div>
                         </>
                       ) : null}
 
