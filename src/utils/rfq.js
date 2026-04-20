@@ -275,7 +275,6 @@ export const mapRfqDataToForm = (rfq) => {
       data.technicalCapacity
     ),
     scope: pickFirst(data.scope),
-    customerStatus: pickFirst(data.customer_status, data.customerStatus),
     strategicNote: pickFirst(data.strategic_note, data.strategicNote),
     finalRecommendation: pickFirst(
       data.is_feasible,
@@ -405,6 +404,7 @@ export const mapRfqToRow = (rfq) => {
   return {
     id: rfq?.rfq_id,
     displayId: data.systematic_rfq_id || "Draft - Pending",
+    creator: rfq?.created_by_email || "",
     customer: data.customer_name || potential.customer,
     client: data.customer_name || potential.customer,
     productName: data.product_name || data.product_line_acronym,

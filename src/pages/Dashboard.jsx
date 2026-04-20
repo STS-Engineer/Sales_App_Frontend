@@ -146,6 +146,7 @@ export default function Dashboard() {
       if (!term) return true;
       const haystack = [
         rfq.id,
+        rfq.creator,
         rfq.customer,
         rfq.client,
         rfq.productName,
@@ -154,7 +155,6 @@ export default function Dashboard() {
         rfq.application,
         rfq.deliveryZone,
         rfq.location,
-        rfq.owner,
         rfq.status,
         rfq.dueDate
       ]

@@ -80,7 +80,6 @@ const initialForm = {
   developmentCosts: "",
   technicalCapacity: "",
   scope: "",
-  customerStatus: "",
   strategicNote: "",
   finalRecommendation: "",
   toTotal: "",
@@ -179,7 +178,6 @@ const STEP_FIELDS = {
     "developmentCosts",
     "technicalCapacity",
     "scope",
-    "customerStatus",
     "strategicNote",
     "finalRecommendation"
   ],
@@ -848,7 +846,6 @@ const buildRfqDataPayloadFromForm = (form = {}) => ({
   pays_for_development: form.developmentCosts || "",
   capacity_available: form.technicalCapacity || "",
   scope: form.scope || "",
-  customer_status: form.customerStatus || "",
   strategic_note: form.strategicNote || "",
   final_recommendation: form.finalRecommendation || "",
   to_total: form.toTotal || "",
@@ -4733,7 +4730,6 @@ export default function NewRfq() {
                             <FormField label="Development costs" name="developmentCosts" value={form.developmentCosts} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                             <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Customer status" name="customerStatus" value={form.customerStatus} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                           </div>

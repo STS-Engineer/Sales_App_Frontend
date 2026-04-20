@@ -29,15 +29,26 @@ const statusLabels = {
   Validation: "Pending for validation"
 };
 
+const formatToTotal = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  if (typeof value === "number") {
+    return `${value.toLocaleString("en-US")} kEUR`;
+  }
+  return value;
+};
+
 export default function RfqTable({ rows, footer }) {
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="min-w-[1080px] w-full text-left text-sm">
+        <table className="min-w-[1220px] w-full text-left text-sm">
           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
             <tr>
               <th className="px-6 py-4">RFQ ID</th>
               <th className="px-6 py-4">Customer</th>
+              <th className="px-6 py-4">Creator</th>
               <th className="px-6 py-4">Product name</th>
               <th className="px-6 py-4">Product line</th>
               <th className="px-6 py-4">Application</th>
@@ -59,13 +70,14 @@ export default function RfqTable({ rows, footer }) {
                 <td className="px-6 py-4 font-medium text-slate-700">
                   {row.customer || row.client || "—"}
                 </td>
+                <td className="px-6 py-4 font-medium text-slate-700">
+                  {row.creator || "—"}
+                </td>
                 <td className="px-6 py-4">{row.productName || "—"}</td>
                 <td className="px-6 py-4">{row.productLine || row.item || "—"}</td>
                 <td className="px-6 py-4">{row.application || "—"}</td>
                 <td className="px-6 py-4 font-medium text-slate-700">
-                  {typeof (row.toTotal ?? row.budget) === "number"
-                    ? `${(row.toTotal ?? row.budget).toLocaleString("en-US")} TND`
-                    : row.toTotal || row.budget || "—"}
+                  {formatToTotal(row.toTotal ?? row.budget)}
                 </td>
                 <td className="px-6 py-4 font-medium text-slate-700">
                   {row.deliveryZone || row.location || "—"}
