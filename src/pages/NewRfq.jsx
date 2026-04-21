@@ -26,6 +26,7 @@ import {
   sendPotentialChat,
   submitCostingFileAction,
   submitCostingReview,
+  submitCostingValidation,
   submitRevision,
   updateRfqData,
   uploadPricingBomFile,
@@ -407,6 +408,11 @@ const SHARED_POTENTIAL_FIELDS = [
   { key: "potentialContactPhone", label: "contact phone" },
   { key: "potentialContactFunction", label: "contact function" }
 ];
+const PRICING_WORKFLOW_STATE_WAITING_BOM = "WAITING_BOM";
+const PRICING_WORKFLOW_STATE_BOM_UPLOADED = "BOM_UPLOADED";
+const PRICING_WORKFLOW_STATE_PRICING_UPLOADED = "PRICING_UPLOADED";
+const PRICING_WORKFLOW_STATE_APPROVED = "APPROVED";
+const PRICING_WORKFLOW_STATE_REJECTED = "REJECTED";
 
 const hasMeaningfulValue = (value) => {
   if (value === 0) return true;
@@ -599,58 +605,107 @@ const normalizeCostingFiles = (rfq) => {
 const normalizeCostingFileState = (rfq) => {
   const raw = rfq?.costing_file_state;
   if (!raw || typeof raw !== "object") return null;
-  const normalizedFile =
-    raw?.file && typeof raw.file === "object"
-      ? {
-        id:
-          raw.file?.id ||
-          raw.file?.file_id ||
-          raw.file?.uuid ||
-          raw.file?.path ||
-          raw.file?.filename ||
-          "costing-file-state",
-        name:
-          raw.file?.name ||
-          raw.file?.filename ||
-          raw.file?.original_name ||
-          raw.file?.file_name ||
-          "Costing file",
-        url:
-          raw.file?.url ||
-          raw.file?.file_url ||
-          raw.file?.download_url ||
-          raw.file?.path ||
-          raw.file?.link ||
-          "",
-        source: "server",
-        size:
-          raw.file?.size ||
-          raw.file?.file_size ||
-          raw.file?.content_length ||
-          raw.file?.contentLength ||
-          "",
-        updatedAt:
-          raw.file?.uploaded_at ||
-          raw.file?.updated_at ||
-          raw.file?.last_modified ||
-          raw.file?.lastModified ||
-          raw?.action_at ||
-          "",
-        owner:
-          raw.file?.uploaded_by ||
-          raw.file?.owner ||
-          raw.file?.created_by ||
-          raw?.action_by ||
-          ""
-      }
-      : null;
+  const normalizeStateFile = (fileSource, fallbackId, fallbackName, fallbackUpdatedAt, fallbackOwner) => {
+    if (!fileSource || typeof fileSource !== "object") return null;
+    const innerFile =
+      fileSource?.file && typeof fileSource.file === "object"
+        ? fileSource.file
+        : fileSource;
+
+    return {
+      id:
+        innerFile?.id ||
+        innerFile?.file_id ||
+        innerFile?.uuid ||
+        innerFile?.path ||
+        innerFile?.filename ||
+        fallbackId,
+      name:
+        innerFile?.name ||
+        innerFile?.filename ||
+        innerFile?.original_name ||
+        innerFile?.file_name ||
+        fallbackName,
+      url:
+        innerFile?.url ||
+        innerFile?.file_url ||
+        innerFile?.download_url ||
+        innerFile?.path ||
+        innerFile?.link ||
+        "",
+      source: "server",
+      size:
+        innerFile?.size ||
+        innerFile?.file_size ||
+        innerFile?.content_length ||
+        innerFile?.contentLength ||
+        "",
+      updatedAt:
+        innerFile?.uploaded_at ||
+        innerFile?.updated_at ||
+        innerFile?.last_modified ||
+        innerFile?.lastModified ||
+        fileSource?.uploaded_at ||
+        fallbackUpdatedAt ||
+        "",
+      owner:
+        innerFile?.uploaded_by ||
+        innerFile?.owner ||
+        innerFile?.created_by ||
+        fileSource?.uploaded_by ||
+        fallbackOwner ||
+        ""
+    };
+  };
+
+  const normalizedFile = normalizeStateFile(
+    raw?.file,
+    "costing-file-state",
+    "Costing file",
+    raw?.action_at,
+    raw?.action_by
+  );
+  const normalizedBomFile = normalizeStateFile(
+    raw?.bom_file,
+    "pricing-bom-file",
+    "Pricing BOM file",
+    raw?.validation_at,
+    raw?.validation_by
+  );
+  const normalizedPricingFile = normalizeStateFile(
+    raw?.pricing_file,
+    "pricing-final-price-file",
+    "Pricing final price file",
+    raw?.validation_at,
+    raw?.validation_by
+  );
+
+  let workflowState = String(raw?.workflow_state || "").trim().toUpperCase();
+  if (!workflowState) {
+    if (normalizedPricingFile) {
+      workflowState = PRICING_WORKFLOW_STATE_PRICING_UPLOADED;
+    } else if (normalizedBomFile) {
+      workflowState = PRICING_WORKFLOW_STATE_BOM_UPLOADED;
+    } else if (
+      String(rfq?.phase || "").trim().toUpperCase() === "COSTING" &&
+      String(rfq?.sub_status || "").trim().toUpperCase() === "PRICING"
+    ) {
+      workflowState = PRICING_WORKFLOW_STATE_WAITING_BOM;
+    }
+  }
 
   return {
     fileStatus: String(raw?.file_status || "").trim().toUpperCase() || "PENDING",
     note: String(raw?.file_note || "").trim(),
     actionBy: String(raw?.action_by || "").trim(),
     actionAt: String(raw?.action_at || "").trim(),
-    file: normalizedFile
+    file: normalizedFile,
+    workflowState,
+    bomFile: normalizedBomFile,
+    pricingFile: normalizedPricingFile,
+    validationBy: String(raw?.validation_by || "").trim(),
+    validationAt: String(raw?.validation_at || "").trim(),
+    rejectionReason: String(raw?.rejection_reason || "").trim()
   };
 };
 
@@ -764,19 +819,23 @@ const normalizePricingUpload = (raw, { fallbackId, fallbackName }) => {
 
 const normalizePricingBomUpload = (rfq) =>
   normalizePricingUpload(
-    getLatestCostingFileEntryByRole(rfq, "PRICING_BOM") || rfq?.rfq_data?.pricing_bom_upload,
+    rfq?.costing_file_state?.bom_file ||
+    getLatestCostingFileEntryByRole(rfq, "PRICING_BOM") ||
+    rfq?.rfq_data?.pricing_bom_upload,
     {
-    fallbackId: "pricing-bom-file",
-    fallbackName: "Pricing BOM file"
+      fallbackId: "pricing-bom-file",
+      fallbackName: "Pricing BOM file"
     }
   );
 
 const normalizePricingFinalPriceUpload = (rfq) =>
   normalizePricingUpload(
-    getLatestCostingFileEntryByRole(rfq, "PRICING_FINAL_PRICE") || rfq?.rfq_data?.pricing_final_price_upload,
+    rfq?.costing_file_state?.pricing_file ||
+    getLatestCostingFileEntryByRole(rfq, "PRICING_FINAL_PRICE") ||
+    rfq?.rfq_data?.pricing_final_price_upload,
     {
-    fallbackId: "pricing-final-price-file",
-    fallbackName: "Pricing final price file"
+      fallbackId: "pricing-final-price-file",
+      fallbackName: "Pricing final price file"
     }
   );
 
@@ -1134,6 +1193,32 @@ const extractCostingReviewAudit = (rfq, auditLogs = []) => {
   };
 };
 
+const extractPricingFileDecisionAudit = (costingFileState) => {
+  const workflowState = normalizeAuditValue(costingFileState?.workflowState).toUpperCase();
+  const validationAt = normalizeAuditValue(costingFileState?.validationAt);
+  const validationBy = normalizeAuditValue(costingFileState?.validationBy);
+  const rejectionReason = normalizeAuditValue(costingFileState?.rejectionReason);
+
+  if (workflowState === PRICING_WORKFLOW_STATE_APPROVED) {
+    return {
+      ...createEmptyValidationAudit(),
+      approvedAt: validationAt,
+      approvedBy: validationBy
+    };
+  }
+
+  if (workflowState === PRICING_WORKFLOW_STATE_REJECTED) {
+    return {
+      ...createEmptyValidationAudit(),
+      rejectedAt: validationAt,
+      rejectedBy: validationBy,
+      rejectionReason
+    };
+  }
+
+  return createEmptyValidationAudit();
+};
+
 const formatValidationAuditValue = (value) => {
   const text = normalizeAuditValue(value);
   return text || "Not available";
@@ -1423,6 +1508,29 @@ export default function NewRfq() {
     () => costingFileState || buildLegacyCostingFileState(costingFiles),
     [costingFileState, costingFiles]
   );
+  const pricingWorkflowState = useMemo(() => {
+    const explicitState = String(costingFileState?.workflowState || "").trim().toUpperCase();
+    if (explicitState) return explicitState;
+    if (costingFileState?.pricingFile || pricingFinalPriceUpload?.file) {
+      return PRICING_WORKFLOW_STATE_PRICING_UPLOADED;
+    }
+    if (costingFileState?.bomFile || pricingBomUpload?.file) {
+      return PRICING_WORKFLOW_STATE_BOM_UPLOADED;
+    }
+    if (
+      selectedStage === "In costing" &&
+      String(rfqSubStatus || "").trim().toUpperCase() === "PRICING"
+    ) {
+      return PRICING_WORKFLOW_STATE_WAITING_BOM;
+    }
+    return "";
+  }, [
+    costingFileState,
+    pricingBomUpload,
+    pricingFinalPriceUpload,
+    rfqSubStatus,
+    selectedStage
+  ]);
   const validationButtonsDisabled = Boolean(
     validationActionId || hasRecordedValidationDecision
   );
@@ -1615,16 +1723,27 @@ export default function NewRfq() {
     normalizePipelineStageKey(activeStage) === "In costing" &&
     activeSubPhase === "Pricing"
   );
-  const hasPricingBomUpload = Boolean(pricingBomUpload?.file);
-  const hasPricingFinalPriceUpload = Boolean(pricingFinalPriceUpload?.file);
+  const hasPricingBomUpload = Boolean(
+    costingFileState?.bomFile || pricingBomUpload?.file
+  );
+  const hasPricingFinalPriceUpload = Boolean(
+    costingFileState?.pricingFile || pricingFinalPriceUpload?.file
+  );
   const canManagePricingBom = Boolean(
     rfqId &&
     isCostingPricingView &&
+    pricingWorkflowState === PRICING_WORKFLOW_STATE_WAITING_BOM &&
     (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
   );
   const canManagePricingFinalPrice = Boolean(
-    canManagePricingBom &&
-    hasPricingBomUpload
+    rfqId &&
+    isCostingPricingView &&
+    hasPricingBomUpload &&
+    (
+      pricingWorkflowState === PRICING_WORKFLOW_STATE_BOM_UPLOADED ||
+      pricingWorkflowState === PRICING_WORKFLOW_STATE_REJECTED
+    ) &&
+    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
   );
   const canSavePricingFinalPrice = Boolean(
     canManagePricingFinalPrice &&
@@ -1636,16 +1755,20 @@ export default function NewRfq() {
     rfqId &&
     isCostingPricingView &&
     hasPricingFinalPriceUpload &&
-    pricingFileValidationOpen &&
+    pricingWorkflowState === PRICING_WORKFLOW_STATE_PRICING_UPLOADED &&
     !hasRecordedPricingFileDecision &&
-    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+    (currentUserRole === "OWNER" || currentUserRole === "PLM")
   );
   const pricingFileValidationButtonsDisabled = Boolean(
     !canValidatePricingFile || pricingFileValidationActionId || hasRecordedPricingFileDecision
   );
   const showPricingFileValidationSection = Boolean(
     hasPricingFinalPriceUpload &&
-    (pricingFileValidationOpen || hasRecordedPricingFileDecision)
+    (
+      pricingFileValidationOpen ||
+      hasRecordedPricingFileDecision ||
+      pricingWorkflowState === PRICING_WORKFLOW_STATE_PRICING_UPLOADED
+    )
   );
   const knownCostingRecipients = useMemo(() => {
     const candidates = [
@@ -1804,7 +1927,7 @@ export default function NewRfq() {
 
       const fieldElement =
         pendingRfqAutofillReveal.mode === "field" &&
-        pendingRfqAutofillReveal.fieldName
+          pendingRfqAutofillReveal.fieldName
           ? document.getElementsByName(pendingRfqAutofillReveal.fieldName)?.[0]
           : null;
       const sectionElement = document.getElementById(pendingRfqAutofillReveal.stepId);
@@ -1920,7 +2043,6 @@ export default function NewRfq() {
     if (!rfq) return;
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
-    const nextRfqId = String(rfq?.rfq_id || "").trim();
     const isPotentialRecord = subStatusValue === "POTENTIAL";
     const isRevisionRecord = subStatusValue === "REVISION_REQUESTED";
     const mappedFields = omitUndefinedValues({
@@ -1931,52 +2053,40 @@ export default function NewRfq() {
     const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
     const nextValidationAudit = extractValidationAudit(rfq, auditLogs);
     const nextCostingReviewAudit = extractCostingReviewAudit(rfq, auditLogs);
+    const nextCostingFileState = normalizeCostingFileState(rfq);
+    const nextPricingDecisionAudit = extractPricingFileDecisionAudit(nextCostingFileState);
     const keepRfqValidationView =
       nextPipelineStage === "RFQ" &&
       nextUiStatus === "Cancelled" &&
       Boolean(nextValidationAudit.rejectedAt);
     const nextPricingBomUpload = normalizePricingBomUpload(rfq);
     const nextPricingFinalPriceUpload = normalizePricingFinalPriceUpload(rfq);
-    const persistedPricingFinalPriceSaveSignature =
-      readPricingFinalPriceSaveSignature(nextRfqId);
-    const nextPricingFinalPriceSaveSignature =
-      buildPricingFinalPriceSaveSignature(nextRfqId, nextPricingFinalPriceUpload);
-    const restorePricingFinalPriceValidation = Boolean(
-      nextPricingFinalPriceSaveSignature &&
-      persistedPricingFinalPriceSaveSignature &&
-      nextPricingFinalPriceSaveSignature === persistedPricingFinalPriceSaveSignature
-    );
-    if (
-      nextRfqId &&
-      persistedPricingFinalPriceSaveSignature &&
-      !restorePricingFinalPriceValidation
-    ) {
-      clearPricingFinalPriceSaveSignature(nextRfqId);
+    let workflowState = String(nextCostingFileState?.workflowState || "").trim().toUpperCase();
+    if (!workflowState) {
+      if (nextPricingFinalPriceUpload?.file) {
+        workflowState = PRICING_WORKFLOW_STATE_PRICING_UPLOADED;
+      } else if (nextPricingBomUpload?.file) {
+        workflowState = PRICING_WORKFLOW_STATE_BOM_UPLOADED;
+      } else if (
+        nextPipelineStage === "In costing" &&
+        String(subStatusValue || "").trim().toUpperCase() === "PRICING"
+      ) {
+        workflowState = PRICING_WORKFLOW_STATE_WAITING_BOM;
+      }
     }
-    const persistedPricingFileDecision = readPricingFileDecisionRecord(nextRfqId);
-    const restorePricingFileDecision = Boolean(
-      nextPricingFinalPriceSaveSignature &&
-      persistedPricingFileDecision.signature &&
-      nextPricingFinalPriceSaveSignature === persistedPricingFileDecision.signature
+    const showPersistedPricingValidation = Boolean(
+      nextPricingFinalPriceUpload?.file &&
+      [
+        PRICING_WORKFLOW_STATE_PRICING_UPLOADED,
+        PRICING_WORKFLOW_STATE_APPROVED,
+        PRICING_WORKFLOW_STATE_REJECTED
+      ].includes(workflowState)
     );
-    if (
-      nextRfqId &&
-      persistedPricingFileDecision.signature &&
-      !restorePricingFileDecision
-    ) {
-      clearPricingFileDecisionRecord(nextRfqId);
-    }
-    const showPersistedPricingValidation =
-      restorePricingFinalPriceValidation || restorePricingFileDecision;
     setValidationAudit(nextValidationAudit);
     setCostingReviewAudit(nextCostingReviewAudit);
-    setPricingFileDecisionAudit(
-      restorePricingFileDecision
-        ? persistedPricingFileDecision.audit
-        : createEmptyValidationAudit()
-    );
+    setPricingFileDecisionAudit(nextPricingDecisionAudit);
     setCostingFiles(normalizeCostingFiles(rfq));
-    setCostingFileState(normalizeCostingFileState(rfq));
+    setCostingFileState(nextCostingFileState);
     setPricingBomUpload(nextPricingBomUpload);
     setPricingFinalPriceUpload(nextPricingFinalPriceUpload);
     setCostingFileActionModalOpen(false);
@@ -3236,18 +3346,13 @@ export default function NewRfq() {
         note: trimmedNote,
         file: pricingFinalPriceDraft
       });
-      clearPricingFinalPriceSaveSignature(updatedRfq?.rfq_id || rfqId);
-      clearPricingFileDecisionRecord(updatedRfq?.rfq_id || rfqId);
       applyRfq(updatedRfq, { preserveActiveTab: true });
       setSelectedStage("In costing");
       setSelectedSubPhase("Pricing");
       setPricingFinalPriceModalOpen(false);
       setPricingFinalPriceNote("");
       setPricingFinalPriceDraft(null);
-      setPricingFinalPriceSaved(false);
-      setPricingFileValidationOpen(false);
-      setPricingFileDecisionAudit(createEmptyValidationAudit());
-      showToast("Costing file with final price uploaded successfully. Click Save to continue to validation.", {
+      showToast("Costing file with final price uploaded successfully.", {
         type: "success",
         title: "Pricing updated"
       });
@@ -3267,11 +3372,6 @@ export default function NewRfq() {
     }
     setRfqError("");
     setValidationSuccess("");
-    writePricingFinalPriceSaveSignature(
-      rfqId,
-      buildPricingFinalPriceSaveSignature(rfqId, pricingFinalPriceUpload)
-    );
-    setPricingFileDecisionAudit(createEmptyValidationAudit());
     setPricingFinalPriceSaved(true);
     setPricingFileValidationOpen(true);
     showToast("Costing file saved. You can now validate it.", {
@@ -3288,24 +3388,8 @@ export default function NewRfq() {
     setRfqError("");
 
     try {
-      const approvalAudit = {
-        ...createEmptyValidationAudit(),
-        approvedAt: new Date().toISOString(),
-        approvedBy: currentUserEmail || currentUserRole || "Current user"
-      };
-      await advanceRfqStatus(rfqId, {
-        target_phase: "OFFER",
-        target_sub_status: "PREPARATION"
-      });
-      writePricingFileDecisionRecord(
-        rfqId,
-        buildPricingFinalPriceSaveSignature(rfqId, pricingFinalPriceUpload),
-        approvalAudit
-      );
+      await submitCostingValidation(rfqId, { is_approved: true });
       await syncRfq(rfqId);
-      setPricingFileDecisionAudit(approvalAudit);
-      setPricingFinalPriceSaved(true);
-      setPricingFileValidationOpen(true);
       setSelectedStage("Offer");
       setSelectedSubPhase("Offer preparation");
       setValidationSuccess("Pricing file approved. RFQ moved to offer preparation.");
@@ -3330,7 +3414,7 @@ export default function NewRfq() {
     setRfqError("");
   };
 
-  const handleConfirmPricingFileReject = () => {
+  const handleConfirmPricingFileReject = async () => {
     const rejectionReason = String(pricingFileRejectReason || "").trim();
     if (!rejectionReason) {
       setRfqError("Please provide a rejection reason.");
@@ -3339,27 +3423,26 @@ export default function NewRfq() {
     setPricingFileValidationActionId("reject");
     setValidationSuccess("");
     setRfqError("");
-    const rejectionAudit = {
-      ...createEmptyValidationAudit(),
-      rejectedAt: new Date().toISOString(),
-      rejectedBy: currentUserEmail || currentUserRole || "Current user",
-      rejectionReason
-    };
-    writePricingFileDecisionRecord(
-      rfqId,
-      buildPricingFinalPriceSaveSignature(rfqId, pricingFinalPriceUpload),
-      rejectionAudit
-    );
-    setPricingFileDecisionAudit(rejectionAudit);
-    setPricingFinalPriceSaved(true);
-    setPricingFileValidationOpen(true);
-    showToast("Pricing file rejection was recorded in the UI. Workflow logic can be added next.", {
-      type: "info",
-      title: "Decision recorded"
-    });
-    setPricingFileRejectModalOpen(false);
-    setPricingFileRejectReason("");
-    setPricingFileValidationActionId("");
+
+    try {
+      await submitCostingValidation(rfqId, {
+        is_approved: false,
+        rejection_reason: rejectionReason
+      });
+      await syncRfq(rfqId);
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Pricing");
+      setPricingFileRejectModalOpen(false);
+      setPricingFileRejectReason("");
+      showToast("Pricing file rejected successfully.", {
+        type: "success",
+        title: "Pricing updated"
+      });
+    } catch (error) {
+      setRfqError(error?.message || "Unable to reject this pricing file.");
+    } finally {
+      setPricingFileValidationActionId("");
+    }
   };
 
   const handleSaveCostingFeasability = async () => {
@@ -4378,12 +4461,12 @@ export default function NewRfq() {
                                 disabled={!canManagePricingBom || pricingBomPending}
                                 title={
                                   canManagePricingBom
-                                    ? "Upload costing file with BOM data"
-                                    : "Only the owner or costing team can upload the pricing BOM file."
+                                    ? "Upload BOM data"
+                                    : "BOM upload is only available while the workflow is waiting for BOM data."
                                 }
                               >
                                 <Upload className="h-4 w-4" />
-                                {hasPricingBomUpload ? "Replace costing file" : "Upload costing file"}
+                                {hasPricingBomUpload ? "Replace BOM Data" : "Upload BOM Data"}
                               </button>
                             </div>
 
@@ -4484,12 +4567,12 @@ export default function NewRfq() {
                                   disabled={!canManagePricingFinalPrice || pricingFinalPricePending}
                                   title={
                                     canManagePricingFinalPrice
-                                      ? "Upload costing file with final price"
-                                      : "Upload the BOM file first, then only the owner or costing team can upload the final price file."
+                                      ? "Upload final pricing"
+                                      : "Final pricing upload is only available after BOM upload or rejection."
                                   }
                                 >
                                   <Upload className="h-4 w-4" />
-                                  {hasPricingFinalPriceUpload ? "Replace final price file" : "Upload final price file"}
+                                  {hasPricingFinalPriceUpload ? "Replace Final Pricing" : "Upload Final Pricing"}
                                 </button>
                               </div>
 

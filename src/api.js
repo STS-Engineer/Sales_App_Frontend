@@ -232,6 +232,13 @@ export async function submitCostingReview(rfqId, payload) {
   });
 }
 
+export async function submitCostingValidation(rfqId, payload) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing_validation`, {
+    method: "POST",
+    body: payload
+  });
+}
+
 export async function advanceRfqStatus(rfqId, payload) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/advance`, {
     method: "POST",
