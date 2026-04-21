@@ -853,7 +853,7 @@ const normalizeDiscussionMessage = (entry, index = 0) => {
   if (!content) return null;
   const createdAt =
     entry?.created_at ||
-    entry?.createdAt ||https://sales-app-backend.azurewebsites.net
+    entry?.createdAt ||
     entry?.timestamp ||
     new Date().toISOString();
   return {
@@ -908,13 +908,9 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
-<<<<<<< HEAD
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-=======
 const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
->>>>>>> d14aa3a8185e0e224f792ed76b288c7e8edefa5b
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
