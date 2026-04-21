@@ -29,6 +29,7 @@ import {
   submitRevision,
   updateRfqData,
   uploadPricingBomFile,
+  uploadPricingFinalPriceFile,
   validateRfq,
   uploadRfqFile
 } from "../api";
@@ -183,6 +184,18 @@ const STEP_FIELDS = {
   ],
   "step-notes": ["toTotal", "validatorEmail"]
 };
+
+const RFQ_FORM_FIELD_NAMES = [...new Set(Object.values(STEP_FIELDS).flat())];
+const RFQ_FIELD_TO_STEP_MAP = Object.fromEntries(
+  Object.entries(STEP_FIELDS).flatMap(([stepId, fields]) =>
+    fields.map((fieldName) => [fieldName, stepId])
+  )
+);
+const STEP_ORDER_INDEX = Object.fromEntries(
+  STEPS.map((step, index) => [step.id, index])
+);
+const AUTOFILL_REVEAL_HIGHLIGHT_CLASSES =
+  "ring-2 ring-tide/30 ring-offset-2 ring-offset-white transition-shadow";
 
 const STEP_STYLES = {
   tide: {
@@ -401,6 +414,51 @@ const hasMeaningfulValue = (value) => {
   return String(value).trim().length > 0;
 };
 
+const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
+  const changedFields = RFQ_FORM_FIELD_NAMES.filter((fieldName) => {
+    const previousValue = previousForm?.[fieldName];
+    const nextValue = nextForm?.[fieldName];
+    return String(previousValue ?? "").trim() !== String(nextValue ?? "").trim();
+  });
+
+  if (!changedFields.length) {
+    return [];
+  }
+
+  const filledFields = changedFields.filter((fieldName) =>
+    hasMeaningfulValue(nextForm?.[fieldName])
+  );
+  return filledFields.length ? filledFields : changedFields;
+};
+
+const buildRfqAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
+  const changedFields = getChangedRfqFormFields(previousForm, nextForm);
+  if (!changedFields.length) {
+    return null;
+  }
+
+  const impactedSteps = [...new Set(
+    changedFields
+      .map((fieldName) => RFQ_FIELD_TO_STEP_MAP[fieldName])
+      .filter(Boolean)
+  )].sort(
+    (leftStep, rightStep) =>
+      (STEP_ORDER_INDEX[leftStep] ?? Number.MAX_SAFE_INTEGER) -
+      (STEP_ORDER_INDEX[rightStep] ?? Number.MAX_SAFE_INTEGER)
+  );
+
+  const targetStepId = impactedSteps[0] || RFQ_FIELD_TO_STEP_MAP[changedFields[0]] || "step-client";
+  const shouldRevealSingleField =
+    changedFields.length === 1 && impactedSteps.length === 1;
+
+  return {
+    stepId: targetStepId,
+    mode: shouldRevealSingleField ? "field" : "step",
+    fieldName: shouldRevealSingleField ? changedFields[0] : "",
+    updatedFields: changedFields
+  };
+};
+
 const getMissingPotentialSharedFields = (form = {}) =>
   SHARED_POTENTIAL_FIELDS
     .filter(({ key }) => !hasMeaningfulValue(form?.[key]))
@@ -478,6 +536,7 @@ const normalizeRfqFiles = (rfq) => {
       id,
       name,
       url,
+      fileRole: String(entry?.file_role || entry?.fileRole || "").trim().toUpperCase(),
       source: "server",
       size:
         entry?.size ||
@@ -605,7 +664,19 @@ const buildLegacyCostingFileState = (files = []) => {
       file: null
     };
   }
-  const latest = files[files.length - 1];
+  const legacyCandidates = files.filter(
+    (file) => !["PRICING_BOM", "PRICING_FINAL_PRICE"].includes(String(file?.fileRole || "").trim().toUpperCase())
+  );
+  if (!legacyCandidates.length) {
+    return {
+      fileStatus: "PENDING",
+      note: "",
+      actionBy: "",
+      actionAt: "",
+      file: null
+    };
+  }
+  const latest = legacyCandidates[legacyCandidates.length - 1];
   const safeLegacyUrl =
     typeof latest?.url === "string" &&
       (/^https?:\/\//i.test(latest.url) || latest.url.startsWith("/"))
@@ -620,63 +691,94 @@ const buildLegacyCostingFileState = (files = []) => {
   };
 };
 
-const normalizePricingBomUpload = (rfq) => {
-  const raw = rfq?.rfq_data?.pricing_bom_upload;
+const getLatestCostingFileEntryByRole = (rfq, fileRole) => {
+  const targetRole = String(fileRole || "").trim().toUpperCase();
+  if (!targetRole) return null;
+  const entries = Array.isArray(rfq?.costing_files) ? rfq.costing_files : [];
+  const matches = entries.filter(
+    (entry) => String(entry?.file_role || entry?.fileRole || "").trim().toUpperCase() === targetRole
+  );
+  return matches.length ? matches[matches.length - 1] : null;
+};
+
+const normalizePricingUpload = (raw, { fallbackId, fallbackName }) => {
   if (!raw || typeof raw !== "object") return null;
+  const fileSource =
+    raw?.file && typeof raw.file === "object"
+      ? raw.file
+      : raw;
 
   const normalizedFile =
-    raw?.file && typeof raw.file === "object"
+    fileSource && typeof fileSource === "object"
       ? {
         id:
-          raw.file?.id ||
-          raw.file?.file_id ||
-          raw.file?.uuid ||
-          raw.file?.path ||
-          raw.file?.filename ||
-          "pricing-bom-file",
+          fileSource?.id ||
+          fileSource?.file_id ||
+          fileSource?.uuid ||
+          fileSource?.path ||
+          fileSource?.filename ||
+          fallbackId,
         name:
-          raw.file?.name ||
-          raw.file?.filename ||
-          raw.file?.original_name ||
-          raw.file?.file_name ||
-          "Pricing BOM file",
+          fileSource?.name ||
+          fileSource?.filename ||
+          fileSource?.original_name ||
+          fileSource?.file_name ||
+          fallbackName,
         url:
-          raw.file?.url ||
-          raw.file?.file_url ||
-          raw.file?.download_url ||
-          raw.file?.path ||
-          raw.file?.link ||
+          fileSource?.url ||
+          fileSource?.file_url ||
+          fileSource?.download_url ||
+          fileSource?.path ||
+          fileSource?.link ||
           "",
         source: "server",
         size:
-          raw.file?.size ||
-          raw.file?.file_size ||
-          raw.file?.content_length ||
-          raw.file?.contentLength ||
+          fileSource?.size ||
+          fileSource?.file_size ||
+          fileSource?.content_length ||
+          fileSource?.contentLength ||
           "",
         updatedAt:
-          raw.file?.uploaded_at ||
-          raw.file?.updated_at ||
-          raw.file?.last_modified ||
-          raw.file?.lastModified ||
+          fileSource?.uploaded_at ||
+          fileSource?.updated_at ||
+          fileSource?.last_modified ||
+          fileSource?.lastModified ||
           raw?.uploaded_at ||
           "",
         owner:
-          raw.file?.uploaded_by ||
-          raw.file?.owner ||
-          raw.file?.created_by ||
+          fileSource?.uploaded_by ||
+          fileSource?.owner ||
+          fileSource?.created_by ||
           raw?.uploaded_by ||
           ""
       }
       : null;
 
   return {
-    note: String(raw?.note || "").trim(),
-    uploadedBy: String(raw?.uploaded_by || "").trim(),
-    uploadedAt: String(raw?.uploaded_at || "").trim(),
+    note: String(raw?.note || raw?.file_note || "").trim(),
+    uploadedBy: String(raw?.uploaded_by || fileSource?.uploaded_by || "").trim(),
+    uploadedAt: String(raw?.uploaded_at || fileSource?.uploaded_at || "").trim(),
     file: normalizedFile
   };
 };
+
+const normalizePricingBomUpload = (rfq) =>
+  normalizePricingUpload(
+    getLatestCostingFileEntryByRole(rfq, "PRICING_BOM") || rfq?.rfq_data?.pricing_bom_upload,
+    {
+    fallbackId: "pricing-bom-file",
+    fallbackName: "Pricing BOM file"
+    }
+  );
+
+const normalizePricingFinalPriceUpload = (rfq) =>
+  normalizePricingUpload(
+    getLatestCostingFileEntryByRole(rfq, "PRICING_FINAL_PRICE") || rfq?.rfq_data?.pricing_final_price_upload,
+    {
+    fallbackId: "pricing-final-price-file",
+    fallbackName: "Pricing final price file"
+    }
+  );
 
 const FILES_PREVIEW_LIMIT = 3;
 
@@ -751,7 +853,7 @@ const normalizeDiscussionMessage = (entry, index = 0) => {
   if (!content) return null;
   const createdAt =
     entry?.created_at ||
-    entry?.createdAt ||
+    entry?.createdAt ||https://sales-app-backend.azurewebsites.net
     entry?.timestamp ||
     new Date().toISOString();
   return {
@@ -806,6 +908,8 @@ const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
+const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
+const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
@@ -916,6 +1020,54 @@ const clearCachedDraftId = () => {
   window.sessionStorage.removeItem(DRAFT_CACHE_TS_KEY);
 };
 
+const getPricingFinalPriceSaveStorageKey = (rfqId) => {
+  const normalizedRfqId = String(rfqId || "").trim();
+  return normalizedRfqId
+    ? `${PRICING_FINAL_PRICE_SAVE_KEY_PREFIX}:${normalizedRfqId}`
+    : "";
+};
+
+const buildPricingFinalPriceSaveSignature = (rfqId, upload) => {
+  const normalizedRfqId = String(rfqId || "").trim();
+  const normalizedName = String(upload?.file?.name || "").trim();
+  if (!normalizedRfqId || !normalizedName) {
+    return "";
+  }
+
+  return JSON.stringify({
+    rfqId: normalizedRfqId,
+    fileId: String(upload?.file?.id || "").trim(),
+    fileName: normalizedName,
+    uploadedAt: String(upload?.uploadedAt || upload?.file?.updatedAt || "").trim(),
+    fileUrl: String(upload?.file?.url || "").trim()
+  });
+};
+
+const readPricingFinalPriceSaveSignature = (rfqId) => {
+  if (!canUseStorage()) return "";
+  const storageKey = getPricingFinalPriceSaveStorageKey(rfqId);
+  if (!storageKey) return "";
+  return window.sessionStorage.getItem(storageKey) || "";
+};
+
+const writePricingFinalPriceSaveSignature = (rfqId, signature) => {
+  if (!canUseStorage()) return;
+  const storageKey = getPricingFinalPriceSaveStorageKey(rfqId);
+  if (!storageKey) return;
+  if (!signature) {
+    window.sessionStorage.removeItem(storageKey);
+    return;
+  }
+  window.sessionStorage.setItem(storageKey, signature);
+};
+
+const clearPricingFinalPriceSaveSignature = (rfqId) => {
+  if (!canUseStorage()) return;
+  const storageKey = getPricingFinalPriceSaveStorageKey(rfqId);
+  if (!storageKey) return;
+  window.sessionStorage.removeItem(storageKey);
+};
+
 const resolveFileUrl = (url) => {
   if (!url) return "";
   if (/^https?:\/\//i.test(url)) return url;
@@ -997,6 +1149,71 @@ const formatValidationAuditDate = (value) => {
   return parsed.toLocaleString();
 };
 
+const getPricingFileDecisionStorageKey = (rfqId) => {
+  const normalizedRfqId = String(rfqId || "").trim();
+  return normalizedRfqId
+    ? `${PRICING_FILE_DECISION_KEY_PREFIX}:${normalizedRfqId}`
+    : "";
+};
+
+const normalizeStoredValidationAudit = (audit = {}) => ({
+  approvedAt: normalizeAuditValue(audit?.approvedAt),
+  approvedBy: normalizeAuditValue(audit?.approvedBy),
+  rejectedAt: normalizeAuditValue(audit?.rejectedAt),
+  rejectedBy: normalizeAuditValue(audit?.rejectedBy),
+  rejectionReason: normalizeAuditValue(audit?.rejectionReason)
+});
+
+const readPricingFileDecisionRecord = (rfqId) => {
+  if (!canUseStorage()) {
+    return { signature: "", audit: createEmptyValidationAudit() };
+  }
+  const storageKey = getPricingFileDecisionStorageKey(rfqId);
+  if (!storageKey) {
+    return { signature: "", audit: createEmptyValidationAudit() };
+  }
+  const rawValue = window.sessionStorage.getItem(storageKey) || "";
+  if (!rawValue) {
+    return { signature: "", audit: createEmptyValidationAudit() };
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    return {
+      signature: normalizeAuditValue(parsed?.signature),
+      audit: normalizeStoredValidationAudit(parsed?.audit)
+    };
+  } catch {
+    window.sessionStorage.removeItem(storageKey);
+    return { signature: "", audit: createEmptyValidationAudit() };
+  }
+};
+
+const writePricingFileDecisionRecord = (rfqId, signature, audit) => {
+  if (!canUseStorage()) return;
+  const storageKey = getPricingFileDecisionStorageKey(rfqId);
+  if (!storageKey) return;
+  const normalizedSignature = normalizeAuditValue(signature);
+  if (!normalizedSignature) {
+    window.sessionStorage.removeItem(storageKey);
+    return;
+  }
+  window.sessionStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      signature: normalizedSignature,
+      audit: normalizeStoredValidationAudit(audit)
+    })
+  );
+};
+
+const clearPricingFileDecisionRecord = (rfqId) => {
+  if (!canUseStorage()) return;
+  const storageKey = getPricingFileDecisionStorageKey(rfqId);
+  if (!storageKey) return;
+  window.sessionStorage.removeItem(storageKey);
+};
+
 const loadRfqSnapshot = async (targetId) => {
   const [rfq, auditLogs] = await Promise.all([
     getRfq(targetId),
@@ -1050,6 +1267,16 @@ export default function NewRfq() {
   const [pricingBomNote, setPricingBomNote] = useState("");
   const [pricingBomDraft, setPricingBomDraft] = useState(null);
   const [pricingBomPending, setPricingBomPending] = useState(false);
+  const [pricingFinalPriceUpload, setPricingFinalPriceUpload] = useState(null);
+  const [pricingFinalPriceModalOpen, setPricingFinalPriceModalOpen] = useState(false);
+  const [pricingFinalPriceNote, setPricingFinalPriceNote] = useState("");
+  const [pricingFinalPriceDraft, setPricingFinalPriceDraft] = useState(null);
+  const [pricingFinalPricePending, setPricingFinalPricePending] = useState(false);
+  const [pricingFinalPriceSaved, setPricingFinalPriceSaved] = useState(false);
+  const [pricingFileValidationOpen, setPricingFileValidationOpen] = useState(false);
+  const [pricingFileValidationActionId, setPricingFileValidationActionId] = useState("");
+  const [pricingFileRejectModalOpen, setPricingFileRejectModalOpen] = useState(false);
+  const [pricingFileRejectReason, setPricingFileRejectReason] = useState("");
   const [discussionMessages, setDiscussionMessages] = useState([]);
   const [discussionDraft, setDiscussionDraft] = useState("");
   const [discussionSending, setDiscussionSending] = useState(false);
@@ -1089,10 +1316,13 @@ export default function NewRfq() {
   const [rfqValidationReached, setRfqValidationReached] = useState(false);
   const [validationAudit, setValidationAudit] = useState(createEmptyValidationAudit);
   const [costingReviewAudit, setCostingReviewAudit] = useState(createEmptyValidationAudit);
+  const [pricingFileDecisionAudit, setPricingFileDecisionAudit] = useState(createEmptyValidationAudit);
   const [persistValidationView, setPersistValidationView] = useState(false);
   const [persistCostingReviewView, setPersistCostingReviewView] = useState(false);
   const [proceedingToFormalRfq, setProceedingToFormalRfq] = useState(false);
   const [costingSavePending, setCostingSavePending] = useState(false);
+  const [costingFeasabilitySaved, setCostingFeasabilitySaved] = useState(false);
+  const [pendingRfqAutofillReveal, setPendingRfqAutofillReveal] = useState(null);
   const rfqFileInputRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
@@ -1185,6 +1415,10 @@ export default function NewRfq() {
     costingReviewAudit.approvedAt || costingReviewAudit.rejectedAt
   );
   const isCostingReviewRejected = Boolean(costingReviewAudit.rejectedAt);
+  const hasRecordedPricingFileDecision = Boolean(
+    pricingFileDecisionAudit.approvedAt || pricingFileDecisionAudit.rejectedAt
+  );
+  const isPricingFileRejected = Boolean(pricingFileDecisionAudit.rejectedAt);
   const effectiveCostingFileState = useMemo(
     () => costingFileState || buildLegacyCostingFileState(costingFiles),
     [costingFileState, costingFiles]
@@ -1377,13 +1611,41 @@ export default function NewRfq() {
     !costingSavePending
   );
   const hasSavedCostingFeasability = Boolean(
+    costingFeasabilitySaved ||
     normalizePipelineStageKey(activeStage) === "In costing" &&
     activeSubPhase === "Pricing"
   );
+  const hasPricingBomUpload = Boolean(pricingBomUpload?.file);
+  const hasPricingFinalPriceUpload = Boolean(pricingFinalPriceUpload?.file);
   const canManagePricingBom = Boolean(
     rfqId &&
     isCostingPricingView &&
     (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+  );
+  const canManagePricingFinalPrice = Boolean(
+    canManagePricingBom &&
+    hasPricingBomUpload
+  );
+  const canSavePricingFinalPrice = Boolean(
+    canManagePricingFinalPrice &&
+    hasPricingFinalPriceUpload &&
+    !pricingFinalPricePending &&
+    !pricingFileValidationActionId
+  );
+  const canValidatePricingFile = Boolean(
+    rfqId &&
+    isCostingPricingView &&
+    hasPricingFinalPriceUpload &&
+    pricingFileValidationOpen &&
+    !hasRecordedPricingFileDecision &&
+    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+  );
+  const pricingFileValidationButtonsDisabled = Boolean(
+    !canValidatePricingFile || pricingFileValidationActionId || hasRecordedPricingFileDecision
+  );
+  const showPricingFileValidationSection = Boolean(
+    hasPricingFinalPriceUpload &&
+    (pricingFileValidationOpen || hasRecordedPricingFileDecision)
   );
   const knownCostingRecipients = useMemo(() => {
     const candidates = [
@@ -1488,6 +1750,8 @@ export default function NewRfq() {
     setRfqValidationReached(false);
     setPersistValidationView(false);
     setPersistCostingReviewView(false);
+    setPricingFileDecisionAudit(createEmptyValidationAudit());
+    setPendingRfqAutofillReveal(null);
     setRevisionRequestModalOpen(false);
     setRevisionComment("");
     setRevisionActionId("");
@@ -1503,6 +1767,95 @@ export default function NewRfq() {
       setRfqValidationReached(true);
     }
   }, [activeSubPhase, isRevisionModeActive]);
+
+  useEffect(() => {
+    if (!pendingRfqAutofillReveal) {
+      return;
+    }
+
+    if (activeRfqTab !== "new") {
+      setActiveRfqTab("new");
+      return;
+    }
+
+    if (selectedStage !== "RFQ") {
+      setSelectedStage("RFQ");
+      return;
+    }
+
+    if (selectedSubPhase !== "RFQ form") {
+      setSelectedSubPhase("RFQ form");
+      return;
+    }
+
+    if (activeStep !== pendingRfqAutofillReveal.stepId) {
+      setActiveStep(pendingRfqAutofillReveal.stepId);
+      return;
+    }
+
+    let canceled = false;
+    let retryTimer = 0;
+    let highlightTimer = 0;
+
+    const revealTarget = (attempt = 0) => {
+      if (canceled) {
+        return;
+      }
+
+      const fieldElement =
+        pendingRfqAutofillReveal.mode === "field" &&
+        pendingRfqAutofillReveal.fieldName
+          ? document.getElementsByName(pendingRfqAutofillReveal.fieldName)?.[0]
+          : null;
+      const sectionElement = document.getElementById(pendingRfqAutofillReveal.stepId);
+      const targetElement =
+        pendingRfqAutofillReveal.mode === "field"
+          ? fieldElement?.closest("label") || fieldElement || sectionElement
+          : sectionElement;
+
+      if (!targetElement) {
+        if (attempt >= 6) {
+          setPendingRfqAutofillReveal(null);
+          return;
+        }
+        retryTimer = window.setTimeout(() => revealTarget(attempt + 1), 90);
+        return;
+      }
+
+      targetElement.scrollIntoView({
+        behavior: "smooth",
+        block: pendingRfqAutofillReveal.mode === "field" ? "center" : "start"
+      });
+
+      if (
+        fieldElement &&
+        pendingRfqAutofillReveal.mode === "field" &&
+        typeof fieldElement.focus === "function" &&
+        !fieldElement.disabled
+      ) {
+        fieldElement.focus({ preventScroll: true });
+      }
+
+      targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
+      highlightTimer = window.setTimeout(() => {
+        targetElement.classList.remove(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
+      }, 1800);
+      setPendingRfqAutofillReveal(null);
+    };
+
+    retryTimer = window.setTimeout(() => revealTarget(0), 40);
+
+    return () => {
+      canceled = true;
+      window.clearTimeout(retryTimer);
+    };
+  }, [
+    activeRfqTab,
+    activeStep,
+    pendingRfqAutofillReveal,
+    selectedStage,
+    selectedSubPhase
+  ]);
 
   useEffect(() => {
     if (!isCostingStage || canOpenCostingPricing) {
@@ -1557,11 +1910,17 @@ export default function NewRfq() {
 
   const applyRfq = (
     rfq,
-    { syncChat = true, auditLogs = [], preserveActiveTab = false } = {}
+    {
+      syncChat = true,
+      auditLogs = [],
+      preserveActiveTab = false,
+      revealUpdatedRfqFields = false
+    } = {}
   ) => {
     if (!rfq) return;
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
+    const nextRfqId = String(rfq?.rfq_id || "").trim();
     const isPotentialRecord = subStatusValue === "POTENTIAL";
     const isRevisionRecord = subStatusValue === "REVISION_REQUESTED";
     const mappedFields = omitUndefinedValues({
@@ -1576,11 +1935,50 @@ export default function NewRfq() {
       nextPipelineStage === "RFQ" &&
       nextUiStatus === "Cancelled" &&
       Boolean(nextValidationAudit.rejectedAt);
+    const nextPricingBomUpload = normalizePricingBomUpload(rfq);
+    const nextPricingFinalPriceUpload = normalizePricingFinalPriceUpload(rfq);
+    const persistedPricingFinalPriceSaveSignature =
+      readPricingFinalPriceSaveSignature(nextRfqId);
+    const nextPricingFinalPriceSaveSignature =
+      buildPricingFinalPriceSaveSignature(nextRfqId, nextPricingFinalPriceUpload);
+    const restorePricingFinalPriceValidation = Boolean(
+      nextPricingFinalPriceSaveSignature &&
+      persistedPricingFinalPriceSaveSignature &&
+      nextPricingFinalPriceSaveSignature === persistedPricingFinalPriceSaveSignature
+    );
+    if (
+      nextRfqId &&
+      persistedPricingFinalPriceSaveSignature &&
+      !restorePricingFinalPriceValidation
+    ) {
+      clearPricingFinalPriceSaveSignature(nextRfqId);
+    }
+    const persistedPricingFileDecision = readPricingFileDecisionRecord(nextRfqId);
+    const restorePricingFileDecision = Boolean(
+      nextPricingFinalPriceSaveSignature &&
+      persistedPricingFileDecision.signature &&
+      nextPricingFinalPriceSaveSignature === persistedPricingFileDecision.signature
+    );
+    if (
+      nextRfqId &&
+      persistedPricingFileDecision.signature &&
+      !restorePricingFileDecision
+    ) {
+      clearPricingFileDecisionRecord(nextRfqId);
+    }
+    const showPersistedPricingValidation =
+      restorePricingFinalPriceValidation || restorePricingFileDecision;
     setValidationAudit(nextValidationAudit);
     setCostingReviewAudit(nextCostingReviewAudit);
+    setPricingFileDecisionAudit(
+      restorePricingFileDecision
+        ? persistedPricingFileDecision.audit
+        : createEmptyValidationAudit()
+    );
     setCostingFiles(normalizeCostingFiles(rfq));
     setCostingFileState(normalizeCostingFileState(rfq));
-    setPricingBomUpload(normalizePricingBomUpload(rfq));
+    setPricingBomUpload(nextPricingBomUpload);
+    setPricingFinalPriceUpload(nextPricingFinalPriceUpload);
     setCostingFileActionModalOpen(false);
     setCostingFileActionMode("UPLOADED");
     setCostingFileActionNote("");
@@ -1590,17 +1988,31 @@ export default function NewRfq() {
     setPricingBomNote("");
     setPricingBomDraft(null);
     setPricingBomPending(false);
+    setPricingFinalPriceModalOpen(false);
+    setPricingFinalPriceNote("");
+    setPricingFinalPriceDraft(null);
+    setPricingFinalPricePending(false);
+    setPricingFinalPriceSaved(showPersistedPricingValidation);
+    setPricingFileValidationOpen(showPersistedPricingValidation);
+    setPricingFileValidationActionId("");
+    setPricingFileRejectModalOpen(false);
+    setPricingFileRejectReason("");
+    setCostingFeasabilitySaved(false);
     setRfqSubStatus(subStatusValue || "");
     setRfqCreatorEmail(String(rfq?.created_by_email || ""));
     setRevisionNotes(String(rfq?.revision_notes || ""));
     setDiscussionMessages([]);
     setDiscussionError("");
-    setForm({
+    const nextFormState = {
       ...initialForm,
       ...mappedFields,
       id: rfq.rfq_id,
       status: nextUiStatus
-    });
+    };
+    setPendingRfqAutofillReveal(
+      revealUpdatedRfqFields ? buildRfqAutofillRevealTarget(form, nextFormState) : null
+    );
+    setForm(nextFormState);
     setActiveStage(nextPipelineStage);
     if (nextUiStatus === "Cancelled" || nextUiStatus === "Lost") {
       const canceledStageKey = normalizePipelineStageKey(nextPipelineStage) || nextPipelineStage || "RFQ";
@@ -1653,13 +2065,13 @@ export default function NewRfq() {
     }
   };
 
-  const syncRfq = async (targetId) => {
+  const syncRfq = async (targetId, options = {}) => {
     const idToLoad = targetId || rfqId;
     if (!idToLoad) return false;
     setRfqError("");
     try {
       const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
-      applyRfq(rfq, { auditLogs, preserveActiveTab: true });
+      applyRfq(rfq, { auditLogs, preserveActiveTab: true, ...options });
       return true;
     } catch (error) {
       setRfqError("Unable to refresh this RFQ. Please try again.");
@@ -1727,6 +2139,7 @@ export default function NewRfq() {
           setCostingFiles([]);
           setCostingFileState(null);
           setPricingBomUpload(null);
+          setPricingFinalPriceUpload(null);
           setCostingFileActionModalOpen(false);
           setCostingFileActionMode("UPLOADED");
           setCostingFileActionNote("");
@@ -1736,6 +2149,17 @@ export default function NewRfq() {
           setPricingBomNote("");
           setPricingBomDraft(null);
           setPricingBomPending(false);
+          setPricingFinalPriceModalOpen(false);
+          setPricingFinalPriceNote("");
+          setPricingFinalPriceDraft(null);
+          setPricingFinalPricePending(false);
+          setPricingFinalPriceSaved(false);
+          setPricingFileValidationOpen(false);
+          setPricingFileValidationActionId("");
+          setPricingFileDecisionAudit(createEmptyValidationAudit());
+          setPricingFileRejectModalOpen(false);
+          setPricingFileRejectReason("");
+          setCostingFeasabilitySaved(false);
           setDiscussionMessages([]);
           setDiscussionDraft("");
           setDiscussionSending(false);
@@ -1782,6 +2206,7 @@ export default function NewRfq() {
         setCostingFiles([]);
         setCostingFileState(null);
         setPricingBomUpload(null);
+        setPricingFinalPriceUpload(null);
         setCostingFileActionModalOpen(false);
         setCostingFileActionMode("UPLOADED");
         setCostingFileActionNote("");
@@ -1791,6 +2216,17 @@ export default function NewRfq() {
         setPricingBomNote("");
         setPricingBomDraft(null);
         setPricingBomPending(false);
+        setPricingFinalPriceModalOpen(false);
+        setPricingFinalPriceNote("");
+        setPricingFinalPriceDraft(null);
+        setPricingFinalPricePending(false);
+        setPricingFinalPriceSaved(false);
+        setPricingFileValidationOpen(false);
+        setPricingFileValidationActionId("");
+        setPricingFileDecisionAudit(createEmptyValidationAudit());
+        setPricingFileRejectModalOpen(false);
+        setPricingFileRejectReason("");
+        setCostingFeasabilitySaved(false);
         setDiscussionMessages([]);
         setDiscussionError("");
         setCostingDiscussionMessages([]);
@@ -2208,7 +2644,9 @@ export default function NewRfq() {
       return false;
     }
 
-    const synced = await syncRfq(currentRfqId);
+    const synced = await syncRfq(currentRfqId, {
+      revealUpdatedRfqFields: true
+    });
     if (!synced && finalAssistantResponse) {
       setRfqChatMessages((prev) => [
         ...prev,
@@ -2308,7 +2746,9 @@ export default function NewRfq() {
       finalAssistantResponse = String(reply?.response || "");
       replyRfq = reply?.rfq || null;
       if (replyRfq) {
-        applyRfq(replyRfq);
+        applyRfq(replyRfq, {
+          revealUpdatedRfqFields: activeChatMode === "rfq"
+        });
       }
     } catch {
       setActiveChatMessages((prev) => [
@@ -2319,7 +2759,9 @@ export default function NewRfq() {
         }
       ]);
     } finally {
-      const synced = await syncRfq(currentRfqId);
+      const synced = await syncRfq(currentRfqId, {
+        revealUpdatedRfqFields: activeChatMode === "rfq" && !replyRfq
+      });
       if (!synced && finalAssistantResponse && !replyRfq) {
         setActiveChatMessages((prev) => [
           ...prev,
@@ -2750,6 +3192,176 @@ export default function NewRfq() {
     }
   };
 
+  const openPricingFinalPriceModal = () => {
+    if (!canManagePricingFinalPrice || pricingFinalPricePending) {
+      return;
+    }
+    setRfqError("");
+    setPricingFinalPriceNote(pricingFinalPriceUpload?.note || "");
+    setPricingFinalPriceDraft(null);
+    setPricingFinalPriceModalOpen(true);
+  };
+
+  const handleClosePricingFinalPriceModal = () => {
+    if (pricingFinalPricePending) return;
+    setPricingFinalPriceModalOpen(false);
+    setPricingFinalPriceNote("");
+    setPricingFinalPriceDraft(null);
+  };
+
+  const handlePricingFinalPriceDraftChange = (event) => {
+    const nextFile = event.target.files?.[0] || null;
+    setPricingFinalPriceDraft(nextFile);
+  };
+
+  const handleSubmitPricingFinalPriceUpload = async (event) => {
+    event.preventDefault();
+    if (!rfqId || pricingFinalPricePending) return;
+
+    const trimmedNote = String(pricingFinalPriceNote || "").trim();
+    if (!trimmedNote) {
+      setRfqError("Please provide a note for the costing final price upload.");
+      return;
+    }
+    if (!pricingFinalPriceDraft) {
+      setRfqError("Please choose the costing file with final price before submitting.");
+      return;
+    }
+
+    setPricingFinalPricePending(true);
+    setRfqError("");
+
+    try {
+      const updatedRfq = await uploadPricingFinalPriceFile(rfqId, {
+        note: trimmedNote,
+        file: pricingFinalPriceDraft
+      });
+      clearPricingFinalPriceSaveSignature(updatedRfq?.rfq_id || rfqId);
+      clearPricingFileDecisionRecord(updatedRfq?.rfq_id || rfqId);
+      applyRfq(updatedRfq, { preserveActiveTab: true });
+      setSelectedStage("In costing");
+      setSelectedSubPhase("Pricing");
+      setPricingFinalPriceModalOpen(false);
+      setPricingFinalPriceNote("");
+      setPricingFinalPriceDraft(null);
+      setPricingFinalPriceSaved(false);
+      setPricingFileValidationOpen(false);
+      setPricingFileDecisionAudit(createEmptyValidationAudit());
+      showToast("Costing file with final price uploaded successfully. Click Save to continue to validation.", {
+        type: "success",
+        title: "Pricing updated"
+      });
+    } catch (error) {
+      setRfqError(error?.message || "Unable to upload the costing file with final price.");
+    } finally {
+      setPricingFinalPricePending(false);
+    }
+  };
+
+  const handleSavePricingFinalPrice = () => {
+    if (!canSavePricingFinalPrice) {
+      if (!hasPricingFinalPriceUpload) {
+        setRfqError("Upload the costing file with final price before saving.");
+      }
+      return;
+    }
+    setRfqError("");
+    setValidationSuccess("");
+    writePricingFinalPriceSaveSignature(
+      rfqId,
+      buildPricingFinalPriceSaveSignature(rfqId, pricingFinalPriceUpload)
+    );
+    setPricingFileDecisionAudit(createEmptyValidationAudit());
+    setPricingFinalPriceSaved(true);
+    setPricingFileValidationOpen(true);
+    showToast("Costing file saved. You can now validate it.", {
+      type: "success",
+      title: "Validation opened"
+    });
+  };
+
+  const handleApprovePricingFileValidation = async () => {
+    if (!rfqId || pricingFileValidationActionId) return;
+
+    setPricingFileValidationActionId("approve");
+    setValidationSuccess("");
+    setRfqError("");
+
+    try {
+      const approvalAudit = {
+        ...createEmptyValidationAudit(),
+        approvedAt: new Date().toISOString(),
+        approvedBy: currentUserEmail || currentUserRole || "Current user"
+      };
+      await advanceRfqStatus(rfqId, {
+        target_phase: "OFFER",
+        target_sub_status: "PREPARATION"
+      });
+      writePricingFileDecisionRecord(
+        rfqId,
+        buildPricingFinalPriceSaveSignature(rfqId, pricingFinalPriceUpload),
+        approvalAudit
+      );
+      await syncRfq(rfqId);
+      setPricingFileDecisionAudit(approvalAudit);
+      setPricingFinalPriceSaved(true);
+      setPricingFileValidationOpen(true);
+      setSelectedStage("Offer");
+      setSelectedSubPhase("Offer preparation");
+      setValidationSuccess("Pricing file approved. RFQ moved to offer preparation.");
+    } catch (error) {
+      setRfqError(error?.message || "Unable to approve this pricing file.");
+    } finally {
+      setPricingFileValidationActionId("");
+    }
+  };
+
+  const handleRejectPricingFileValidation = () => {
+    if (pricingFileValidationActionId) return;
+    setValidationSuccess("");
+    setRfqError("");
+    setPricingFileRejectModalOpen(true);
+  };
+
+  const handleClosePricingFileRejectModal = () => {
+    if (pricingFileValidationActionId === "reject") return;
+    setPricingFileRejectModalOpen(false);
+    setPricingFileRejectReason("");
+    setRfqError("");
+  };
+
+  const handleConfirmPricingFileReject = () => {
+    const rejectionReason = String(pricingFileRejectReason || "").trim();
+    if (!rejectionReason) {
+      setRfqError("Please provide a rejection reason.");
+      return;
+    }
+    setPricingFileValidationActionId("reject");
+    setValidationSuccess("");
+    setRfqError("");
+    const rejectionAudit = {
+      ...createEmptyValidationAudit(),
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: currentUserEmail || currentUserRole || "Current user",
+      rejectionReason
+    };
+    writePricingFileDecisionRecord(
+      rfqId,
+      buildPricingFinalPriceSaveSignature(rfqId, pricingFinalPriceUpload),
+      rejectionAudit
+    );
+    setPricingFileDecisionAudit(rejectionAudit);
+    setPricingFinalPriceSaved(true);
+    setPricingFileValidationOpen(true);
+    showToast("Pricing file rejection was recorded in the UI. Workflow logic can be added next.", {
+      type: "info",
+      title: "Decision recorded"
+    });
+    setPricingFileRejectModalOpen(false);
+    setPricingFileRejectReason("");
+    setPricingFileValidationActionId("");
+  };
+
   const handleSaveCostingFeasability = async () => {
     if (!rfqId || costingSavePending) return;
     if (!hasRecordedCostingReviewDecision || isCostingReviewRejected) {
@@ -2764,6 +3376,7 @@ export default function NewRfq() {
     }
 
     setCostingSavePending(true);
+    setCostingFeasabilitySaved(true);
     setValidationSuccess("");
     setRfqError("");
 
@@ -2779,6 +3392,7 @@ export default function NewRfq() {
       setSelectedSubPhase("Pricing");
       setValidationSuccess("Costing moved to pricing successfully.");
     } catch (error) {
+      setCostingFeasabilitySaved(false);
       setRfqError(error?.message || "Unable to move this RFQ to pricing.");
     } finally {
       setCostingSavePending(false);
@@ -3746,109 +4360,364 @@ export default function NewRfq() {
                       ) : null}
 
                       {isCostingPricingView ? (
-                        <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="max-w-2xl">
-                              <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
-                                Costing file with BOM data
-                              </h2>
-                              <p className="mt-2 text-sm leading-7 text-slate-600">
-                                Upload the costing package used for pricing with its BOM note from this tab.
-                              </p>
+                        <div className="space-y-6">
+                          <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="max-w-2xl">
+                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                  Costing file with BOM data
+                                </h2>
+                                <p className="mt-2 text-sm leading-7 text-slate-600">
+                                  Upload the costing package used for pricing with its BOM note from this tab.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={openPricingBomModal}
+                                disabled={!canManagePricingBom || pricingBomPending}
+                                title={
+                                  canManagePricingBom
+                                    ? "Upload costing file with BOM data"
+                                    : "Only the owner or costing team can upload the pricing BOM file."
+                                }
+                              >
+                                <Upload className="h-4 w-4" />
+                                {hasPricingBomUpload ? "Replace costing file" : "Upload costing file"}
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={openPricingBomModal}
-                              disabled={!canManagePricingBom || pricingBomPending}
-                              title={
-                                canManagePricingBom
-                                  ? "Upload costing file with BOM data"
-                                  : "Only the owner or costing team can upload the pricing BOM file."
-                              }
-                            >
-                              <Upload className="h-4 w-4" />
-                              {pricingBomUpload?.file ? "Replace costing file" : "Upload costing file"}
-                            </button>
+
+                            {hasPricingBomUpload ? (
+                              <div className="mt-5 rounded-[24px] border border-sky-200/80 bg-white/95 p-5 shadow-soft">
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                  <div className="max-w-2xl">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                                        Uploaded
+                                      </span>
+                                    </div>
+                                    <h3 className="mt-3 text-lg font-semibold text-ink">
+                                      BOM costing package received
+                                    </h3>
+                                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                                      {pricingBomUpload.note || "No note recorded."}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    {pricingBomUpload.file.url ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                        onClick={() => handlePreviewFile(pricingBomUpload.file)}
+                                      >
+                                        <Eye className="h-4 w-4" />
+                                        Preview
+                                      </button>
+                                    ) : null}
+                                    {pricingBomUpload.file.url ? (
+                                      <a
+                                        href={pricingBomUpload.file.url}
+                                        download={pricingBomUpload.file.name}
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                      >
+                                        Download
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Uploaded by
+                                    </p>
+                                    <p className="mt-2 text-sm font-semibold text-ink">
+                                      {pricingBomUpload.uploadedBy || "Unavailable"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      Uploaded at
+                                    </p>
+                                    <p className="mt-2 text-sm font-semibold text-ink">
+                                      {formatFileDate(pricingBomUpload.uploadedAt, { withTime: true })}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      File
+                                    </p>
+                                    <p className="mt-2 text-sm font-semibold text-ink">
+                                      {pricingBomUpload.file?.name || "Unavailable"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
+                                <p className="text-sm font-semibold text-ink">
+                                  No costing BOM file uploaded yet
+                                </p>
+                                <p className="mt-2 text-sm text-slate-500">
+                                  Use the upload button to add the costing file with BOM data and its note.
+                                </p>
+                              </div>
+                            )}
                           </div>
 
-                          {pricingBomUpload?.file ? (
-                            <div className="mt-5 rounded-[24px] border border-sky-200/80 bg-white/95 p-5 shadow-soft">
+                          {hasPricingBomUpload ? (
+                            <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="max-w-2xl">
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                                      Uploaded
-                                    </span>
-                                  </div>
-                                  <h3 className="mt-3 text-lg font-semibold text-ink">
-                                    BOM costing package received
-                                  </h3>
+                                  <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                    Costing file with final price
+                                  </h2>
                                   <p className="mt-2 text-sm leading-7 text-slate-600">
-                                    {pricingBomUpload.note || "No note recorded."}
+                                    Upload the final priced costing package after the BOM package has been completed.
                                   </p>
                                 </div>
-
-                                <div className="flex flex-wrap items-center gap-3">
-                                  {pricingBomUpload.file.url ? (
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                                      onClick={() => handlePreviewFile(pricingBomUpload.file)}
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                      Preview
-                                    </button>
-                                  ) : null}
-                                  {pricingBomUpload.file.url ? (
-                                    <a
-                                      href={pricingBomUpload.file.url}
-                                      download={pricingBomUpload.file.name}
-                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
-                                    >
-                                      Download
-                                    </a>
-                                  ) : null}
-                                </div>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={openPricingFinalPriceModal}
+                                  disabled={!canManagePricingFinalPrice || pricingFinalPricePending}
+                                  title={
+                                    canManagePricingFinalPrice
+                                      ? "Upload costing file with final price"
+                                      : "Upload the BOM file first, then only the owner or costing team can upload the final price file."
+                                  }
+                                >
+                                  <Upload className="h-4 w-4" />
+                                  {hasPricingFinalPriceUpload ? "Replace final price file" : "Upload final price file"}
+                                </button>
                               </div>
 
-                              <div className="mt-5 grid gap-4 md:grid-cols-3">
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                    Uploaded by
+                              {hasPricingFinalPriceUpload ? (
+                                <>
+                                  <div className="mt-5 rounded-[24px] border border-emerald-200/80 bg-white/95 p-5 shadow-soft">
+                                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                      <div className="max-w-2xl">
+                                        <div className="flex flex-wrap items-center gap-3">
+                                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                                            Uploaded
+                                          </span>
+                                        </div>
+                                        <h3 className="mt-3 text-lg font-semibold text-ink">
+                                          Final price costing package received
+                                        </h3>
+                                        <p className="mt-2 text-sm leading-7 text-slate-600">
+                                          {pricingFinalPriceUpload.note || "No note recorded."}
+                                        </p>
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        {pricingFinalPriceUpload.file.url ? (
+                                          <button
+                                            type="button"
+                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                            onClick={() => handlePreviewFile(pricingFinalPriceUpload.file)}
+                                          >
+                                            <Eye className="h-4 w-4" />
+                                            Preview
+                                          </button>
+                                        ) : null}
+                                        {pricingFinalPriceUpload.file.url ? (
+                                          <a
+                                            href={pricingFinalPriceUpload.file.url}
+                                            download={pricingFinalPriceUpload.file.name}
+                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                          >
+                                            Download
+                                          </a>
+                                        ) : null}
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Uploaded by
+                                        </p>
+                                        <p className="mt-2 text-sm font-semibold text-ink">
+                                          {pricingFinalPriceUpload.uploadedBy || "Unavailable"}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          Uploaded at
+                                        </p>
+                                        <p className="mt-2 text-sm font-semibold text-ink">
+                                          {formatFileDate(pricingFinalPriceUpload.uploadedAt, { withTime: true })}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                          File
+                                        </p>
+                                        <p className="mt-2 text-sm font-semibold text-ink">
+                                          {pricingFinalPriceUpload.file?.name || "Unavailable"}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {!pricingFinalPriceSaved ? (
+                                    <div className="mt-5 flex justify-end">
+                                      <button
+                                        type="button"
+                                        className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                                        onClick={handleSavePricingFinalPrice}
+                                        disabled={!canSavePricingFinalPrice}
+                                        title={
+                                          canSavePricingFinalPrice
+                                            ? "Save the final price file and continue to validation"
+                                            : "Upload the final price file before saving."
+                                        }
+                                      >
+                                        <Check className="h-4 w-4" />
+                                        Save
+                                      </button>
+                                    </div>
+                                  ) : null}
+
+                                  {showPricingFileValidationSection ? (
+                                    <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-5 shadow-soft">
+                                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                        <div className="max-w-2xl">
+                                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                            Costing File Validation
+                                          </p>
+                                          <h3 className="mt-2 text-lg font-semibold text-ink">
+                                            Validate the final pricing package
+                                          </h3>
+                                          <p className="mt-2 text-sm leading-7 text-slate-600">
+                                            {hasRecordedPricingFileDecision
+                                              ? "The pricing validation decision has been recorded for this final price package."
+                                              : "Approve to move this RFQ to the Offer stage. Reject is shown here now and its detailed logic can be added later."}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {hasRecordedPricingFileDecision ? (
+                                        <section
+                                          className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isPricingFileRejected
+                                            ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
+                                            : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
+                                            }`}
+                                        >
+                                          <div
+                                            className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isPricingFileRejected ? "border-red-100/80" : "border-emerald-100/80"
+                                              }`}
+                                          >
+                                            <div className="space-y-2">
+                                              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                                                Pricing audit
+                                              </p>
+                                              <div>
+                                                <h4 className="text-lg font-semibold text-ink">
+                                                  Decision recorded
+                                                </h4>
+                                              </div>
+                                            </div>
+                                            <span
+                                              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isPricingFileRejected
+                                                ? "border-red-200 bg-red-50 text-red-700"
+                                                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                }`}
+                                            >
+                                              {isPricingFileRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                                              {isPricingFileRejected ? "Rejected" : "Approved"}
+                                            </span>
+                                          </div>
+
+                                          <div className="mt-5 grid gap-4 md:grid-cols-2">
+                                            {isPricingFileRejected ? (
+                                              <>
+                                                <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                    Rejected at
+                                                  </p>
+                                                  <p className="mt-2 text-base font-semibold text-ink">
+                                                    {formatValidationAuditDate(pricingFileDecisionAudit.rejectedAt)}
+                                                  </p>
+                                                </div>
+                                                <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                    Rejected by
+                                                  </p>
+                                                  <p className="mt-2 text-base font-semibold text-ink">
+                                                    {formatValidationAuditValue(pricingFileDecisionAudit.rejectedBy)}
+                                                  </p>
+                                                </div>
+                                                <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
+                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                    Rejection reason
+                                                  </p>
+                                                  <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
+                                                    {formatValidationAuditValue(pricingFileDecisionAudit.rejectionReason)}
+                                                  </p>
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                    Approved at
+                                                  </p>
+                                                  <p className="mt-2 text-base font-semibold text-ink">
+                                                    {formatValidationAuditDate(pricingFileDecisionAudit.approvedAt)}
+                                                  </p>
+                                                </div>
+                                                <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
+                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                    Approved by
+                                                  </p>
+                                                  <p className="mt-2 text-base font-semibold text-ink">
+                                                    {formatValidationAuditValue(pricingFileDecisionAudit.approvedBy)}
+                                                  </p>
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        </section>
+                                      ) : (
+                                        <div className="mt-5 flex flex-wrap items-center gap-3">
+                                          <button
+                                            type="button"
+                                            className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                            onClick={handleRejectPricingFileValidation}
+                                            disabled={pricingFileValidationButtonsDisabled}
+                                          >
+                                            <X className="h-4 w-4" />
+                                            {pricingFileValidationActionId === "reject" ? "Rejecting..." : "Reject"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                                            onClick={handleApprovePricingFileValidation}
+                                            disabled={pricingFileValidationButtonsDisabled}
+                                          >
+                                            <Check className="h-4 w-4" />
+                                            {pricingFileValidationActionId === "approve" ? "Approving..." : "Approve"}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
+                                  <p className="text-sm font-semibold text-ink">
+                                    No final price file uploaded yet
                                   </p>
-                                  <p className="mt-2 text-sm font-semibold text-ink">
-                                    {pricingBomUpload.uploadedBy || "Unavailable"}
+                                  <p className="mt-2 text-sm text-slate-500">
+                                    Upload the final priced costing package once the BOM package is completed.
                                   </p>
                                 </div>
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                    Uploaded at
-                                  </p>
-                                  <p className="mt-2 text-sm font-semibold text-ink">
-                                    {formatFileDate(pricingBomUpload.uploadedAt, { withTime: true })}
-                                  </p>
-                                </div>
-                                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                    File
-                                  </p>
-                                  <p className="mt-2 text-sm font-semibold text-ink">
-                                    {pricingBomUpload.file?.name || "Unavailable"}
-                                  </p>
-                                </div>
-                              </div>
+                              )}
                             </div>
-                          ) : (
-                            <div className="mt-5 rounded-2xl border border-dashed border-slate-200/80 bg-white/80 px-5 py-8 text-center">
-                              <p className="text-sm font-semibold text-ink">
-                                No costing BOM file uploaded yet
-                              </p>
-                              <p className="mt-2 text-sm text-slate-500">
-                                Use the upload button to add the costing file with BOM data and its note.
-                              </p>
-                            </div>
-                          )}
+                          ) : null}
                         </div>
                       ) : null}
 
@@ -5760,6 +6629,154 @@ export default function NewRfq() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pricingFinalPriceModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleClosePricingFinalPriceModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Upload pricing final price file"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">Upload Costing File With Final Price</p>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={handleClosePricingFinalPriceModal}
+                aria-label="Close pricing final price modal"
+                disabled={pricingFinalPricePending}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <form className="chat-modal-fallback w-full" onSubmit={handleSubmitPricingFinalPriceUpload}>
+                <p className="text-slate-600">
+                  Upload the costing file with final price and add a note describing the validated pricing package.
+                </p>
+                <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  <span>File</span>
+                  <input
+                    className="input-field"
+                    type="file"
+                    onChange={handlePricingFinalPriceDraftChange}
+                    disabled={pricingFinalPricePending}
+                  />
+                  {pricingFinalPriceDraft ? (
+                    <span className="text-[11px] normal-case tracking-normal text-slate-500">
+                      {pricingFinalPriceDraft.name}
+                    </span>
+                  ) : null}
+                </label>
+                <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  <span>Note</span>
+                  <textarea
+                    className="textarea-field min-h-[140px]"
+                    value={pricingFinalPriceNote}
+                    onChange={(event) => setPricingFinalPriceNote(event.target.value)}
+                    placeholder="Describe the final pricing package..."
+                    disabled={pricingFinalPricePending}
+                  />
+                </label>
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={handleClosePricingFinalPriceModal}
+                    disabled={pricingFinalPricePending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={pricingFinalPricePending}
+                  >
+                    {pricingFinalPricePending ? "Uploading..." : "Upload file"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pricingFileRejectModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleClosePricingFileRejectModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Reject pricing file validation"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header border-b-red-100 bg-red-50/70">
+              <p className="chat-modal-title text-red-700">Reject pricing file validation</p>
+              <button
+                type="button"
+                className="chat-modal-close h-10 w-10 rounded-xl border border-red-200/70 bg-white text-red-500 shadow-sm hover:border-red-300 hover:bg-red-50"
+                onClick={handleClosePricingFileRejectModal}
+                aria-label="Close pricing file reject modal"
+                disabled={pricingFileValidationActionId === "reject"}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body bg-gradient-to-b from-red-50/30 to-white">
+              <div className="chat-modal-fallback w-full">
+                <p className="text-slate-600">
+                  Please provide the rejection reason before continuing.
+                </p>
+                <label className="mt-2 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-red-600">
+                  <span>Reason</span>
+                  <textarea
+                    className="textarea-field min-h-[120px] border-red-200/80 bg-white focus:border-red-300 focus:ring-red-200"
+                    value={pricingFileRejectReason}
+                    onChange={(event) => setPricingFileRejectReason(event.target.value)}
+                    placeholder="Explain why this pricing file is rejected..."
+                    disabled={pricingFileValidationActionId === "reject"}
+                  />
+                </label>
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="inline-flex min-w-[116px] items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleClosePricingFileRejectModal}
+                    disabled={pricingFileValidationActionId === "reject"}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-2xl border border-red-300 bg-red-500 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:border-red-400 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleConfirmPricingFileReject}
+                    disabled={pricingFileValidationActionId === "reject"}
+                  >
+                    <X className="h-4 w-4" />
+                    {pricingFileValidationActionId === "reject" ? "Rejecting..." : "Reject"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
