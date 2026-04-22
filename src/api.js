@@ -354,10 +354,10 @@ export async function listPendingUsers() {
   return request("/api/users/pending");
 }
 
-export async function updateUserRole(userId, role) {
-  return request(`/api/owner/users/${encodeURIComponent(userId)}/approve`, {
-    method: "POST",
-    body: { role }
+export async function updateUserRole(userId, payload) {
+  return request(`/api/owner/users/${encodeURIComponent(userId)}/role`, {
+    method: "PUT",
+    body: payload
   });
 }
 

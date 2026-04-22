@@ -413,6 +413,12 @@ export const mapRfqToRow = (rfq) => {
     application: data.application || potential.application,
     deliveryZone: data.delivery_zone,
     location: data.delivery_zone || potential.customer_location,
+    validator:
+      data.zone_manager_email ||
+      rfq?.zone_manager_email ||
+      data.validator_email ||
+      "",
+    validatorRole: data.validator_role || "",
     toTotal: Number.isFinite(toTotal) ? toTotal : toTotalRaw,
     status: mapBackendStatusToUi(rfq),
     pipelineStage: mapBackendStatusToPipelineStage(rfq),

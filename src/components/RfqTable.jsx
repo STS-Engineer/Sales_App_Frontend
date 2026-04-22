@@ -39,11 +39,19 @@ const formatToTotal = (value) => {
   return value;
 };
 
-export default function RfqTable({ rows, footer }) {
+const formatValidator = (row) => {
+  return row.validator || "—";
+};
+
+export default function RfqTable({ rows, footer, showValidatorColumn = false }) {
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="min-w-[1220px] w-full text-left text-sm">
+        <table
+          className={`w-full text-left text-sm ${
+            showValidatorColumn ? "min-w-[1420px]" : "min-w-[1220px]"
+          }`}
+        >
           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
             <tr>
               <th className="px-6 py-4">RFQ ID</th>
@@ -54,6 +62,9 @@ export default function RfqTable({ rows, footer }) {
               <th className="px-6 py-4">Application</th>
               <th className="px-6 py-4">TO Total</th>
               <th className="px-6 py-4">Delivery zone</th>
+              {showValidatorColumn ? (
+                <th className="px-6 py-4">Validator</th>
+              ) : null}
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4" aria-label="Actions" />
             </tr>
@@ -82,6 +93,11 @@ export default function RfqTable({ rows, footer }) {
                 <td className="px-6 py-4 font-medium text-slate-700">
                   {row.deliveryZone || row.location || "—"}
                 </td>
+                {showValidatorColumn ? (
+                  <td className="px-6 py-4 font-medium text-slate-700">
+                    {formatValidator(row)}
+                  </td>
+                ) : null}
                 <td className="px-6 py-4">
                   <span className={`badge ${statusStyles[row.status] || "border-slate-300 bg-slate-100 text-slate-600"}`}>
                     {statusLabels[row.status] || row.status}

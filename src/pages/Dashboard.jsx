@@ -155,6 +155,8 @@ export default function Dashboard() {
         rfq.application,
         rfq.deliveryZone,
         rfq.location,
+        rfq.validator,
+        rfq.validatorRole,
         rfq.status,
         rfq.dueDate
       ]
@@ -366,6 +368,7 @@ export default function Dashboard() {
 
               <RfqTable
                 rows={paginatedRfqs}
+                showValidatorColumn={activePhase.key === "RFQ"}
                 footer={
                   <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600">
                     <div className="flex flex-wrap items-center gap-3">
