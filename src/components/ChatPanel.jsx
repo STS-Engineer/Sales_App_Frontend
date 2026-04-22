@@ -189,6 +189,7 @@ export default function ChatPanel({
   const recognitionRef = useRef(null);
   const fileInputRef = useRef(null);
   const editingTextareaRef = useRef(null);
+  const composerTextareaRef = useRef(null);
   const attachmentsRef = useRef([]);
   const messagesEndRef = useRef(null);
   const isEditing = editingMessageIndex !== null;
@@ -476,6 +477,26 @@ export default function ChatPanel({
     editingTextareaRef.current?.focus();
   }, [editingMessageIndex]);
 
+  useEffect(() => {
+    if (composerDisabled || busy) return;
+
+    const focusComposer = () => {
+      const textarea = composerTextareaRef.current;
+      if (!textarea || textarea.disabled || textarea.readOnly) {
+        return;
+      }
+
+      textarea.focus({ preventScroll: true });
+      const valueLength = textarea.value?.length ?? 0;
+      textarea.setSelectionRange(valueLength, valueLength);
+    };
+
+    const frameId = window.requestAnimationFrame(focusComposer);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [composerDisabled, busy, messages.length]);
+
   return (
     <div className="card flex h-full min-h-0 flex-col pt-6 pb-2 px-6 md:pt-7 md:pb-2 md:px-7">
       <div className="flex items-center justify-between border-slate-200/70">
@@ -577,7 +598,21 @@ export default function ChatPanel({
                         </div>
                       </div>
                     ) : (
-                      <>
+                      <div className="flex items-end gap-2">
+                        {canEditMessage ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 opacity-0 shadow-sm transition hover:border-slate-300 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
+                            onClick={() => handleBeginEditing(message)}
+                            title="Edit message"
+                            aria-label="Edit message"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                            </svg>
+                          </button>
+                        ) : null}
                         <div
                           className={`rounded-2xl px-3 py-3 text-sm shadow-sm ${
                             message.role === "user" ? "chat-bubble-user" : "chat-bubble-bot"
@@ -593,21 +628,7 @@ export default function ChatPanel({
                               )
                             : null}
                         </div>
-                        {canEditMessage ? (
-                          <button
-                            type="button"
-                            className="mt-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 opacity-0 shadow-sm transition hover:border-slate-300 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
-                            onClick={() => handleBeginEditing(message)}
-                            title="Edit message"
-                            aria-label="Edit message"
-                          >
-                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M12 20h9" />
-                              <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-                            </svg>
-                          </button>
-                        ) : null}
-                      </>
+                      </div>
                     )}
                   </div>
                   {message.role === "user" ? (
@@ -642,6 +663,7 @@ export default function ChatPanel({
           {renderAttachmentChips(attachments, "input")}
           <div className="relative">
             <textarea
+              ref={composerTextareaRef}
               rows={1}
               className="chat-input-textarea w-full resize-none py-3 pl-12 pr-20"
               placeholder={

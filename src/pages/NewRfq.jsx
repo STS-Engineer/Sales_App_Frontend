@@ -437,31 +437,43 @@ const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   return filledFields.length ? filledFields : changedFields;
 };
 
+const getRfqStepCompletionMap = (form = {}) =>
+  Object.fromEntries(
+    STEPS.map((step) => [
+      step.id,
+      (STEP_FIELDS[step.id] || []).every((fieldName) => hasMeaningfulValue(form?.[fieldName]))
+    ])
+  );
+
+const buildStepRevealTarget = (stepId) =>
+  stepId
+    ? {
+      stepId,
+      mode: "step",
+      fieldName: "",
+      updatedFields: [],
+      highlight: false
+    }
+    : null;
+
 const buildRfqAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
   if (!changedFields.length) {
     return null;
   }
 
-  const impactedSteps = [...new Set(
-    changedFields
-      .map((fieldName) => RFQ_FIELD_TO_STEP_MAP[fieldName])
-      .filter(Boolean)
-  )].sort(
-    (leftStep, rightStep) =>
-      (STEP_ORDER_INDEX[leftStep] ?? Number.MAX_SAFE_INTEGER) -
-      (STEP_ORDER_INDEX[rightStep] ?? Number.MAX_SAFE_INTEGER)
-  );
-
-  const targetStepId = impactedSteps[0] || RFQ_FIELD_TO_STEP_MAP[changedFields[0]] || "step-client";
-  const shouldRevealSingleField =
-    changedFields.length === 1 && impactedSteps.length === 1;
+  const lastChangedField = changedFields[changedFields.length - 1];
+  const targetStepId =
+    RFQ_FIELD_TO_STEP_MAP[lastChangedField] ||
+    RFQ_FIELD_TO_STEP_MAP[changedFields[0]] ||
+    "step-client";
 
   return {
     stepId: targetStepId,
-    mode: shouldRevealSingleField ? "field" : "step",
-    fieldName: shouldRevealSingleField ? changedFields[0] : "",
-    updatedFields: changedFields
+    mode: "field",
+    fieldName: lastChangedField,
+    updatedFields: changedFields,
+    highlight: false
   };
 };
 
@@ -969,6 +981,7 @@ const DRAFT_CACHE_TTL_MS = 15000;
 const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
+const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
 const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
@@ -1145,6 +1158,61 @@ const createEmptyValidationAudit = () => ({
 const normalizeAuditValue = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim();
+};
+
+const getSelfValidationPromptStorageKey = (rfqId) => {
+  const normalizedRfqId = String(rfqId || "").trim();
+  return normalizedRfqId
+    ? `${SELF_VALIDATION_PROMPT_KEY_PREFIX}:${normalizedRfqId}`
+    : "";
+};
+
+const readSelfValidationPromptSignature = (rfqId) => {
+  if (!canUseStorage()) return "";
+  const storageKey = getSelfValidationPromptStorageKey(rfqId);
+  if (!storageKey) return "";
+  return window.sessionStorage.getItem(storageKey) || "";
+};
+
+const writeSelfValidationPromptSignature = (rfqId, signature) => {
+  if (!canUseStorage()) return;
+  const storageKey = getSelfValidationPromptStorageKey(rfqId);
+  if (!storageKey) return;
+  const normalizedSignature = normalizeAuditValue(signature);
+  if (!normalizedSignature) {
+    window.sessionStorage.removeItem(storageKey);
+    return;
+  }
+  window.sessionStorage.setItem(storageKey, normalizedSignature);
+};
+
+const buildSelfValidationPromptSignature = (rfq, auditLogs = []) => {
+  const normalizedRfqId = String(rfq?.rfq_id || "").trim();
+  if (!normalizedRfqId) return "";
+
+  const validationCycleLog = auditLogs.find((entry) => {
+    const action = normalizeAuditValue(entry?.action);
+    return (
+      action.includes("RFQ submitted for validation") ||
+      action.includes("Revision submitted -> RFQ/PENDING_FOR_VALIDATION")
+    );
+  });
+  const subStatusValue =
+    typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
+
+  return JSON.stringify({
+    rfqId: normalizedRfqId,
+    cycleAnchor:
+      normalizeAuditValue(validationCycleLog?.timestamp) ||
+      normalizeAuditValue(rfq?.updated_at),
+    creatorEmail: normalizeEmailValue(rfq?.created_by_email),
+    validatorEmail: normalizeEmailValue(
+      rfq?.zone_manager_email ||
+      rfq?.rfq_data?.zone_manager_email ||
+      rfq?.rfq_data?.validator_email
+    ),
+    subStatus: normalizeAuditValue(subStatusValue)
+  });
 };
 
 const extractValidationAudit = (rfq, auditLogs = []) => {
@@ -1382,6 +1450,8 @@ export default function NewRfq() {
   const [filePreviewLoadingId, setFilePreviewLoadingId] = useState("");
   const [validationActionId, setValidationActionId] = useState("");
   const [validationSuccess, setValidationSuccess] = useState("");
+  const [selfValidationPromptOpen, setSelfValidationPromptOpen] = useState(false);
+  const [selfValidationPromptSignature, setSelfValidationPromptSignature] = useState("");
   const [revisionNotes, setRevisionNotes] = useState("");
   const [revisionRequestModalOpen, setRevisionRequestModalOpen] = useState(false);
   const [revisionComment, setRevisionComment] = useState("");
@@ -1403,6 +1473,7 @@ export default function NewRfq() {
   const [costingReviewAudit, setCostingReviewAudit] = useState(createEmptyValidationAudit);
   const [pricingFileDecisionAudit, setPricingFileDecisionAudit] = useState(createEmptyValidationAudit);
   const [persistValidationView, setPersistValidationView] = useState(false);
+  const [holdSelfValidationPrompt, setHoldSelfValidationPrompt] = useState(false);
   const [persistCostingReviewView, setPersistCostingReviewView] = useState(false);
   const [proceedingToFormalRfq, setProceedingToFormalRfq] = useState(false);
   const [costingSavePending, setCostingSavePending] = useState(false);
@@ -1646,6 +1717,9 @@ export default function NewRfq() {
       return "RFQ form";
     }
     if (stageKey !== groupedActiveStage) return "";
+    if (stageKey === "RFQ" && holdSelfValidationPrompt) {
+      return "RFQ form";
+    }
     if (stageKey === "RFQ" && isCancelledAfterRfqValidation) {
       return "Validation";
     }
@@ -1687,7 +1761,7 @@ export default function NewRfq() {
     [stepStates]
   );
   const canOpenRfqValidation =
-    hasValidationLock;
+    hasValidationLock && !holdSelfValidationPrompt;
   const isCostingStage = selectedStage === "In costing";
   const costingDisplaySubPhase = isCostingStage
     ? selectedSubPhase || getActiveDisplaySubPhase("In costing") || "Feasability"
@@ -1811,12 +1885,20 @@ export default function NewRfq() {
     return rfqSubStatus || (isPotentialDraft ? "POTENTIAL" : "NEW_RFQ");
   }, [activeRfqTab, isPotentialDraft, rfqSubStatus]);
   const canParticipateInDiscussion = Boolean(currentUserEmail || currentUserRole);
-  const getNextStepId = (stepId) => {
+  const getNextIncompleteStepId = (stepId, completionMap = stepCompletion) => {
     const currentIndex = stepIds.indexOf(stepId);
     if (currentIndex < 0 || currentIndex >= stepIds.length - 1) {
       return "";
     }
-    return stepIds[currentIndex + 1];
+
+    for (let index = currentIndex + 1; index < stepIds.length; index += 1) {
+      const candidateStepId = stepIds[index];
+      if (!completionMap[candidateStepId]) {
+        return candidateStepId;
+      }
+    }
+
+    return stepIds[currentIndex + 1] || "";
   };
   const handleStepViewChange = (stepId) => {
     const targetIndex = stepIds.indexOf(stepId);
@@ -1842,6 +1924,7 @@ export default function NewRfq() {
   }, [
     activeStage,
     hasRecordedValidationDecision,
+    holdSelfValidationPrompt,
     isRevisionModeActive,
     persistValidationView,
     persistCostingReviewView
@@ -1862,6 +1945,7 @@ export default function NewRfq() {
     activeSubPhase,
     allStepsComplete,
     activeStage,
+    holdSelfValidationPrompt,
     isRevisionModeActive,
     selectedStage,
     persistValidationView,
@@ -1875,6 +1959,9 @@ export default function NewRfq() {
     setPersistCostingReviewView(false);
     setPricingFileDecisionAudit(createEmptyValidationAudit());
     setPendingRfqAutofillReveal(null);
+    setSelfValidationPromptOpen(false);
+    setSelfValidationPromptSignature("");
+    setHoldSelfValidationPrompt(false);
     setRevisionRequestModalOpen(false);
     setRevisionComment("");
     setRevisionActionId("");
@@ -1950,19 +2037,12 @@ export default function NewRfq() {
         block: pendingRfqAutofillReveal.mode === "field" ? "center" : "start"
       });
 
-      if (
-        fieldElement &&
-        pendingRfqAutofillReveal.mode === "field" &&
-        typeof fieldElement.focus === "function" &&
-        !fieldElement.disabled
-      ) {
-        fieldElement.focus({ preventScroll: true });
+      if (pendingRfqAutofillReveal.highlight !== false) {
+        targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
+        highlightTimer = window.setTimeout(() => {
+          targetElement.classList.remove(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
+        }, 1800);
       }
-
-      targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
-      highlightTimer = window.setTimeout(() => {
-        targetElement.classList.remove(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
-      }, 1800);
       setPendingRfqAutofillReveal(null);
     };
 
@@ -1971,6 +2051,7 @@ export default function NewRfq() {
     return () => {
       canceled = true;
       window.clearTimeout(retryTimer);
+      window.clearTimeout(highlightTimer);
     };
   }, [
     activeRfqTab,
@@ -1991,6 +2072,7 @@ export default function NewRfq() {
 
   useEffect(() => {
     const previousCompletion = previousStepCompletionRef.current;
+    const nextStepCompletion = getRfqStepCompletionMap(form);
     const hadPreviousValue = Object.prototype.hasOwnProperty.call(
       previousCompletion,
       activeStep
@@ -2006,8 +2088,9 @@ export default function NewRfq() {
       !isRfqFormReadOnly &&
       activeStepJustCompleted
     ) {
-      const nextStepId = getNextStepId(activeStep);
+      const nextStepId = getNextIncompleteStepId(activeStep, nextStepCompletion);
       if (nextStepId) {
+        setPendingRfqAutofillReveal(buildStepRevealTarget(nextStepId));
         setActiveStep(nextStepId);
       }
     }
@@ -2017,6 +2100,7 @@ export default function NewRfq() {
     activeRfqTab,
     isRfqFormView,
     isRfqFormReadOnly,
+    form,
     stepCompletion,
     activeStep,
     stepIndex,
@@ -2109,16 +2193,47 @@ export default function NewRfq() {
     setPricingFileRejectReason("");
     setCostingFeasabilitySaved(false);
     setRfqSubStatus(subStatusValue || "");
-    setRfqCreatorEmail(String(rfq?.created_by_email || ""));
-    setRevisionNotes(String(rfq?.revision_notes || ""));
-    setDiscussionMessages([]);
-    setDiscussionError("");
     const nextFormState = {
       ...initialForm,
       ...mappedFields,
       id: rfq.rfq_id,
       status: nextUiStatus
     };
+    const isPendingValidationRecord =
+      subStatusValue === "PENDING_VALIDATION" ||
+      subStatusValue === "PENDING_FOR_VALIDATION";
+    const nextRfqCreatorEmail = String(rfq?.created_by_email || "");
+    const normalizedNextRfqCreatorEmail = normalizeEmailValue(nextRfqCreatorEmail);
+    const nextAssignedValidatorEmail = normalizeEmailValue(
+      nextFormState.validatorEmail || rfq?.zone_manager_email
+    );
+    const matchesSelfValidationPromptCase = Boolean(
+      normalizedCurrentUserEmail &&
+      nextPipelineStage === "RFQ" &&
+      isPendingValidationRecord &&
+      normalizedNextRfqCreatorEmail &&
+      normalizedNextRfqCreatorEmail === normalizedCurrentUserEmail &&
+      nextAssignedValidatorEmail &&
+      nextAssignedValidatorEmail === normalizedCurrentUserEmail
+    );
+    const nextSelfValidationPromptSignature = matchesSelfValidationPromptCase
+      ? buildSelfValidationPromptSignature(rfq, auditLogs)
+      : "";
+    const hasAcknowledgedSelfValidationPrompt =
+      matchesSelfValidationPromptCase &&
+      Boolean(nextSelfValidationPromptSignature) &&
+      readSelfValidationPromptSignature(rfq.rfq_id) === nextSelfValidationPromptSignature;
+    const shouldOpenSelfValidationPrompt =
+      matchesSelfValidationPromptCase && !hasAcknowledgedSelfValidationPrompt;
+    setRfqCreatorEmail(nextRfqCreatorEmail);
+    setRevisionNotes(String(rfq?.revision_notes || ""));
+    setDiscussionMessages([]);
+    setDiscussionError("");
+    setSelfValidationPromptOpen(shouldOpenSelfValidationPrompt);
+    setSelfValidationPromptSignature(
+      shouldOpenSelfValidationPrompt ? nextSelfValidationPromptSignature : ""
+    );
+    setHoldSelfValidationPrompt(shouldOpenSelfValidationPrompt);
     setPendingRfqAutofillReveal(
       revealUpdatedRfqFields ? buildRfqAutofillRevealTarget(form, nextFormState) : null
     );
@@ -2144,9 +2259,9 @@ export default function NewRfq() {
       setPersistValidationView(false);
     } else if (nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
       setSelectedStage("RFQ");
-      setSelectedSubPhase("Validation");
+      setSelectedSubPhase(shouldOpenSelfValidationPrompt ? "RFQ form" : "Validation");
       setActiveStep("step-notes");
-      setRfqValidationReached(true);
+      setRfqValidationReached(!shouldOpenSelfValidationPrompt);
       setRfqFormEditEnabled(false);
     }
     const normalizedFiles = normalizeRfqFiles(rfq);
@@ -2287,6 +2402,9 @@ export default function NewRfq() {
           setValidationSuccess("");
           setValidationAudit(createEmptyValidationAudit());
           setCostingReviewAudit(createEmptyValidationAudit());
+          setSelfValidationPromptOpen(false);
+          setSelfValidationPromptSignature("");
+          setHoldSelfValidationPrompt(false);
           setRejectModalOpen(false);
           setRejectReason("");
           setRevisionRequestModalOpen(false);
@@ -2343,6 +2461,9 @@ export default function NewRfq() {
         setCostingDiscussionRecipient("");
         setCostingDiscussionError("");
         setIsCostingDiscussionOpen(false);
+        setSelfValidationPromptOpen(false);
+        setSelfValidationPromptSignature("");
+        setHoldSelfValidationPrompt(false);
         setRfqError("Unable to load the RFQ. Please try again.");
       } finally {
         if (alive) {
@@ -2662,6 +2783,23 @@ export default function NewRfq() {
         ? getActiveDisplaySubPhase(stageKey)
         : stage?.subPhases?.[0] || ""
     );
+  };
+
+  const handleConfirmSelfValidationPrompt = () => {
+    const targetRfqId = rfqId || form.id;
+    if (targetRfqId && selfValidationPromptSignature) {
+      writeSelfValidationPromptSignature(targetRfqId, selfValidationPromptSignature);
+    }
+    setSelfValidationPromptOpen(false);
+    setSelfValidationPromptSignature("");
+    setHoldSelfValidationPrompt(false);
+    setPersistValidationView(false);
+    setActiveRfqTab("new");
+    setSelectedStage("RFQ");
+    setSelectedSubPhase("Validation");
+    setActiveStep("step-notes");
+    setRfqValidationReached(true);
+    setRfqFormEditEnabled(false);
   };
 
   const handleSubPhaseChange = (stageKey, subPhase) => {
@@ -3752,7 +3890,9 @@ export default function NewRfq() {
                                             title={
                                               isSubDisabled
                                                 ? isValidationSubPhase
-                                                  ? "Submit the RFQ for validation to unlock this tab"
+                                                  ? holdSelfValidationPrompt
+                                                    ? "Confirm the validator prompt to open this tab"
+                                                    : "Submit the RFQ for validation to unlock this tab"
                                                   : "Complete feasibility handoff to unlock this tab"
                                                 : `${stage.label} - ${subPhase}`
                                             }
@@ -6486,6 +6626,41 @@ export default function NewRfq() {
                   <p>Preview not available for this PDF.</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selfValidationPromptOpen ? (
+        <div className="chat-modal-backdrop" role="presentation">
+          <div
+            className="chat-modal max-w-[580px] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Validation required"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">You are the validator for this RFQ</p>
+            </div>
+            <div className="chat-modal-body">
+              <div className="w-full">
+                <p className="text-sm leading-6 text-slate-600">
+                  Please review this RFQ and validate it. Clicking below will open the
+                  <span className="font-semibold text-tide"> Validation </span>
+                  tab.
+                </p>
+                <div className="chat-modal-actions justify-end mt-5">
+                  <button
+                    type="button"
+                    className="gradient-button inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-soft"
+                    onClick={handleConfirmSelfValidationPrompt}
+                  >
+                    <Check className="h-4 w-4" />
+                    Open Validation
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
