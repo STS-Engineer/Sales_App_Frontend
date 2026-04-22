@@ -365,6 +365,12 @@ export async function listAllUsers() {
   return request("/api/owner/users");
 }
 
+export async function deleteUser(userId) {
+  return request(`/api/owner/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE"
+  });
+}
+
 export async function listProducts(productName = "") {
   const query = productName
     ? `?productName=${encodeURIComponent(productName)}`
