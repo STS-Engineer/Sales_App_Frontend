@@ -1,5 +1,5 @@
-﻿import { Link } from "react-router-dom";
- 
+import { Link } from "react-router-dom";
+
 const statusStyles = {
   RFQ: "border-tide/30 bg-tide/10 text-tide",
   Potential: "border-tide/30 bg-tide/10 text-tide",
@@ -8,13 +8,16 @@ const statusStyles = {
   "In costing": "border-sun/40 bg-sun/15 text-sun",
   Feasability: "border-sun/40 bg-sun/15 text-sun",
   Pricing: "border-sun/40 bg-sun/15 text-sun",
+  Offer: "border-ink/25 bg-ink/10 text-ink",
   "Offer preparation": "border-ink/25 bg-ink/10 text-ink",
   "Offer validation": "border-mint/40 bg-mint/15 text-mint",
+  PO: "border-mint/40 bg-mint/15 text-mint",
   "Get PO": "border-sun/40 bg-sun/15 text-sun",
   "PO accepted": "border-mint/40 bg-mint/15 text-mint",
   "Mission accepted": "border-tide/30 bg-tide/10 text-tide",
   "Mission status": "border-tide/30 bg-tide/10 text-tide",
   "Mission not accepted": "border-sun/40 bg-sun/15 text-sun",
+  Prototype: "border-tide/30 bg-tide/10 text-tide",
   "Get prototype orders": "border-tide/30 bg-tide/10 text-tide",
   "Prototype ongoing": "border-ink/25 bg-ink/10 text-ink",
   Lost: "border-slate-300 bg-slate-100 text-slate-600",
@@ -31,7 +34,7 @@ const statusLabels = {
 
 const formatToTotal = (value) => {
   if (value === null || value === undefined || value === "") {
-    return "—";
+    return "-";
   }
   if (typeof value === "number") {
     return `${value.toLocaleString("en-US")} kEUR`;
@@ -39,19 +42,27 @@ const formatToTotal = (value) => {
   return value;
 };
 
-const formatValidator = (row) => {
-  return row.validator || "—";
-};
+const formatValidator = (row) => row.validator || "-";
 
-export default function RfqTable({ rows, footer, showValidatorColumn = false }) {
+const formatPhase = (row) => row.phaseKey || row.pipelineStage || "-";
+
+export default function RfqTable({
+  rows,
+  footer,
+  showValidatorColumn = false,
+  showPhaseColumn = false
+}) {
+  const minWidthClass =
+    showValidatorColumn && showPhaseColumn
+      ? "min-w-[1140px]"
+      : showValidatorColumn || showPhaseColumn
+        ? "min-w-[1040px]"
+        : "min-w-[900px]";
+
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table
-          className={`w-full text-left text-sm ${
-            showValidatorColumn ? "min-w-[1040px]" : "min-w-[900px]"
-          }`}
-        >
+        <table className={`w-full text-left text-sm ${minWidthClass}`}>
           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
             <tr>
               <th className="px-4 py-4">RFQ ID</th>
@@ -61,6 +72,9 @@ export default function RfqTable({ rows, footer, showValidatorColumn = false }) 
               <th className="px-4 py-4">Product line</th>
               <th className="px-4 py-4">Application</th>
               <th className="px-4 py-4">TO Total</th>
+              {showPhaseColumn ? (
+                <th className="px-4 py-4">Phase</th>
+              ) : null}
               {showValidatorColumn ? (
                 <th className="px-4 py-4">Validator</th>
               ) : null}
@@ -81,34 +95,46 @@ export default function RfqTable({ rows, footer, showValidatorColumn = false }) 
                 </td>
                 <td className="px-4 py-4 font-medium text-slate-700">
                   <span className="block max-w-[150px] truncate">
-                    {row.customer || row.client || "—"}
+                    {row.customer || row.client || "-"}
                   </span>
                 </td>
                 <td className="px-4 py-4 font-medium text-slate-700">
                   <span className="block max-w-[150px] truncate">
-                    {row.creator || "—"}
+                    {row.creator || "-"}
                   </span>
                 </td>
                 <td className="px-4 py-4">
                   <span className="block max-w-[150px] truncate">
-                    {row.productName || "—"}
+                    {row.productName || "-"}
                   </span>
                 </td>
                 <td className="px-4 py-4">
                   <span className="block max-w-[120px] truncate">
-                    {row.productLine || row.item || "—"}
+                    {row.productLine || row.item || "-"}
                   </span>
                 </td>
                 <td className="px-4 py-4">
                   <span className="block max-w-[140px] truncate">
-                    {row.application || "—"}
+                    {row.application || "-"}
                   </span>
                 </td>
-                <td className="px-4 py-4 font-medium text-slate-700 whitespace-nowrap">
+                <td className="px-4 py-4 whitespace-nowrap font-medium text-slate-700">
                   <span className="block max-w-[110px] truncate">
                     {formatToTotal(row.toTotal ?? row.budget)}
                   </span>
                 </td>
+                {showPhaseColumn ? (
+                  <td className="px-4 py-4">
+                    <span
+                      className={`badge ${
+                        statusStyles[formatPhase(row)] ||
+                        "border-slate-300 bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {formatPhase(row)}
+                    </span>
+                  </td>
+                ) : null}
                 {showValidatorColumn ? (
                   <td className="px-4 py-4 font-medium text-slate-700">
                     <span className="block max-w-[180px] truncate">
@@ -117,7 +143,12 @@ export default function RfqTable({ rows, footer, showValidatorColumn = false }) 
                   </td>
                 ) : null}
                 <td className="px-4 py-4">
-                  <span className={`badge ${statusStyles[row.status] || "border-slate-300 bg-slate-100 text-slate-600"}`}>
+                  <span
+                    className={`badge ${
+                      statusStyles[row.status] ||
+                      "border-slate-300 bg-slate-100 text-slate-600"
+                    }`}
+                  >
                     {statusLabels[row.status] || row.status}
                   </span>
                 </td>
@@ -143,4 +174,3 @@ export default function RfqTable({ rows, footer, showValidatorColumn = false }) 
     </div>
   );
 }
- 
