@@ -1565,6 +1565,9 @@ export default function NewRfq() {
   const isPotentialDraft = form.status === "Potential";
   const isRevisionRequested = rfqSubStatus === "REVISION_REQUESTED";
   const isRevisionModeActive = isRevisionRequested || optimisticRevisionMode;
+  const isTargetPriceEstimated =
+    form.targetPriceIsEstimated === true ||
+    String(form.targetPriceIsEstimated ?? "").trim().toLowerCase() === "true";
   const assignedValidatorEmail = normalizeEmailValue(form.validatorEmail);
   const isAssignedValidatorUser =
     Boolean(assignedValidatorEmail) &&
@@ -5848,7 +5851,7 @@ export default function NewRfq() {
                                     </p>
                                   ) : null}
                                   <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                    {form.targetPriceIsEstimated === true || form.targetPriceIsEstimated === "true" ? (
+                                    {isTargetPriceEstimated ? (
                                       <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-200">
                                         Estimated
                                       </span>
