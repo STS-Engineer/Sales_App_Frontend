@@ -231,6 +231,12 @@ export const mapRfqDataToForm = (rfq) => {
     targetPrice: sanitizeNumberForInput(
       pickFirst(data.target_price_eur, data.targetPrice)
     ),
+    targetPriceLocal: sanitizeNumberForInput(
+      pickFirst(data.target_price_local, data.targetPriceLocal)
+    ),
+    targetPriceCurrency: pickFirst(data.target_price_currency, data.targetPriceCurrency),
+    targetPriceIsEstimated: pickFirst(data.target_price_is_estimated, data.targetPriceIsEstimated),
+    targetPriceNote: pickFirst(data.target_price_note, data.targetPriceNote),
     expectedDeliveryConditions: pickFirst(
       data.expected_delivery_conditions,
       data.expectedDeliveryConditions
@@ -283,6 +289,9 @@ export const mapRfqDataToForm = (rfq) => {
     ),
     toTotal: sanitizeNumberForInput(
       pickFirst(data.to_total, data.toTotal)
+    ),
+    toTotalLocal: sanitizeNumberForInput(
+      pickFirst(data.to_total_local, data.toTotalLocal)
     ),
     validatorEmail: pickFirst(
       data.zone_manager_email,

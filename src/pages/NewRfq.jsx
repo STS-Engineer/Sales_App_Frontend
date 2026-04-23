@@ -70,6 +70,10 @@ const initialForm = {
   rfqReceptionDate: "",
   expectedQuotationDate: "",
   targetPrice: "",
+  targetPriceLocal: "",
+  targetPriceCurrency: "",
+  targetPriceIsEstimated: false,
+  targetPriceNote: "",
   expectedDeliveryConditions: "",
   expectedPaymentTerms: "",
   typeOfPackaging: "",
@@ -85,6 +89,7 @@ const initialForm = {
   strategicNote: "",
   finalRecommendation: "",
   toTotal: "",
+  toTotalLocal: "",
   validatorEmail: "",
   item: "",
   quantity: "",
@@ -1026,6 +1031,10 @@ const buildRfqDataPayloadFromForm = (form = {}) => ({
   contact_phone: form.contactPhone || "",
   contact_email: form.contactEmail || "",
   target_price_eur: form.targetPrice || "",
+  target_price_local: form.targetPriceLocal || "",
+  target_price_currency: form.targetPriceCurrency || "",
+  target_price_is_estimated: form.targetPriceIsEstimated || false,
+  target_price_note: form.targetPriceNote || "",
   expected_delivery_conditions: form.expectedDeliveryConditions || "",
   expected_payment_terms: form.expectedPaymentTerms || "",
   type_of_packaging: form.typeOfPackaging || "",
@@ -1041,6 +1050,7 @@ const buildRfqDataPayloadFromForm = (form = {}) => ({
   strategic_note: form.strategicNote || "",
   final_recommendation: form.finalRecommendation || "",
   to_total: form.toTotal || "",
+  to_total_local: form.toTotalLocal || "",
   zone_manager_email: form.validatorEmail || ""
 });
 const buildRevisionGreeting = (revisionNotes = "") => {
@@ -5815,7 +5825,48 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <FormField label="Target Price (eur)" name="targetPrice" type="number" value={form.targetPrice} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <div className="col-span-full">
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-1">
+                                  <FormField
+                                    label={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
+                                      ? `Target Price (${form.targetPriceCurrency})`
+                                      : "Target Price (EUR)"}
+                                    name={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
+                                      ? "targetPriceLocal"
+                                      : "targetPrice"}
+                                    type="number"
+                                    value={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
+                                      ? (form.targetPriceLocal || "")
+                                      : (form.targetPrice || "")}
+                                    onChange={handleChange}
+                                    readOnly={rfqFormFieldReadOnly}
+                                  />
+                                  {form.targetPriceCurrency && form.targetPriceCurrency !== "EUR" && form.targetPrice ? (
+                                    <p className="mt-0.5 text-xs text-slate-400">
+                                      ≈ {form.targetPrice} EUR
+                                    </p>
+                                  ) : null}
+                                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                    {form.targetPriceIsEstimated === true || form.targetPriceIsEstimated === "true" ? (
+                                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-200">
+                                        Estimated
+                                      </span>
+                                    ) : form.targetPrice || form.targetPriceLocal ? (
+                                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                                        Customer Price
+                                      </span>
+                                    ) : null}
+                                    {form.targetPriceNote ? (
+                                      <span className="text-[11px] italic text-slate-400" title={form.targetPriceNote}>
+                                        {form.targetPriceNote.length > 40 ? form.targetPriceNote.slice(0, 40) + "…" : form.targetPriceNote}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <FormField label="Currency" name="targetPriceCurrency" value={form.targetPriceCurrency || ""} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                              </div>
+                            </div>
                             <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
@@ -5850,7 +5901,27 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <FormField label="TO (K eur)" name="toTotal" type="number" value={form.toTotal} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <div className="space-y-1">
+                              <FormField
+                                label={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
+                                  ? `TO (k${form.targetPriceCurrency})`
+                                  : "TO (kEUR)"}
+                                name={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
+                                  ? "toTotalLocal"
+                                  : "toTotal"}
+                                type="number"
+                                value={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
+                                  ? (form.toTotalLocal || "")
+                                  : (form.toTotal || "")}
+                                onChange={handleChange}
+                                readOnly={rfqFormFieldReadOnly}
+                              />
+                              {form.targetPriceCurrency && form.targetPriceCurrency !== "EUR" && form.toTotal ? (
+                                <p className="mt-0.5 text-xs text-slate-400">
+                                  ≈ {form.toTotal} kEUR
+                                </p>
+                              ) : null}
+                            </div>
                             <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                           </div>
                         </div>
