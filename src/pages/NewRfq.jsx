@@ -513,12 +513,28 @@ const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
 };
 
 const normalizeRfqFiles = (rfq) => {
+  const topLevelRfqFiles =
+    Array.isArray(rfq?.rfq_files) && rfq.rfq_files.length > 0 ? rfq.rfq_files : null;
+  const dataRfqFiles =
+    Array.isArray(rfq?.rfq_data?.rfq_files) && rfq.rfq_data.rfq_files.length > 0
+      ? rfq.rfq_data.rfq_files
+      : null;
+  const dataFiles =
+    Array.isArray(rfq?.rfq_data?.files) && rfq.rfq_data.files.length > 0
+      ? rfq.rfq_data.files
+      : null;
+  const topLevelFiles =
+    Array.isArray(rfq?.files) && rfq.files.length > 0 ? rfq.files : null;
+  const attachments =
+    Array.isArray(rfq?.attachments) && rfq.attachments.length > 0
+      ? rfq.attachments
+      : null;
   const raw =
-    rfq?.rfq_files ||
-    rfq?.files ||
-    rfq?.attachments ||
-    rfq?.rfq_data?.files ||
-    rfq?.rfq_data?.rfq_files ||
+    topLevelRfqFiles ||
+    dataRfqFiles ||
+    dataFiles ||
+    topLevelFiles ||
+    attachments ||
     [];
   if (!Array.isArray(raw)) return [];
   return raw.map((entry, index) => {
@@ -966,7 +982,7 @@ const formatDiscussionDate = (value) => {
 const getFileKind = (file) => {
   const type = file?.file?.type || "";
   if (type.startsWith("image/")) return "image";
-  if (type === "application/pdf") return "pdf";
+  if (type === "application/pdf") return "pdf"; https://sales-app-backend.azurewebsites.net
   const name = file?.name || "";
   const ext = name.split(".").pop()?.toLowerCase() || "";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
@@ -982,7 +998,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
