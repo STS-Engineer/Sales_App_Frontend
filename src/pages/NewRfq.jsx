@@ -998,7 +998,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
