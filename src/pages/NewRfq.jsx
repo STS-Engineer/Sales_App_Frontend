@@ -982,7 +982,7 @@ const formatDiscussionDate = (value) => {
 const getFileKind = (file) => {
   const type = file?.file?.type || "";
   if (type.startsWith("image/")) return "image";
-  if (type === "application/pdf") return "pdf"; https://sales-app-backend.azurewebsites.net
+  if (type === "application/pdf") return "pdf";
   const name = file?.name || "";
   const ext = name.split(".").pop()?.toLowerCase() || "";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
