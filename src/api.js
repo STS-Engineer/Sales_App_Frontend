@@ -1,23 +1,55 @@
-import { getToken, setToken } from "./utils/session.js";
+import {
+  clearSession,
+  getRefreshToken,
+  getToken,
+  setRefreshToken,
+  setToken
+} from "./utils/session.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const REQUEST_TIMEOUT_MS = 300000;
+let refreshPromise = null;
+
+function createHttpError(message, status) {
+  const err = new Error(message || "Request failed");
+  err.status = status;
+  return err;
+}
+
+async function createResponseError(response) {
+  const text = await response.text();
+  let message = text || "Request failed";
+  try {
+    const json = JSON.parse(text);
+    if (json?.detail) {
+      message = json.detail;
+    }
+  } catch (error) {
+    // ignore JSON parse errors
+  }
+  return createHttpError(message, response.status);
+}
+
+function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  if (
+    window.location.pathname !== "/" ||
+    window.location.search ||
+    window.location.hash
+  ) {
+    window.location.assign("/");
+  }
+}
+
+function handleRefreshFailure(error) {
+  clearSession();
+  redirectToLogin();
+  throw error;
+}
 
 async function handleJson(response) {
   if (!response.ok) {
-    const text = await response.text();
-    let message = text || "Request failed";
-    try {
-      const json = JSON.parse(text);
-      if (json?.detail) {
-        message = json.detail;
-      }
-    } catch (error) {
-      // ignore JSON parse errors
-    }
-    const err = new Error(message);
-    err.status = response.status;
-    throw err;
+    throw await createResponseError(response);
   }
   if (response.status === 204) {
     return null;
@@ -25,40 +57,136 @@ async function handleJson(response) {
   return response.json();
 }
 
-async function request(
-  path,
-  { method = "GET", body, headers, auth = true, isForm = false } = {}
-) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+function buildHeaders({ headers, auth, isForm, accessToken }) {
   const finalHeaders = { ...(headers || {}) };
   if (!isForm) {
     finalHeaders["Content-Type"] = "application/json";
   }
-  if (auth) {
-    const token = getToken();
-    if (token) {
-      finalHeaders.Authorization = `Bearer ${token}`;
-    }
+  if (auth && accessToken) {
+    finalHeaders.Authorization = `Bearer ${accessToken}`;
   }
+  return finalHeaders;
+}
+
+function serializeBody(body, isForm) {
+  if (isForm) {
+    return body;
+  }
+  return body ? JSON.stringify(body) : undefined;
+}
+
+function isAuthEndpoint(pathOrUrl) {
+  const value = String(pathOrUrl || "");
+  return (
+    value.includes("/api/auth/login") ||
+    value.includes("/api/auth/refresh")
+  );
+}
+
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: finalHeaders,
-      body: isForm ? body : body ? JSON.stringify(body) : undefined,
+    return await fetch(url, {
+      ...options,
       signal: controller.signal
     });
-    return await handleJson(response);
   } catch (error) {
     if (error?.name === "AbortError") {
-      const err = new Error("Request timed out. Please try again.");
-      err.status = 408;
-      throw err;
+      throw createHttpError("Request timed out. Please try again.", 408);
     }
     throw error;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function refreshAccessToken() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    handleRefreshFailure(
+      createHttpError("Session expired. Please sign in again.", 401)
+    );
+  }
+
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const response = await fetchWithTimeout(`${API_BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      const data = await handleJson(response);
+      if (!data?.access_token) {
+        throw createHttpError("Session refresh failed.", 401);
+      }
+      setToken(data.access_token);
+      return data.access_token;
+    })()
+      .catch((error) => {
+        handleRefreshFailure(error);
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+}
+
+async function performRequest(
+  pathOrUrl,
+  {
+    method = "GET",
+    body,
+    headers,
+    auth = true,
+    isForm = false,
+    retryCount = 0,
+    prependApiBase = true
+  } = {}
+) {
+  const accessToken = auth ? getToken() : "";
+  const requestUrl = prependApiBase ? `${API_BASE}${pathOrUrl}` : pathOrUrl;
+  const response = await fetchWithTimeout(requestUrl, {
+    method,
+    headers: buildHeaders({ headers, auth, isForm, accessToken }),
+    body: serializeBody(body, isForm)
+  });
+
+  if (response.status === 401 && auth && retryCount === 0 && !isAuthEndpoint(pathOrUrl)) {
+    await refreshAccessToken();
+    return performRequest(pathOrUrl, {
+      method,
+      body,
+      headers,
+      auth,
+      isForm,
+      retryCount: 1,
+      prependApiBase
+    });
+  }
+
+  if (response.status === 401 && auth && retryCount > 0 && !isAuthEndpoint(pathOrUrl)) {
+    clearSession();
+    redirectToLogin();
+  }
+
+  return response;
+}
+
+async function request(
+  path,
+  { method = "GET", body, headers, auth = true, isForm = false } = {}
+) {
+  const response = await performRequest(path, {
+    method,
+    body,
+    headers,
+    auth,
+    isForm
+  });
+  return handleJson(response);
 }
 
 function extractFilenameFromDisposition(contentDisposition) {
@@ -76,56 +204,36 @@ function extractFilenameFromDisposition(contentDisposition) {
 }
 
 async function requestBinary(path, { method = "GET", headers, auth = true } = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const finalHeaders = { ...(headers || {}) };
+  const response = await performRequest(path, {
+    method,
+    headers,
+    auth
+  });
 
-  if (auth) {
-    const token = getToken();
-    if (token) {
-      finalHeaders.Authorization = `Bearer ${token}`;
-    }
+  if (!response.ok) {
+    throw await createResponseError(response);
   }
 
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: finalHeaders,
-      signal: controller.signal
-    });
+  return {
+    blob: await response.blob(),
+    filename: extractFilenameFromDisposition(
+      response.headers.get("Content-Disposition") || ""
+    )
+  };
+}
 
-    if (!response.ok) {
-      const text = await response.text();
-      let message = text || "Request failed";
-      try {
-        const json = JSON.parse(text);
-        if (json?.detail) {
-          message = json.detail;
-        }
-      } catch (error) {
-        // ignore JSON parse errors
-      }
-      const err = new Error(message);
-      err.status = response.status;
-      throw err;
-    }
-
-    return {
-      blob: await response.blob(),
-      filename: extractFilenameFromDisposition(
-        response.headers.get("Content-Disposition") || ""
-      )
-    };
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      const err = new Error("Request timed out. Please try again.");
-      err.status = 408;
-      throw err;
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+export async function authorizedFetch(
+  pathOrUrl,
+  { method = "GET", body, headers, isForm = false, prependApiBase = false } = {}
+) {
+  return performRequest(pathOrUrl, {
+    method,
+    body,
+    headers,
+    auth: true,
+    isForm,
+    prependApiBase
+  });
 }
 
 export async function login(payload) {
@@ -137,6 +245,7 @@ export async function login(payload) {
   if (data?.access_token) {
     setToken(data.access_token);
   }
+  setRefreshToken(data?.refresh_token || "");
   return data;
 }
 

@@ -1,4 +1,5 @@
 const TOKEN_KEY = "rfq_token";
+const REFRESH_TOKEN_KEY = "rfq_refresh_token";
 const EMAIL_KEY = "rfq_user_email";
 const NAME_KEY = "rfq_user_name";
 const ROLE_KEY = "rfq_user_role";
@@ -20,6 +21,22 @@ export const setToken = (token) => {
 };
 
 export const clearToken = () => setToken("");
+
+export const getRefreshToken = () => {
+  if (!canUseStorage()) return "";
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY) || "";
+};
+
+export const setRefreshToken = (token) => {
+  if (!canUseStorage()) return;
+  if (!token) {
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+    return;
+  }
+  window.localStorage.setItem(REFRESH_TOKEN_KEY, token);
+};
+
+export const clearRefreshToken = () => setRefreshToken("");
 
 export const setUserProfile = ({ email, role, name } = {}) => {
   if (!canUseStorage()) return;
@@ -53,6 +70,7 @@ export const clearUserProfile = () => {
 
 export const clearSession = () => {
   clearToken();
+  clearRefreshToken();
   clearUserProfile();
 };
 

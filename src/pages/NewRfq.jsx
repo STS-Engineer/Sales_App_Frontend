@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Eye, Files, MessageSquare, Pencil, SendHorizontal, Trash2, Upload, X } from "lucide-react";
-import { getToken, getUserProfile } from "../utils/session.js";
+import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
 import feasibilityTemplate from "../assets/feasibility_template.xlsm?url";
@@ -10,6 +10,7 @@ import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import {
   advanceRfqStatus,
+  authorizedFetch,
   createRfq,
   downloadCostingTemplate,
   deleteRfqFile,
@@ -2763,9 +2764,8 @@ export default function NewRfq() {
     }
     setFilePreviewLoadingId(file.id);
     try {
-      const token = getToken();
-      const response = await fetch(resolvedUrl, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      const response = await authorizedFetch(resolvedUrl, {
+        prependApiBase: false
       });
       if (!response.ok) {
         throw new Error("Preview failed");
