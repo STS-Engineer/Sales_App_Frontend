@@ -13,6 +13,7 @@ const ROLE_OPTIONS = [
   { value: "COMMERCIAL", label: "Commercial" },
   { value: "ZONE_MANAGER", label: "Zone Manager" },
   { value: "COSTING_TEAM", label: "Costing Team" },
+  { value: "RND", label: "R&D" },
   { value: "PLANT_MANAGER", label: "Plant Manager" },
   { value: "PLM", label: "PLM" },
   { value: "OWNER", label: "Owner" }

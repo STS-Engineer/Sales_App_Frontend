@@ -418,6 +418,41 @@ const PRICING_WORKFLOW_STATE_BOM_UPLOADED = "BOM_UPLOADED";
 const PRICING_WORKFLOW_STATE_PRICING_UPLOADED = "PRICING_UPLOADED";
 const PRICING_WORKFLOW_STATE_APPROVED = "APPROVED";
 const PRICING_WORKFLOW_STATE_REJECTED = "REJECTED";
+const FEASIBILITY_STATUS_OPTIONS = [
+  { value: "FEASIBLE", label: "Feasible" },
+  { value: "FEASIBLE_UNDER_CONDITION", label: "Feasible Under Condition" },
+  { value: "NOT_FEASIBLE", label: "Not Feasible" }
+];
+
+const formatFeasibilityStatusLabel = (value) => {
+  const normalizedValue = String(value || "").trim().toUpperCase();
+  const matchedOption = FEASIBILITY_STATUS_OPTIONS.find(
+    (option) => option.value === normalizedValue
+  );
+  if (matchedOption) {
+    return matchedOption.label;
+  }
+  return normalizedValue
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+};
+
+const getFeasibilityStatusBadgeClasses = (value) => {
+  const normalizedValue = String(value || "").trim().toUpperCase();
+  if (normalizedValue === "FEASIBLE") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (normalizedValue === "FEASIBLE_UNDER_CONDITION") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  if (normalizedValue === "NOT_FEASIBLE") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+  return "border-slate-200 bg-slate-50 text-slate-700";
+};
 
 const hasMeaningfulValue = (value) => {
   if (value === 0) return true;
@@ -729,6 +764,7 @@ const normalizeCostingFileState = (rfq) => {
 
   return {
     fileStatus: String(raw?.file_status || "").trim().toUpperCase() || "PENDING",
+    feasibilityStatus: String(raw?.feasibility_status || "").trim().toUpperCase(),
     note: String(raw?.file_note || "").trim(),
     actionBy: String(raw?.action_by || "").trim(),
     actionAt: String(raw?.action_at || "").trim(),
@@ -746,6 +782,7 @@ const buildLegacyCostingFileState = (files = []) => {
   if (!Array.isArray(files) || !files.length) {
     return {
       fileStatus: "PENDING",
+      feasibilityStatus: "",
       note: "",
       actionBy: "",
       actionAt: "",
@@ -758,6 +795,7 @@ const buildLegacyCostingFileState = (files = []) => {
   if (!legacyCandidates.length) {
     return {
       fileStatus: "PENDING",
+      feasibilityStatus: "",
       note: "",
       actionBy: "",
       actionAt: "",
@@ -772,6 +810,7 @@ const buildLegacyCostingFileState = (files = []) => {
       : "";
   return {
     fileStatus: "UPLOADED",
+    feasibilityStatus: "",
     note: "Legacy costing upload recorded before notes were required.",
     actionBy: String(latest?.owner || "").trim(),
     actionAt: String(latest?.updatedAt || "").trim(),
@@ -1439,6 +1478,7 @@ export default function NewRfq() {
   const [costingFileActionModalOpen, setCostingFileActionModalOpen] = useState(false);
   const [costingFileActionMode, setCostingFileActionMode] = useState("UPLOADED");
   const [costingFileActionNote, setCostingFileActionNote] = useState("");
+  const [costingFeasibilityStatus, setCostingFeasibilityStatus] = useState("");
   const [costingFileActionDraft, setCostingFileActionDraft] = useState(null);
   const [costingFileActionPending, setCostingFileActionPending] = useState(false);
   const [pricingBomUpload, setPricingBomUpload] = useState(null);
@@ -1810,6 +1850,18 @@ export default function NewRfq() {
     rfqId &&
     isCostingFeasabilityView &&
     (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+  );
+  const canManageCostingFeasibilityHandoff = Boolean(
+    rfqId &&
+    isCostingFeasabilityView &&
+    (
+      currentUserRole === "OWNER" ||
+      currentUserRole === "COSTING_TEAM" ||
+      currentUserRole === "RND"
+    )
+  );
+  const hasSelectedCostingFeasibilityStatus = Boolean(
+    String(costingFeasibilityStatus || "").trim()
   );
   const costingReviewButtonsDisabled = Boolean(
     !canReviewCostingFeasability || costingReviewActionId
@@ -2205,6 +2257,7 @@ export default function NewRfq() {
     setCostingFileActionModalOpen(false);
     setCostingFileActionMode("UPLOADED");
     setCostingFileActionNote("");
+    setCostingFeasibilityStatus(nextCostingFileState?.feasibilityStatus || "");
     setCostingFileActionDraft(null);
     setCostingFileActionPending(false);
     setPricingBomModalOpen(false);
@@ -2397,6 +2450,7 @@ export default function NewRfq() {
           setCostingFileActionModalOpen(false);
           setCostingFileActionMode("UPLOADED");
           setCostingFileActionNote("");
+          setCostingFeasibilityStatus("");
           setCostingFileActionDraft(null);
           setCostingFileActionPending(false);
           setPricingBomModalOpen(false);
@@ -2467,6 +2521,7 @@ export default function NewRfq() {
         setCostingFileActionModalOpen(false);
         setCostingFileActionMode("UPLOADED");
         setCostingFileActionNote("");
+        setCostingFeasibilityStatus("");
         setCostingFileActionDraft(null);
         setCostingFileActionPending(false);
         setPricingBomModalOpen(false);
@@ -3341,7 +3396,7 @@ export default function NewRfq() {
   };
 
   const openCostingFileActionModal = (mode) => {
-    if (!canReviewCostingFeasability || costingSavePending || costingFileActionPending) {
+    if (!canManageCostingFeasibilityHandoff || costingSavePending || costingFileActionPending) {
       return;
     }
     setRfqError("");
@@ -3373,6 +3428,10 @@ export default function NewRfq() {
       setRfqError("Please provide a note for this costing action.");
       return;
     }
+    if (!costingFeasibilityStatus) {
+      setRfqError("Please select the feasibility status before submitting.");
+      return;
+    }
     if (costingFileActionMode === "UPLOADED" && !costingFileActionDraft) {
       setRfqError("Please choose the completed feasibility file before submitting.");
       return;
@@ -3385,6 +3444,7 @@ export default function NewRfq() {
       await submitCostingFileAction(rfqId, {
         action: costingFileActionMode,
         note: trimmedNote,
+        feasibilityStatus: costingFeasibilityStatus,
         file: costingFileActionMode === "UPLOADED" ? costingFileActionDraft : null
       });
       await syncRfq(rfqId);
@@ -4471,13 +4531,90 @@ export default function NewRfq() {
                                     Upload the finished feasibility file or mark the requirement as not applicable with a note.
                                   </p>
                                 </div>
-                                {!hasCompletedCostingFileAction ? (
+                              </div>
+
+                              <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                                  <div className="max-w-2xl">
+                                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                      Feasibility status
+                                    </h4>
+                                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                                      Choose the feasibility result before uploading the file or marking this handoff as not applicable.
+                                    </p>
+                                  </div>
+                                  <label className="w-full max-w-md text-left">
+                                    <span className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-500">
+                                      Feasibility Status
+                                    </span>
+                                    <select
+                                      className="input-field"
+                                      value={costingFeasibilityStatus}
+                                      onChange={(event) => setCostingFeasibilityStatus(event.target.value)}
+                                      disabled={
+                                        !canManageCostingFeasibilityHandoff ||
+                                        hasCompletedCostingFileAction ||
+                                        costingFileActionPending
+                                      }
+                                    >
+                                      <option value="">Not selected yet</option>
+                                      {FEASIBILITY_STATUS_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                </div>
+                                {hasSelectedCostingFeasibilityStatus ? (
+                                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                                    <span
+                                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getFeasibilityStatusBadgeClasses(
+                                        costingFeasibilityStatus
+                                      )}`}
+                                    >
+                                      {formatFeasibilityStatusLabel(costingFeasibilityStatus)}
+                                    </span>
+                                    <span className="text-xs text-slate-500">
+                                      {hasCompletedCostingFileAction
+                                        ? "Recorded with the current feasibility action."
+                                        : "This selection will be saved with the next feasibility action."}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <p className="mt-4 text-xs text-slate-500">
+                                    Not selected yet.
+                                  </p>
+                                )}
+                              </div>
+
+                              {!hasCompletedCostingFileAction ? (
+                                <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                  <div className="max-w-2xl">
+                                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                      Feasibility actions
+                                    </h4>
+                                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                                      Once a status is selected, choose whether to upload the finished feasibility file or record that no file is required.
+                                    </p>
+                                  </div>
                                   <div className="flex flex-wrap items-center gap-3">
                                     <button
                                       type="button"
                                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                                       onClick={() => openCostingFileActionModal("UPLOADED")}
-                                      disabled={!canReviewCostingFeasability || costingSavePending}
+                                      disabled={
+                                        !canManageCostingFeasibilityHandoff ||
+                                        costingSavePending ||
+                                        !hasSelectedCostingFeasibilityStatus
+                                      }
+                                      title={
+                                        !canManageCostingFeasibilityHandoff
+                                          ? "Only the assigned costing or R&D contact, or the owner, can complete the feasibility handoff."
+                                          : hasSelectedCostingFeasibilityStatus
+                                            ? "Add the feasibility handoff file"
+                                            : "Select the feasibility status first."
+                                      }
                                     >
                                       <Upload className="h-4 w-4" />
                                       Add feasibility file
@@ -4486,14 +4623,25 @@ export default function NewRfq() {
                                       type="button"
                                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                                       onClick={() => openCostingFileActionModal("NA")}
-                                      disabled={!canReviewCostingFeasability || costingSavePending}
+                                      disabled={
+                                        !canManageCostingFeasibilityHandoff ||
+                                        costingSavePending ||
+                                        !hasSelectedCostingFeasibilityStatus
+                                      }
+                                      title={
+                                        !canManageCostingFeasibilityHandoff
+                                          ? "Only the assigned costing or R&D contact, or the owner, can complete the feasibility handoff."
+                                          : hasSelectedCostingFeasibilityStatus
+                                            ? "Mark the feasibility file as not applicable"
+                                            : "Select the feasibility status first."
+                                      }
                                     >
                                       <Pencil className="h-4 w-4" />
                                       Not Applicable
                                     </button>
                                   </div>
-                                ) : null}
-                              </div>
+                                </div>
+                              ) : null}
 
                               {hasCompletedCostingFileAction ? (
                                 <div className="mt-5 rounded-[24px] border border-emerald-200/80 bg-white/95 p-5 shadow-soft">
@@ -4511,6 +4659,17 @@ export default function NewRfq() {
                                             ? "Not Applicable"
                                             : "Uploaded"}
                                         </span>
+                                        {effectiveCostingFileState?.feasibilityStatus ? (
+                                          <span
+                                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getFeasibilityStatusBadgeClasses(
+                                              effectiveCostingFileState.feasibilityStatus
+                                            )}`}
+                                          >
+                                            {formatFeasibilityStatusLabel(
+                                              effectiveCostingFileState.feasibilityStatus
+                                            )}
+                                          </span>
+                                        ) : null}
                                       </div>
                                       <h3 className="mt-3 text-lg font-semibold text-ink">
                                         {effectiveCostingFileState?.fileStatus === "NA"
@@ -4547,7 +4706,7 @@ export default function NewRfq() {
                                     ) : null}
                                   </div>
 
-                                  <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                  <div className="mt-5 grid gap-4 md:grid-cols-4">
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                                         Action by
@@ -4573,6 +4732,18 @@ export default function NewRfq() {
                                           (effectiveCostingFileState?.fileStatus === "NA"
                                             ? "No file required"
                                             : "Unavailable")}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        Feasibility status
+                                      </p>
+                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                        {effectiveCostingFileState?.feasibilityStatus
+                                          ? formatFeasibilityStatusLabel(
+                                            effectiveCostingFileState.feasibilityStatus
+                                          )
+                                          : "Unavailable"}
                                       </p>
                                     </div>
                                   </div>
@@ -6849,6 +7020,20 @@ export default function NewRfq() {
                     ? "Explain why the feasibility file is not applicable for this RFQ."
                     : "Upload the completed feasibility file and add a note explaining what was submitted."}
                 </p>
+                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3">
+                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    Selected status
+                  </span>
+                  <span
+                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${getFeasibilityStatusBadgeClasses(
+                      costingFeasibilityStatus
+                    )}`}
+                  >
+                    {hasSelectedCostingFeasibilityStatus
+                      ? formatFeasibilityStatusLabel(costingFeasibilityStatus)
+                      : "Not selected yet"}
+                  </span>
+                </div>
                 {costingFileActionMode === "UPLOADED" ? (
                   <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
                     <span>File</span>
@@ -6887,7 +7072,7 @@ export default function NewRfq() {
                   <button
                     type="submit"
                     className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={costingFileActionPending}
+                    disabled={costingFileActionPending || !costingFeasibilityStatus}
                   >
                     {costingFileActionPending
                       ? "Saving..."

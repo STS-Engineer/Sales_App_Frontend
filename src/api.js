@@ -305,6 +305,7 @@ export async function submitCostingFileAction(rfqId, payload) {
   const formData = new FormData();
   formData.append("action", payload.action);
   formData.append("note", payload.note);
+  formData.append("feasibility_status", payload.feasibilityStatus);
   if (payload.file) {
     formData.append("file", payload.file);
   }

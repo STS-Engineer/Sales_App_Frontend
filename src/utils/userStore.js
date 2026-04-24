@@ -1,4 +1,4 @@
-const OWNER_EMAIL = "ons.ghariani@avocarbon.com";
+const OWNER_EMAIL = "mohamedlaith.benmabrouk@avocarbon.com";
 const PENDING_KEY = "rfq_users_pending";
 const APPROVED_KEY = "rfq_users_approved";
 const ROLE_KEY = "rfq_user_role";
