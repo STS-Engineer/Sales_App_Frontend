@@ -43,6 +43,9 @@ import {
   mapRfqDataToForm
 } from "../utils/rfq.js";
 
+const COSTING_READ_ONLY_ROLES = ["COSTING_TEAM", "RND", "PLM"];
+const RFQ_CREATOR_ROLES = ["OWNER", "COMMERCIAL", "ZONE_MANAGER"];
+
 const initialForm = {
   id: "",
   customer: "",
@@ -1613,6 +1616,25 @@ export default function NewRfq() {
   const isAssignedValidatorUser =
     Boolean(assignedValidatorEmail) &&
     assignedValidatorEmail === normalizedCurrentUserEmail;
+  const normalizedRfqCreatorEmail = normalizeEmailValue(rfqCreatorEmail);
+  const isRfqCreatorUser =
+    Boolean(normalizedRfqCreatorEmail) &&
+    normalizedRfqCreatorEmail === normalizedCurrentUserEmail;
+  const isCostingReadOnlyRole = COSTING_READ_ONLY_ROLES.includes(currentUserRole);
+  const canCreateRfqDraft = RFQ_CREATOR_ROLES.includes(currentUserRole);
+  const canEditRfqPhase = Boolean(
+    currentUserRole === "OWNER" || isRfqCreatorUser || isAssignedValidatorUser
+  );
+  const canUseRfqActions = Boolean(
+    isRfqStage &&
+    !isCostingReadOnlyRole &&
+    (hasPersistedDraft ? canEditRfqPhase : canCreateRfqDraft)
+  );
+  const isOfferStage = selectedStage === "Offer";
+  const canEditOfferPhase = canEditRfqPhase;
+  const canUseOfferActions = Boolean(
+    isOfferStage && canEditOfferPhase && !isCostingReadOnlyRole
+  );
   const isPotentialTabLocked = false;
   const isNewRfqTabLocked = hasPersistedDraft && isPotentialDraft;
   const isPotentialAssistantLocked =
@@ -1623,6 +1645,7 @@ export default function NewRfq() {
   );
   const canProceedToFormalRfq = Boolean(
     (rfqId || rfqIdParam) &&
+    canUseRfqActions &&
     isPotentialDraft &&
     !missingPotentialSharedFields.length &&
     !proceedingToFormalRfq
@@ -1673,7 +1696,9 @@ export default function NewRfq() {
     selectedStage
   ]);
   const validationButtonsDisabled = Boolean(
-    validationActionId || hasRecordedValidationDecision
+    validationActionId ||
+    hasRecordedValidationDecision ||
+    !(currentUserRole === "OWNER" || isAssignedValidatorUser)
   );
   const hideValidationActionButtons = Boolean(
     hasRecordedValidationDecision ||
@@ -1833,6 +1858,10 @@ export default function NewRfq() {
   const canOpenRfqValidation =
     hasValidationLock && !holdSelfValidationPrompt;
   const isCostingStage = selectedStage === "In costing";
+  const canUseCostingActions = Boolean(
+    isCostingStage &&
+    ["OWNER", "COSTING_TEAM", "RND", "PLM"].includes(currentUserRole)
+  );
   const costingDisplaySubPhase = isCostingStage
     ? selectedSubPhase || getActiveDisplaySubPhase("In costing") || "Feasability"
     : "";
@@ -1849,11 +1878,13 @@ export default function NewRfq() {
   );
   const canReviewCostingFeasability = Boolean(
     rfqId &&
+    canUseCostingActions &&
     isCostingFeasabilityView &&
     (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
   );
   const canManageCostingFeasibilityHandoff = Boolean(
     rfqId &&
+    canUseCostingActions &&
     isCostingFeasabilityView &&
     (
       currentUserRole === "OWNER" ||
@@ -1887,12 +1918,14 @@ export default function NewRfq() {
   );
   const canManagePricingBom = Boolean(
     rfqId &&
+    canUseCostingActions &&
     isCostingPricingView &&
     pricingWorkflowState === PRICING_WORKFLOW_STATE_WAITING_BOM &&
     (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
   );
   const canManagePricingFinalPrice = Boolean(
     rfqId &&
+    canUseCostingActions &&
     isCostingPricingView &&
     hasPricingBomUpload &&
     (
@@ -1909,6 +1942,7 @@ export default function NewRfq() {
   );
   const canValidatePricingFile = Boolean(
     rfqId &&
+    canUseCostingActions &&
     isCostingPricingView &&
     hasPricingFinalPriceUpload &&
     pricingWorkflowState === PRICING_WORKFLOW_STATE_PRICING_UPLOADED &&
@@ -1950,12 +1984,19 @@ export default function NewRfq() {
   const lockNewRfqFields = !isRevisionModeActive;
   const potentialFieldReadOnly = true;
   const isChatLocked =
-    isChatOnly || hasValidationLock || proceedingToFormalRfq || isPotentialAssistantLocked;
+    isChatOnly ||
+    !canUseRfqActions ||
+    hasValidationLock ||
+    proceedingToFormalRfq ||
+    isPotentialAssistantLocked;
   const chatReadOnlyMessage =
-    isPotentialAssistantLocked && activeRfqTab === "potential"
-      ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
-      : "Chat is locked once the RFQ enters validation";
-  const rfqFormFieldReadOnly = lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
+    !canUseRfqActions
+      ? "This phase is read-only for your role"
+      : isPotentialAssistantLocked && activeRfqTab === "potential"
+        ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
+        : "Chat is locked once the RFQ enters validation";
+  const rfqFormFieldReadOnly =
+    !canUseRfqActions || lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !rfqFormFieldReadOnly;
   const showRfqStepNavigation =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
@@ -1966,7 +2007,12 @@ export default function NewRfq() {
     if (activeRfqTab === "new") return "NEW_RFQ";
     return rfqSubStatus || (isPotentialDraft ? "POTENTIAL" : "NEW_RFQ");
   }, [activeRfqTab, isPotentialDraft, rfqSubStatus]);
-  const canParticipateInDiscussion = Boolean(currentUserEmail || currentUserRole);
+  const canParticipateInDiscussion = Boolean(
+    canUseRfqActions && (currentUserEmail || currentUserRole)
+  );
+  const canParticipateInCostingDiscussion = Boolean(
+    canUseCostingActions && (currentUserEmail || currentUserRole)
+  );
   const getNextIncompleteStepId = (stepId, completionMap = stepCompletion) => {
     const currentIndex = stepIds.indexOf(stepId);
     if (currentIndex < 0 || currentIndex >= stepIds.length - 1) {
@@ -2708,6 +2754,12 @@ export default function NewRfq() {
   };
 
   const handleFilesChange = async (event) => {
+    if (!allowFileUpload) {
+      if (rfqFileInputRef.current) {
+        rfqFileInputRef.current.value = "";
+      }
+      return;
+    }
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
     let currentRfqId = rfqId;
@@ -2792,6 +2844,7 @@ export default function NewRfq() {
 
   const handleDeleteFile = async (file) => {
     if (!file) return;
+    if (!canUseRfqActions) return;
     if (file.source === "local") {
       handleRemoveLocalFile(file.id);
       return;
@@ -2944,6 +2997,7 @@ export default function NewRfq() {
   };
 
   const handleRfqChatEdit = async (visibleMessageIndex, message) => {
+    if (!canUseRfqActions) return false;
     const trimmedMessage = String(message || "").trim();
     if (!trimmedMessage) return false;
 
@@ -2989,6 +3043,7 @@ export default function NewRfq() {
   };
 
   const handleChatSend = async (message, attachments = []) => {
+    if (!canUseRfqActions) return;
     const activeChatMode = activeRfqTab === "potential" ? "potential" : "rfq";
     const setActiveChatMessages =
       activeChatMode === "potential"
@@ -3107,6 +3162,7 @@ export default function NewRfq() {
   };
 
   const handleProceedToFormalRfq = async () => {
+    if (!canUseRfqActions) return;
     let currentRfqId = rfqId;
     setRfqError("");
 
@@ -3134,7 +3190,7 @@ export default function NewRfq() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!rfqId) return;
+    if (!rfqId || !canUseRfqActions) return;
     setSaving(true);
     try {
       await syncRfq(rfqId);
@@ -3177,7 +3233,7 @@ export default function NewRfq() {
   };
 
   const handleSubmitRevisionUpdates = async () => {
-    if (!rfqId || revisionActionId) return;
+    if (!rfqId || revisionActionId || !canUseRfqActions) return;
     setRevisionActionId("submit");
     setRfqError("");
     try {
@@ -3333,7 +3389,7 @@ export default function NewRfq() {
   };
 
   const handleApproveCostingReview = async () => {
-    if (!rfqId || costingReviewActionId) return;
+    if (!rfqId || costingReviewActionId || !canReviewCostingFeasability) return;
     setCostingReviewActionId("approve");
     setValidationSuccess("");
     setRfqError("");
@@ -3354,7 +3410,7 @@ export default function NewRfq() {
   };
 
   const handleRejectCostingReview = () => {
-    if (costingReviewActionId) return;
+    if (costingReviewActionId || !canReviewCostingFeasability) return;
     setValidationSuccess("");
     setRfqError("");
     setCostingRejectModalOpen(true);
@@ -3368,7 +3424,7 @@ export default function NewRfq() {
   };
 
   const handleConfirmCostingRejectReview = async () => {
-    if (!rfqId) return;
+    if (!rfqId || !canReviewCostingFeasability) return;
     if (!String(costingRejectReason || "").trim()) {
       setRfqError("Please provide a rejection reason.");
       return;
@@ -3421,7 +3477,7 @@ export default function NewRfq() {
 
   const handleSubmitCostingFileAction = async (event) => {
     event.preventDefault();
-    if (!rfqId || costingFileActionPending) return;
+    if (!rfqId || costingFileActionPending || !canManageCostingFeasibilityHandoff) return;
 
     const trimmedNote = String(costingFileActionNote || "").trim();
     if (!trimmedNote) {
@@ -3492,7 +3548,7 @@ export default function NewRfq() {
 
   const handleSubmitPricingBomUpload = async (event) => {
     event.preventDefault();
-    if (!rfqId || pricingBomPending) return;
+    if (!rfqId || pricingBomPending || !canManagePricingBom) return;
 
     const trimmedNote = String(pricingBomNote || "").trim();
     if (!trimmedNote) {
@@ -3553,7 +3609,7 @@ export default function NewRfq() {
 
   const handleSubmitPricingFinalPriceUpload = async (event) => {
     event.preventDefault();
-    if (!rfqId || pricingFinalPricePending) return;
+    if (!rfqId || pricingFinalPricePending || !canManagePricingFinalPrice) return;
 
     const trimmedNote = String(pricingFinalPriceNote || "").trim();
     if (!trimmedNote) {
@@ -3608,7 +3664,7 @@ export default function NewRfq() {
   };
 
   const handleApprovePricingFileValidation = async () => {
-    if (!rfqId || pricingFileValidationActionId) return;
+    if (!rfqId || pricingFileValidationActionId || !canValidatePricingFile) return;
 
     setPricingFileValidationActionId("approve");
     setValidationSuccess("");
@@ -3628,7 +3684,7 @@ export default function NewRfq() {
   };
 
   const handleRejectPricingFileValidation = () => {
-    if (pricingFileValidationActionId) return;
+    if (pricingFileValidationActionId || !canValidatePricingFile) return;
     setValidationSuccess("");
     setRfqError("");
     setPricingFileRejectModalOpen(true);
@@ -3642,6 +3698,7 @@ export default function NewRfq() {
   };
 
   const handleConfirmPricingFileReject = async () => {
+    if (!canValidatePricingFile) return;
     const rejectionReason = String(pricingFileRejectReason || "").trim();
     if (!rejectionReason) {
       setRfqError("Please provide a rejection reason.");
@@ -3673,7 +3730,7 @@ export default function NewRfq() {
   };
 
   const handleSaveCostingFeasability = async () => {
-    if (!rfqId || costingSavePending) return;
+    if (!rfqId || costingSavePending || !canSaveCostingFeasability) return;
     if (!hasRecordedCostingReviewDecision || isCostingReviewRejected) {
       setRfqError("Only an approved feasibility review can be saved to pricing.");
       return;
@@ -3714,7 +3771,12 @@ export default function NewRfq() {
     const content = String(costingDiscussionDraft || "").trim();
     const recipientEmail = String(costingDiscussionRecipient || "").trim();
 
-    if (!content || !recipientEmail || costingDiscussionSending) {
+    if (
+      !content ||
+      !recipientEmail ||
+      costingDiscussionSending ||
+      !canParticipateInCostingDiscussion
+    ) {
       return;
     }
 
@@ -4203,7 +4265,7 @@ export default function NewRfq() {
                                     type="button"
                                     className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={() => setFileDeleteTarget(file)}
-                                    disabled={isDeleting || isRfqFormReadOnly}
+                                    disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
                                   >
                                     {isDeleting ? "Removing..." : "Delete"}
                                   </button>
@@ -5646,7 +5708,7 @@ export default function NewRfq() {
                                             type="button"
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                             onClick={() => setFileDeleteTarget(file)}
-                                            disabled={isDeleting || isRfqFormReadOnly}
+                                            disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
                                             aria-label="Delete file"
                                             title={isDeleting ? "Removing..." : "Delete"}
                                           >
@@ -5940,7 +6002,7 @@ export default function NewRfq() {
                                                 type="button"
                                                 className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                                 onClick={() => setFileDeleteTarget(file)}
-                                                disabled={isDeleting || isRfqFormReadOnly}
+                                                disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
                                                 aria-label="Delete file"
                                                 title={
                                                   isRfqFormReadOnly
@@ -6616,7 +6678,7 @@ export default function NewRfq() {
                           list="costing-recipient-options"
                           value={costingDiscussionRecipient}
                           onChange={(event) => setCostingDiscussionRecipient(event.target.value)}
-                          disabled={costingDiscussionSending}
+                          disabled={costingDiscussionSending || !canParticipateInCostingDiscussion}
                           placeholder="recipient@avocarbon.com"
                         />
                         <datalist id="costing-recipient-options">
@@ -6633,20 +6695,23 @@ export default function NewRfq() {
                           className="textarea-field min-h-[110px]"
                           value={costingDiscussionDraft}
                           onChange={(event) => setCostingDiscussionDraft(event.target.value)}
-                          disabled={costingDiscussionSending}
+                          disabled={costingDiscussionSending || !canParticipateInCostingDiscussion}
                           placeholder="Write the costing note you want to send..."
                         />
                       </div>
                     </div>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-slate-500">
-                        The recipient will receive a notification email and the message will stay in this thread.
+                        {canParticipateInCostingDiscussion
+                          ? "The recipient will receive a notification email and the message will stay in this thread."
+                          : "Costing discussion is read-only for your role."}
                       </p>
                       <button
                         type="submit"
                         className="inline-flex items-center justify-center gap-2 rounded-xl border border-tide bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={
                           costingDiscussionSending ||
+                          !canParticipateInCostingDiscussion ||
                           !String(costingDiscussionDraft || "").trim() ||
                           !String(costingDiscussionRecipient || "").trim()
                         }
@@ -6783,7 +6848,7 @@ export default function NewRfq() {
                                     setFilesPanelOpen(false);
                                     setFileDeleteTarget(file);
                                   }}
-                                  disabled={isDeleting || isRfqFormReadOnly}
+                                  disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
                                   aria-label="Delete file"
                                   title={isDeleting ? "Removing..." : "Delete"}
                                 >
@@ -7041,7 +7106,7 @@ export default function NewRfq() {
                       className="input-field"
                       type="file"
                       onChange={handleCostingFileDraftChange}
-                      disabled={costingFileActionPending}
+                      disabled={costingFileActionPending || !canManageCostingFeasibilityHandoff}
                     />
                     {costingFileActionDraft ? (
                       <span className="text-[11px] normal-case tracking-normal text-slate-500">
@@ -7057,7 +7122,7 @@ export default function NewRfq() {
                     value={costingFileActionNote}
                     onChange={(event) => setCostingFileActionNote(event.target.value)}
                     placeholder="Describe the file or explain why it is not applicable..."
-                    disabled={costingFileActionPending}
+                    disabled={costingFileActionPending || !canManageCostingFeasibilityHandoff}
                   />
                 </label>
                 <div className="chat-modal-actions justify-end">
@@ -7072,7 +7137,11 @@ export default function NewRfq() {
                   <button
                     type="submit"
                     className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={costingFileActionPending || !costingFeasibilityStatus}
+                    disabled={
+                      costingFileActionPending ||
+                      !costingFeasibilityStatus ||
+                      !canManageCostingFeasibilityHandoff
+                    }
                   >
                     {costingFileActionPending
                       ? "Saving..."
@@ -7126,7 +7195,7 @@ export default function NewRfq() {
                     className="input-field"
                     type="file"
                     onChange={handlePricingBomDraftChange}
-                    disabled={pricingBomPending}
+                    disabled={pricingBomPending || !canManagePricingBom}
                   />
                   {pricingBomDraft ? (
                     <span className="text-[11px] normal-case tracking-normal text-slate-500">
@@ -7141,7 +7210,7 @@ export default function NewRfq() {
                     value={pricingBomNote}
                     onChange={(event) => setPricingBomNote(event.target.value)}
                     placeholder="Describe the costing BOM package..."
-                    disabled={pricingBomPending}
+                    disabled={pricingBomPending || !canManagePricingBom}
                   />
                 </label>
                 <div className="chat-modal-actions justify-end">
@@ -7156,7 +7225,7 @@ export default function NewRfq() {
                   <button
                     type="submit"
                     className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={pricingBomPending}
+                    disabled={pricingBomPending || !canManagePricingBom}
                   >
                     {pricingBomPending ? "Uploading..." : "Upload and save"}
                   </button>
@@ -7206,7 +7275,7 @@ export default function NewRfq() {
                     className="input-field"
                     type="file"
                     onChange={handlePricingFinalPriceDraftChange}
-                    disabled={pricingFinalPricePending}
+                    disabled={pricingFinalPricePending || !canManagePricingFinalPrice}
                   />
                   {pricingFinalPriceDraft ? (
                     <span className="text-[11px] normal-case tracking-normal text-slate-500">
@@ -7221,7 +7290,7 @@ export default function NewRfq() {
                     value={pricingFinalPriceNote}
                     onChange={(event) => setPricingFinalPriceNote(event.target.value)}
                     placeholder="Describe the final pricing package..."
-                    disabled={pricingFinalPricePending}
+                    disabled={pricingFinalPricePending || !canManagePricingFinalPrice}
                   />
                 </label>
                 <div className="chat-modal-actions justify-end">
@@ -7236,7 +7305,7 @@ export default function NewRfq() {
                   <button
                     type="submit"
                     className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={pricingFinalPricePending}
+                    disabled={pricingFinalPricePending || !canManagePricingFinalPrice}
                   >
                     {pricingFinalPricePending ? "Uploading..." : "Upload file"}
                   </button>
@@ -7287,7 +7356,7 @@ export default function NewRfq() {
                     value={pricingFileRejectReason}
                     onChange={(event) => setPricingFileRejectReason(event.target.value)}
                     placeholder="Explain why this pricing file is rejected..."
-                    disabled={pricingFileValidationActionId === "reject"}
+                    disabled={pricingFileValidationActionId === "reject" || !canValidatePricingFile}
                   />
                 </label>
                 <div className="chat-modal-actions justify-end">
@@ -7303,7 +7372,7 @@ export default function NewRfq() {
                     type="button"
                     className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-2xl border border-red-300 bg-red-500 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:border-red-400 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={handleConfirmPricingFileReject}
-                    disabled={pricingFileValidationActionId === "reject"}
+                    disabled={pricingFileValidationActionId === "reject" || !canValidatePricingFile}
                   >
                     <X className="h-4 w-4" />
                     {pricingFileValidationActionId === "reject" ? "Rejecting..." : "Reject"}
