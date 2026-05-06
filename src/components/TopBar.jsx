@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { BarChart3 } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
 import { clearSession, getCurrentUserRole, getUserProfile } from "../utils/session.js";
 
@@ -7,6 +8,7 @@ export default function TopBar({ title, action }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
+  const location = useLocation();
   const profile = getUserProfile();
   const storedEmail = profile.email;
   const storedRole = getCurrentUserRole();
@@ -14,7 +16,6 @@ export default function TopBar({ title, action }) {
   const displayName = storedName || "User";
   const displayEmail = storedEmail && storedEmail !== displayName ? storedEmail : "";
   const isOwner = storedRole === "OWNER";
-  const roleLabel = storedRole || "User";
   const initials = displayName
     .split(" ")
     .filter(Boolean)
@@ -26,6 +27,8 @@ export default function TopBar({ title, action }) {
   const handleSignOut = () => {
     clearSession();
   };
+
+  const isKpiRoute = location.pathname.startsWith("/kpis");
 
   useEffect(() => {
     if (!menuOpen) {
@@ -72,6 +75,18 @@ export default function TopBar({ title, action }) {
         </div>
         <div className="flex items-center gap-3">
           {action}
+          <Link
+            to="/kpis"
+            className={[
+              "inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition",
+              isKpiRoute
+                ? "border-tide/70 bg-gradient-to-r from-tide to-mint text-white"
+                : "border-slate-200 bg-white/90 text-slate-600 hover:border-tide/40 hover:text-tide hover:shadow-md"
+            ].join(" ")}
+          >
+            <BarChart3 className="h-4 w-4" />
+            Dashboard
+          </Link>
           <div className="relative w-full sm:w-auto">
             <button
               type="button"

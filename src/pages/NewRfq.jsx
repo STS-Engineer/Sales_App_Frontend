@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { renderAsync } from "docx-preview";
 import { Check, Eye, Files, MessageSquare, Pencil, SendHorizontal, Trash2, Upload, X } from "lucide-react";
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -13,7 +14,9 @@ import {
   authorizedFetch,
   createRfq,
   downloadCostingTemplate,
+  downloadOfferTemplate,
   deleteRfqFile,
+  editOfferChatMessage,
   editRfqChatMessage,
   getCostingMessages,
   getRfqAuditLogs,
@@ -24,6 +27,7 @@ import {
   proceedToFormalRfq,
   requestRevision,
   sendChat,
+  sendOfferChat,
   sendPotentialChat,
   submitCostingFileAction,
   submitCostingReview,
@@ -407,6 +411,9 @@ const RFQ_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
 const POTENTIAL_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your potential opportunity assistant. I'll help you assess this opportunity before we open the formal RFQ.\n1. Guide me step by step\n2. I will provide a whole paragraph";
+const OFFER_CHATBOT_GREETING_PREFIX = "Hello, I'm your offer preparation assistant.";
+const OFFER_CHATBOT_INITIAL_GREETING =
+  "Hello, I'm your offer preparation assistant. I can help you review the fields used in the offer Word template. Tell me what you want to update, or ask me to check what is still missing.";
 const SELF_REVISION_REQUEST_COMMENT = "Self-update initiated by assigned validator.";
 const SHARED_POTENTIAL_FIELDS = [
   { key: "potentialCustomer", label: "customer" },
@@ -982,6 +989,8 @@ const formatFileSize = (value) => {
 };
 
 const normalizeEmailValue = (value) => String(value || "").trim().toLowerCase();
+const normalizeOfferSubPhase = (value) =>
+  String(value || "").trim() === "Offer validation" ? "Offer preparation" : value;
 
 const normalizeDiscussionMessage = (entry, index = 0) => {
   const content = String(entry?.content || entry?.message || "").trim();
@@ -1113,11 +1122,15 @@ const withInitialChatMessage = (messages = [], greeting) => {
     return [{ ...initialMessage }];
   }
 
-  const hasInitialGreeting = messages.some(
-    (message) =>
-      message?.role === "assistant" &&
-      String(message.content || "").trim() === greeting
-  );
+  const normalizedGreeting = String(greeting || "").trim();
+  const isOfferGreeting = normalizedGreeting.startsWith(OFFER_CHATBOT_GREETING_PREFIX);
+  const hasInitialGreeting = messages.some((message) => {
+    if (message?.role !== "assistant") return false;
+    const normalizedMessage = String(message.content || "").trim();
+    if (!normalizedMessage) return false;
+    if (normalizedMessage === normalizedGreeting) return true;
+    return isOfferGreeting && normalizedMessage.startsWith(OFFER_CHATBOT_GREETING_PREFIX);
+  });
 
   return hasInitialGreeting
     ? messages
@@ -1463,6 +1476,7 @@ export default function NewRfq() {
   const [rfqCreatorEmail, setRfqCreatorEmail] = useState("");
   const [potentialChatMessages, setPotentialChatMessages] = useState([]);
   const [rfqChatMessages, setRfqChatMessages] = useState([]);
+  const [offerChatMessages, setOfferChatMessages] = useState([]);
   const [loadingRfq, setLoadingRfq] = useState(false);
   const [rfqError, setRfqError] = useState("");
   const [rfqSubStatus, setRfqSubStatus] = useState("");
@@ -1532,6 +1546,10 @@ export default function NewRfq() {
   const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
   const [templatePreviewFilename, setTemplatePreviewFilename] = useState("");
   const [templatePreviewModalOpen, setTemplatePreviewModalOpen] = useState(false);
+  const [offerTemplatePreviewPending, setOfferTemplatePreviewPending] = useState(false);
+  const [offerTemplateDownloadPending, setOfferTemplateDownloadPending] = useState(false);
+  const [offerTemplateReady, setOfferTemplateReady] = useState(false);
+  const [offerTemplateFilename, setOfferTemplateFilename] = useState("");
   const [costingReviewActionId, setCostingReviewActionId] = useState("");
   const [costingRejectModalOpen, setCostingRejectModalOpen] = useState(false);
   const [costingRejectReason, setCostingRejectReason] = useState("");
@@ -1550,6 +1568,7 @@ export default function NewRfq() {
   const [costingFeasabilitySaved, setCostingFeasabilitySaved] = useState(false);
   const [pendingRfqAutofillReveal, setPendingRfqAutofillReveal] = useState(null);
   const rfqFileInputRef = useRef(null);
+  const offerTemplateViewerRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
   const resizeState = useRef({ startX: 0, startWidth: 420 });
@@ -1722,11 +1741,17 @@ export default function NewRfq() {
   const activeChatGreeting =
     activeRfqTab === "potential"
       ? POTENTIAL_CHATBOT_INITIAL_GREETING
+      : isOfferStage
+        ? OFFER_CHATBOT_INITIAL_GREETING
       : isRevisionModeActive && activeRfqTab === "new"
         ? buildRevisionGreeting(revisionNotes)
         : RFQ_CHATBOT_INITIAL_GREETING;
   const activeChatMessages =
-    activeRfqTab === "potential" ? potentialChatMessages : rfqChatMessages;
+    activeRfqTab === "potential"
+      ? potentialChatMessages
+      : isOfferStage
+        ? offerChatMessages
+        : rfqChatMessages;
   const activeChatMessagesWithMeta = useMemo(
     () => activeChatMessages.map((message, index) => ({ ...message, chatEditIndex: index })),
     [activeChatMessages]
@@ -1818,6 +1843,9 @@ export default function NewRfq() {
     if (stageKey === "RFQ" && isCancelledAfterRfqValidation) {
       return "Validation";
     }
+    if (stageKey === "Offer") {
+      return normalizeOfferSubPhase(activeSubPhase);
+    }
     return activeSubPhase;
   };
   const rfqDisplaySubPhase = isRfqStage
@@ -1869,6 +1897,15 @@ export default function NewRfq() {
     isCostingStage && costingDisplaySubPhase === "Feasability";
   const isCostingPricingView =
     isCostingStage && costingDisplaySubPhase === "Pricing";
+  const offerDisplaySubPhase = isOfferStage
+    ? normalizeOfferSubPhase(
+      selectedSubPhase || getActiveDisplaySubPhase("Offer") || "Offer preparation"
+    )
+    : "";
+  const isOfferPreparationView =
+    isOfferStage && offerDisplaySubPhase === "Offer preparation";
+  const isOfferValidationLocked =
+    isOfferStage && String(rfqSubStatus || "").trim().toUpperCase() === "VALIDATION";
   const hasCompletedCostingFileAction = Boolean(
     effectiveCostingFileState?.fileStatus &&
     effectiveCostingFileState.fileStatus !== "PENDING"
@@ -1983,14 +2020,24 @@ export default function NewRfq() {
     hasValidationLock && !rfqFormEditEnabled;
   const lockNewRfqFields = !isRevisionModeActive;
   const potentialFieldReadOnly = true;
+  const isOfferChatReadOnly =
+    !canUseOfferActions || isOfferValidationLocked;
   const isChatLocked =
-    isChatOnly ||
-    !canUseRfqActions ||
-    hasValidationLock ||
-    proceedingToFormalRfq ||
-    isPotentialAssistantLocked;
+    isOfferStage
+      ? isOfferChatReadOnly
+      : (
+        isChatOnly ||
+        !canUseRfqActions ||
+        hasValidationLock ||
+        proceedingToFormalRfq ||
+        isPotentialAssistantLocked
+      );
   const chatReadOnlyMessage =
-    !canUseRfqActions
+    isOfferStage
+      ? !canUseOfferActions
+        ? "This offer phase is read-only for your role"
+        : "Offer preparation is read-only while the RFQ is in offer validation"
+      : !canUseRfqActions
       ? "This phase is read-only for your role"
       : isPotentialAssistantLocked && activeRfqTab === "potential"
         ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
@@ -2001,7 +2048,8 @@ export default function NewRfq() {
   const showRfqStepNavigation =
     activeRfqTab === "new" && isRfqStage && isRfqFormView;
   const showChatPanel =
-    isRfqStage && !isRfqValidationView && activeRfqTab !== "files";
+    (isRfqStage && !isRfqValidationView && activeRfqTab !== "files") ||
+    isOfferStage;
   const activeDiscussionPhase = useMemo(() => {
     if (activeRfqTab === "potential") return "POTENTIAL";
     if (activeRfqTab === "new") return "NEW_RFQ";
@@ -2197,6 +2245,12 @@ export default function NewRfq() {
       setSelectedSubPhase("Feasability");
     }
   }, [canOpenCostingPricing, isCostingStage, selectedSubPhase]);
+
+  useEffect(() => {
+    if (selectedStage === "Offer" && selectedSubPhase === "Offer validation") {
+      setSelectedSubPhase("Offer preparation");
+    }
+  }, [selectedStage, selectedSubPhase]);
 
   useEffect(() => {
     const previousCompletion = previousStepCompletionRef.current;
@@ -2410,6 +2464,12 @@ export default function NewRfq() {
       setPotentialChatMessages((prev) =>
         mergeChatWithAttachments(
           mapChatHistory(rfq?.potential?.chat_history),
+          prev
+        )
+      );
+      setOfferChatMessages((prev) =>
+        mergeChatWithAttachments(
+          mapChatHistory(rfq?.offer_preparation?.chat_history),
           prev
         )
       );
@@ -2741,7 +2801,38 @@ export default function NewRfq() {
       }
       return "";
     });
+    if (offerTemplateViewerRef.current) {
+      offerTemplateViewerRef.current.innerHTML = "";
+    }
+    setOfferTemplateReady(false);
+    setOfferTemplateFilename("");
+    setOfferTemplatePreviewPending(false);
+    setOfferTemplateDownloadPending(false);
   }, [rfqId]);
+
+  useEffect(() => {
+    if (!rfqId || !isOfferPreparationView) return;
+    loadOfferTemplatePreview();
+  }, [
+    form.contactEmail,
+    form.contactName,
+    form.contactPhone,
+    form.customer,
+    form.customerPn,
+    form.expectedDeliveryConditions,
+    form.expectedPaymentTerms,
+    form.productName,
+    form.projectName,
+    form.qtyPerYear,
+    form.revisionLevel,
+    form.sop,
+    form.targetPrice,
+    form.targetPriceCurrency,
+    form.targetPriceLocal,
+    form.typeOfPackaging,
+    isOfferPreparationView,
+    rfqId
+  ]);
 
   const handleChange = (event) => {
     if (activeRfqTab === "potential" && potentialFieldReadOnly) {
@@ -2956,6 +3047,9 @@ export default function NewRfq() {
     ) {
       return;
     }
+    if (stageKey === "Offer" && subPhase === "Offer validation") {
+      return;
+    }
     if (stageKey === "RFQ" && subPhase === "Validation") {
       setRfqValidationReached(true);
       setRfqFormEditEnabled(false);
@@ -3042,13 +3136,68 @@ export default function NewRfq() {
     return true;
   };
 
+  const handleOfferChatEdit = async (visibleMessageIndex, message) => {
+    if (!canUseOfferActions) return false;
+    const trimmedMessage = String(message || "").trim();
+    if (!trimmedMessage) return false;
+
+    let currentRfqId = rfqId;
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      setRfqError("Unable to update this offer chat message right now.");
+      return false;
+    }
+
+    const previousMessages = offerChatMessages;
+    const nextMessages = offerChatMessages.slice(0, visibleMessageIndex);
+    setRfqError("");
+    setOfferChatMessages([
+      ...nextMessages,
+      { role: "user", content: trimmedMessage }
+    ]);
+
+    let finalAssistantResponse = "";
+    try {
+      const reply = await editOfferChatMessage(currentRfqId, {
+        visibleMessageIndex,
+        message: trimmedMessage
+      });
+      finalAssistantResponse = String(reply?.response || "");
+      if (reply?.rfq) {
+        applyRfq(reply.rfq);
+      }
+    } catch (error) {
+      setOfferChatMessages(previousMessages);
+      setRfqError(error?.message || "Unable to update this offer chat message.");
+      return false;
+    }
+
+    const synced = await syncRfq(currentRfqId);
+    await loadOfferTemplatePreview();
+    if (!synced && finalAssistantResponse) {
+      setOfferChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: finalAssistantResponse }
+      ]);
+    }
+    return true;
+  };
+
   const handleChatSend = async (message, attachments = []) => {
-    if (!canUseRfqActions) return;
-    const activeChatMode = activeRfqTab === "potential" ? "potential" : "rfq";
+    if (isOfferStage ? !canUseOfferActions : !canUseRfqActions) return;
+    const activeChatMode =
+      activeRfqTab === "potential"
+        ? "potential"
+        : isOfferStage
+          ? "offer"
+          : "rfq";
     const setActiveChatMessages =
       activeChatMode === "potential"
         ? setPotentialChatMessages
-        : setRfqChatMessages;
+        : activeChatMode === "offer"
+          ? setOfferChatMessages
+          : setRfqChatMessages;
     const trimmedMessage = message ? message.trim() : "";
     const attachmentNames = (attachments || [])
       .map((attachment) => attachment.name || attachment.file?.name)
@@ -3128,13 +3277,15 @@ export default function NewRfq() {
       const reply =
         activeChatMode === "potential"
           ? await sendPotentialChat(currentRfqId, payloadMessage)
-          : await sendChat(currentRfqId, payloadMessage, "rfq");
+          : activeChatMode === "offer"
+            ? await sendOfferChat(currentRfqId, payloadMessage, attachmentNames)
+            : await sendChat(currentRfqId, payloadMessage, activeChatMode);
       shouldAutoRedirect = Boolean(reply?.auto_redirect);
       finalAssistantResponse = String(reply?.response || "");
       replyRfq = reply?.rfq || null;
       if (replyRfq) {
         applyRfq(replyRfq, {
-          revealUpdatedRfqFields: activeChatMode === "rfq"
+          revealUpdatedRfqFields: activeChatMode !== "potential"
         });
       }
     } catch {
@@ -3147,8 +3298,11 @@ export default function NewRfq() {
       ]);
     } finally {
       const synced = await syncRfq(currentRfqId, {
-        revealUpdatedRfqFields: activeChatMode === "rfq" && !replyRfq
+        revealUpdatedRfqFields: activeChatMode !== "potential" && !replyRfq
       });
+      if (activeChatMode === "offer" && currentRfqId) {
+        await loadOfferTemplatePreview();
+      }
       if (!synced && finalAssistantResponse && !replyRfq) {
         setActiveChatMessages((prev) => [
           ...prev,
@@ -3385,6 +3539,68 @@ export default function NewRfq() {
       link.remove();
     } finally {
       setTemplateDownloadPending(false);
+    }
+  };
+
+  const loadOfferTemplatePreview = async () => {
+    if (!rfqId || offerTemplatePreviewPending) return null;
+    setOfferTemplatePreviewPending(true);
+    setRfqError("");
+    try {
+      const { blob, filename } = await downloadOfferTemplate(rfqId);
+      const nextFilename = String(filename || "offer_preparation_template.docx");
+      if (offerTemplateViewerRef.current) {
+        offerTemplateViewerRef.current.innerHTML = "";
+        const buffer = await blob.arrayBuffer();
+        await renderAsync(buffer, offerTemplateViewerRef.current, undefined, {
+          className: "offer-docx",
+          inWrapper: true,
+          breakPages: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          ignoreFonts: false,
+          ignoreLastRenderedPageBreak: false,
+          renderHeaders: true,
+          renderFooters: true,
+          renderFootnotes: true,
+          renderEndnotes: true,
+          renderAltChunks: true,
+          useBase64URL: true
+        });
+      }
+      setOfferTemplateReady(true);
+      setOfferTemplateFilename(nextFilename);
+      return { filename: nextFilename };
+    } catch (error) {
+      if (offerTemplateViewerRef.current) {
+        offerTemplateViewerRef.current.innerHTML = "";
+      }
+      setOfferTemplateReady(false);
+      setRfqError(error?.message || "Unable to load the offer preparation preview.");
+      return null;
+    } finally {
+      setOfferTemplatePreviewPending(false);
+    }
+  };
+
+  const handleDownloadOfferPreparationTemplate = async () => {
+    if (!rfqId || offerTemplateDownloadPending) return;
+    setOfferTemplateDownloadPending(true);
+    setRfqError("");
+    try {
+      const { blob, filename } = await downloadOfferTemplate(rfqId);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename || offerTemplateFilename || "offer_preparation_template.docx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      setRfqError(error?.message || "Unable to download the offer preparation document.");
+    } finally {
+      setOfferTemplateDownloadPending(false);
     }
   };
 
@@ -3992,9 +4208,12 @@ export default function NewRfq() {
                                           stage.key === "RFQ" && subPhase === "Validation";
                                         const isPricingSubPhase =
                                           stage.key === "In costing" && subPhase === "Pricing";
+                                        const isOfferValidationSubPhase =
+                                          stage.key === "Offer" && subPhase === "Offer validation";
                                         const isSubDisabled =
                                           (isValidationSubPhase && !canOpenRfqValidation) ||
-                                          (isPricingSubPhase && !canOpenCostingPricing);
+                                          (isPricingSubPhase && !canOpenCostingPricing) ||
+                                          isOfferValidationSubPhase;
                                         const currentSubPhaseIndex =
                                           stage.subPhases.indexOf(subPhase);
                                         const isSubComplete =
@@ -4044,6 +4263,8 @@ export default function NewRfq() {
                                                   ? holdSelfValidationPrompt
                                                     ? "Confirm the validator prompt to open this tab"
                                                     : "Submit the RFQ for validation to unlock this tab"
+                                                  : isOfferValidationSubPhase
+                                                    ? "This tab is locked for now"
                                                   : "Complete feasibility handoff to unlock this tab"
                                                 : `${stage.label} - ${subPhase}`
                                             }
@@ -5207,6 +5428,72 @@ export default function NewRfq() {
                       ) : null}
 
                     </section>
+                  ) : isOfferStage ? (
+                    <section className="card relative min-h-0 overflow-y-visible overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="max-w-3xl">
+                            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Offer</p>
+                            <h2 className="mt-2 font-display text-2xl text-ink sm:text-3xl">
+                              Offer preparation
+                            </h2>
+                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                              This is the exact filled DOCX rendered from your Word file offer_preparation_template.docx.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={loadOfferTemplatePreview}
+                              disabled={!rfqId || offerTemplatePreviewPending}
+                            >
+                              <Eye className="h-4 w-4" />
+                              {offerTemplatePreviewPending ? "Refreshing..." : "Refresh preview"}
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={handleDownloadOfferPreparationTemplate}
+                              disabled={!rfqId || offerTemplateDownloadPending}
+                            >
+                              <Files className="h-4 w-4" />
+                              {offerTemplateDownloadPending ? "Preparing DOCX..." : "Download DOCX"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex min-h-[520px] flex-1 flex-col rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-soft">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-2 pb-4">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Template viewer
+                            </p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              {offerTemplateFilename || "offer_preparation_template.docx"}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                            {isOfferValidationLocked ? "Read-only" : "Preparation mode"}
+                          </span>
+                        </div>
+
+                        <div className="relative mt-4 flex-1 overflow-hidden rounded-[24px] border border-slate-200/80 bg-slate-50/70">
+                          <div
+                            ref={offerTemplateViewerRef}
+                            className="h-full min-h-[720px] overflow-auto bg-slate-100 p-4"
+                          />
+                          {!offerTemplateReady ? (
+                            <div className="absolute inset-0 flex min-h-[420px] items-center justify-center bg-slate-50/80 px-6 text-center text-sm font-medium text-slate-500">
+                              {offerTemplatePreviewPending
+                                ? "Preparing the offer template preview..."
+                                : "Open the Offer stage on a saved RFQ to generate the preview."}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </section>
                   ) : (
                     <div className="col-span-full flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200/80 bg-white/70 text-sm font-medium text-slate-500">
                       Empty stage
@@ -6366,14 +6653,28 @@ export default function NewRfq() {
                         <ChatPanel
                           messages={chatFeed}
                           onSend={handleChatSend}
-                          onEditMessage={activeRfqTab === "new" ? handleRfqChatEdit : undefined}
+                          onEditMessage={
+                            isOfferStage
+                              ? handleOfferChatEdit
+                              : activeRfqTab === "new"
+                                ? handleRfqChatEdit
+                                : undefined
+                          }
                           readOnly={isChatLocked}
                           readOnlyMessage={chatReadOnlyMessage}
                           onCollapse={() => setChatCollapsed(true)}
-                          eyebrow={activeRfqTab === "potential" ? "Potential" : "Chatbot"}
+                          eyebrow={
+                            activeRfqTab === "potential"
+                              ? "Potential"
+                              : isOfferStage
+                                ? "Offer"
+                                : "Chatbot"
+                          }
                           title={
                             activeRfqTab === "potential"
                               ? "Potential Assistant"
+                              : isOfferStage
+                                ? "Offer Assistant"
                               : "RFQ Assistant"
                           }
                         />

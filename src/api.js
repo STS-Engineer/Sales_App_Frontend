@@ -359,10 +359,38 @@ export async function downloadCostingTemplate(rfqId) {
   return requestBinary(`/api/rfq/${encodeURIComponent(rfqId)}/costing-template`);
 }
 
+export async function getOfferTemplatePreview(rfqId) {
+  return request(
+    `/api/rfq/${encodeURIComponent(rfqId)}/offer-template/preview`
+  );
+}
+
+export async function downloadOfferTemplate(rfqId) {
+  return requestBinary(`/api/rfq/${encodeURIComponent(rfqId)}/offer-template`);
+}
+
 export async function sendChat(rfqId, message, chatMode = "rfq") {
   return request("/api/chat", {
     method: "POST",
     body: { rfq_id: rfqId, message, chat_mode: chatMode }
+  });
+}
+
+export async function sendOfferChat(rfqId, message, attachmentNames = []) {
+  return request("/api/chat/offer", {
+    method: "POST",
+    body: { rfq_id: rfqId, message, attachment_names: attachmentNames }
+  });
+}
+
+export async function editOfferChatMessage(rfqId, payload) {
+  return request("/api/chat/offer/edit", {
+    method: "POST",
+    body: {
+      rfq_id: rfqId,
+      visible_message_index: payload.visibleMessageIndex,
+      message: payload.message
+    }
   });
 }
 
