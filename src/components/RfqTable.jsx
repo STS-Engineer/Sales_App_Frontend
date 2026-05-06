@@ -8,6 +8,7 @@ const statusStyles = {
   "In costing": "border-sun/40 bg-sun/15 text-sun",
   Feasability: "border-sun/40 bg-sun/15 text-sun",
   Pricing: "border-sun/40 bg-sun/15 text-sun",
+  "RFI completed": "border-emerald-200 bg-emerald-50 text-emerald-700",
   Offer: "border-ink/25 bg-ink/10 text-ink",
   "Offer preparation": "border-ink/25 bg-ink/10 text-ink",
   "Offer validation": "border-mint/40 bg-mint/15 text-mint",
@@ -29,7 +30,20 @@ const statusStyles = {
 };
 
 const statusLabels = {
+  "New RFQ": "New request",
   Validation: "Pending for validation"
+};
+
+const documentTypeStyles = {
+  RFQ: "border-tide/30 bg-tide/10 text-tide",
+  RFI: "border-coral/30 bg-coral/10 text-coral",
+  POTENTIAL: "border-sun/40 bg-sun/15 text-sun"
+};
+
+const documentTypeLabels = {
+  RFQ: "RFQ",
+  RFI: "RFI",
+  POTENTIAL: "Potential"
 };
 
 const formatToTotal = (value) => {
@@ -54,10 +68,10 @@ export default function RfqTable({
 }) {
   const minWidthClass =
     showValidatorColumn && showPhaseColumn
-      ? "min-w-[1140px]"
+      ? "min-w-[1220px]"
       : showValidatorColumn || showPhaseColumn
-        ? "min-w-[1040px]"
-        : "min-w-[900px]";
+        ? "min-w-[1120px]"
+        : "min-w-[980px]";
 
   return (
     <div className="card overflow-hidden">
@@ -65,7 +79,8 @@ export default function RfqTable({
         <table className={`w-full text-left text-sm ${minWidthClass}`}>
           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
             <tr>
-              <th className="px-4 py-4">RFQ ID</th>
+              <th className="px-4 py-4">Document ID</th>
+              <th className="px-4 py-4">Type</th>
               <th className="px-4 py-4">Customer</th>
               <th className="px-4 py-4">Creator</th>
               <th className="px-4 py-4">Product name</th>
@@ -91,6 +106,16 @@ export default function RfqTable({
                 <td className="px-4 py-4 font-semibold text-ink">
                   <span className="block max-w-[150px] truncate">
                     {row.displayId || row.id}
+                  </span>
+                </td>
+                <td className="px-4 py-4">
+                  <span
+                    className={`badge ${
+                      documentTypeStyles[row.documentType] ||
+                      "border-slate-300 bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {documentTypeLabels[row.documentType] || row.documentType || "RFQ"}
                   </span>
                 </td>
                 <td className="px-4 py-4 font-medium text-slate-700">
@@ -158,7 +183,7 @@ export default function RfqTable({
                     className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:shadow-sm"
                     style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
                   >
-                    Open RFQ
+                    Open
                   </Link>
                 </td>
               </tr>

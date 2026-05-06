@@ -1,9 +1,9 @@
 const STATUS_MAP = {
-  DRAFT_GRP_1: "Potential",
+  DRAFT_GRP_1: "New RFQ",
   DRAFT_GRP_2: "New RFQ",
   DRAFT_GRP_3: "New RFQ",
   PENDING_VALIDATION: "Validation",
-  POTENTIAL: "Potential",
+  POTENTIAL: "New RFQ",
   NEW_RFQ: "New RFQ",
   PENDING_FOR_VALIDATION: "Validation",
   REVISION_REQUESTED: "Validation",
@@ -30,6 +30,7 @@ const STATUS_MAP = {
   MISSION_ACCEPTED: "Mission accepted",
   MISSION_NOT_ACCEPTED: "Mission not accepted",
   PO_SECURED: "PO accepted",
+  RFI_COMPLETED: "RFI completed",
   REJECTED: "Mission not accepted",
   LOST: "Lost",
   CANCELED: "Cancelled",
@@ -68,6 +69,7 @@ const PIPELINE_STAGE_MAP = {
   MISSION_ACCEPTED: "Mission accepted",
   MISSION_NOT_ACCEPTED: "Mission not accepted",
   PO_SECURED: "PO accepted",
+  RFI_COMPLETED: "In costing",
   REJECTED: "Mission not accepted",
   LOST: "Lost",
   CANCELED: "Cancelled",
@@ -137,6 +139,118 @@ export const sanitizeNumberForInput = (value) => {
   return Number.isNaN(parsed) ? "" : parsed;
 };
 
+export const createEmptyProductItem = () => ({
+  partNumber: "",
+  revisionLevel: "",
+  quantity: "",
+  targetPrice: "",
+  targetTo: ""
+});
+
+const pickNonEmptyValue = (...values) => {
+  for (const value of values) {
+    if (value === 0 || value === false) return value;
+    if (value === null || value === undefined) continue;
+    if (typeof value === "string" && value.trim() === "") continue;
+    return value;
+  }
+  return undefined;
+};
+
+export const calculateProductTargetTo = (product = {}) => {
+  const quantity = sanitizeNumberForInput(product.quantity);
+  const targetPrice = sanitizeNumberForInput(product.targetPrice);
+  if (quantity === "" || targetPrice === "") return "";
+  const targetTo = Number(quantity) * Number(targetPrice);
+  return Number.isFinite(targetTo) ? targetTo : "";
+};
+
+export const calculateTotalTargetTo = (products = []) =>
+  products.reduce((total, product) => {
+    const targetTo = calculateProductTargetTo(product);
+    return total + (targetTo === "" ? 0 : Number(targetTo));
+  }, 0);
+
+const normalizeProductItem = (item = {}) => {
+  const partNumber = pickNonEmptyValue(
+    item.part_number,
+    item.partNumber,
+    item.customer_pn,
+    item.customerPn
+  );
+  const revisionLevel = pickNonEmptyValue(
+    item.revision_level,
+    item.revisionLevel,
+    item.revision
+  );
+  const quantity = sanitizeNumberForInput(
+    pickNonEmptyValue(
+      item.quantity,
+      item.qty,
+      item.annual_volume,
+      item.annualVolume,
+      item.qty_per_year,
+      item.qtyPerYear
+    )
+  );
+  const targetPrice = sanitizeNumberForInput(
+    pickNonEmptyValue(
+      item.target_price,
+      item.targetPrice,
+      item.target_price_eur,
+      item.targetPriceEur
+    )
+  );
+  const normalized = {
+    partNumber: partNumber ?? "",
+    revisionLevel: revisionLevel ?? "",
+    quantity,
+    targetPrice,
+    targetTo: ""
+  };
+  normalized.targetTo = calculateProductTargetTo(normalized);
+  return normalized;
+};
+
+const hasProductValue = (product = {}) =>
+  ["partNumber", "revisionLevel", "quantity", "targetPrice"].some((key) => {
+    const value = product[key];
+    return value === 0 || String(value ?? "").trim() !== "";
+  });
+
+export const normalizeProductsFromRfqData = (data = {}) => {
+  const rawProducts = Array.isArray(data.products) ? data.products : [];
+  const normalizedProducts = rawProducts
+    .map(normalizeProductItem)
+    .filter(hasProductValue);
+
+  if (normalizedProducts.length) {
+    return normalizedProducts;
+  }
+
+  const legacyProduct = normalizeProductItem({
+    part_number: data.customer_pn || data.customerPn,
+    revision_level: data.revision_level || data.revisionLevel,
+    quantity: data.annual_volume || data.qty_per_year || data.qtyPerYear,
+    target_price: data.target_price_eur || data.targetPrice
+  });
+  return hasProductValue(legacyProduct) ? [legacyProduct] : [createEmptyProductItem()];
+};
+
+export const normalizeProductsForPayload = (products = []) =>
+  (Array.isArray(products) ? products : [])
+    .map(normalizeProductItem)
+    .filter(hasProductValue)
+    .map((product) => ({
+      part_number: String(product.partNumber || "").trim(),
+      revision_level: String(product.revisionLevel || "").trim(),
+      quantity: product.quantity === "" ? null : Number(product.quantity),
+      target_price: product.targetPrice === "" ? null : Number(product.targetPrice),
+      target_to: calculateProductTargetTo(product) === ""
+        ? null
+        : Number(calculateProductTargetTo(product))
+    }));
+
 const sanitizeIntegerForInput = (value) => {
   if (value === null || value === undefined) return "";
   const cleaned = String(value).replace(/[\s,]/g, "");
@@ -158,7 +272,7 @@ const resolveBackendStateKey = (rfqOrStatus) => {
  
 export const mapBackendStatusToUi = (rfqOrStatus) => {
   const raw = resolveBackendStateKey(rfqOrStatus);
-  if (!raw) return "Potential";
+  if (!raw) return "New RFQ";
   return STATUS_MAP[raw] || raw;
 };
  
@@ -191,6 +305,13 @@ export const mapRfqDataToForm = (rfq) => {
     }
     return undefined;
   };
+  const products = normalizeProductsFromRfqData(data);
+  const firstProduct = products[0] || createEmptyProductItem();
+  const productsHaveValues = products.some(hasProductValue);
+  const totalTargetTo = pickFirst(
+    data.total_target_to,
+    productsHaveValues ? calculateTotalTargetTo(products) : undefined
+  );
  
   return {
     id: rfq?.rfq_id || "",
@@ -201,8 +322,9 @@ export const mapRfqDataToForm = (rfq) => {
     productLine: pickFirst(data.product_line_acronym, data.product_name),
     projectName: pickFirst(data.project_name, data.projectName),
     costingData: pickFirst(data.costing_data, data.costingData),
-    customerPn: pickFirst(data.customer_pn, data.customerPn),
-    revisionLevel: pickFirst(data.revision_level, data.revisionLevel),
+    products,
+    customerPn: pickFirst(firstProduct.partNumber, data.customer_pn, data.customerPn),
+    revisionLevel: pickFirst(firstProduct.revisionLevel, data.revision_level, data.revisionLevel),
     deliveryZone: pickFirst(data.delivery_zone, data.deliveryZone),
     plant: pickFirst(data.delivery_plant, data.plant),
     country: pickFirst(data.country),
@@ -216,7 +338,7 @@ export const mapRfqDataToForm = (rfq) => {
       pickFirst(data.sop_year, data.sop)
     ),
     qtyPerYear: sanitizeIntegerForInput(
-      pickFirst(data.annual_volume, data.qty_per_year, data.qtyPerYear)
+      pickFirst(firstProduct.quantity, data.annual_volume, data.qty_per_year, data.qtyPerYear)
     ),
     rfqReceptionDate: sanitizeDateForInput(
       pickFirst(data.rfq_reception_date, data.rfqReceptionDate)
@@ -229,7 +351,7 @@ export const mapRfqDataToForm = (rfq) => {
     contactPhone: pickFirst(data.contact_phone, data.contactPhone),
     contactEmail: pickFirst(data.contact_email, data.contactEmail),
     targetPrice: sanitizeNumberForInput(
-      pickFirst(data.target_price_eur, data.targetPrice)
+      pickFirst(firstProduct.targetPrice, data.target_price_eur, data.targetPrice)
     ),
     targetPriceLocal: sanitizeNumberForInput(
       pickFirst(data.target_price_local, data.targetPriceLocal)
@@ -288,7 +410,7 @@ export const mapRfqDataToForm = (rfq) => {
       data.finalRecommendation
     ),
     toTotal: sanitizeNumberForInput(
-      pickFirst(data.to_total, data.toTotal)
+      pickFirst(data.to_total, data.toTotal, totalTargetTo !== undefined ? Number(totalTargetTo) / 1000 : undefined)
     ),
     toTotalLocal: sanitizeNumberForInput(
       pickFirst(data.to_total_local, data.toTotalLocal)
@@ -404,7 +526,13 @@ export const mapPotentialToForm = (potential) => {
 export const mapRfqToRow = (rfq) => {
   const data = rfq?.rfq_data || {};
   const potential = rfq?.potential || {};
-  const toTotalRaw = data.to_total;
+  const totalTargetToRaw = data.total_target_to;
+  const totalTargetTo =
+    typeof totalTargetToRaw === "string" && totalTargetToRaw.trim() !== ""
+      ? Number(totalTargetToRaw)
+      : totalTargetToRaw;
+  const toTotalRaw =
+    data.to_total ?? (Number.isFinite(totalTargetTo) ? totalTargetTo / 1000 : undefined);
   const toTotal =
     typeof toTotalRaw === "string" && toTotalRaw.trim() !== ""
       ? Number(toTotalRaw)
@@ -412,6 +540,7 @@ export const mapRfqToRow = (rfq) => {
 
   return {
     id: rfq?.rfq_id,
+    documentType: normalizeDocumentTypeValue(rfq?.document_type),
     displayId: data.systematic_rfq_id || "Draft - Pending",
     creator: rfq?.created_by_email || "",
     customer: data.customer_name || potential.customer,
@@ -438,8 +567,29 @@ export const mapRfqToRow = (rfq) => {
   };
 };
 
-export const mapChatHistory = (history = []) =>
-  history
+const normalizeDocumentTypeValue = (value) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "RFI") return "RFI";
+  if (normalized === "POTENTIAL") return "POTENTIAL";
+  return "RFQ";
+};
+
+const normalizeInitialDocumentGreeting = (content, documentType) => {
+  const normalizedDocumentType = normalizeDocumentTypeValue(documentType);
+  if (normalizedDocumentType !== "RFI") return content;
+  const text = String(content || "");
+  const looksLikeInitialGreeting =
+    /sales assistant/i.test(text) ||
+    /how would you like to proceed/i.test(text) ||
+    /guide me step by step/i.test(text) ||
+    /whole paragraph/i.test(text);
+  return looksLikeInitialGreeting ? text.replace(/\bRFQ\b/g, "RFI") : text;
+};
+
+export const mapChatHistory = (history = [], documentType = "RFQ") => {
+  let firstAssistantChecked = false;
+
+  return history
     .filter(
       (entry) =>
         (entry?.role === "assistant" || entry?.role === "user") &&
@@ -447,4 +597,12 @@ export const mapChatHistory = (history = []) =>
         typeof entry?.content === "string" &&
         entry.content.trim() !== ""
     )
-    .map((entry) => ({ role: entry.role, content: entry.content }));
+    .map((entry) => {
+      let content = entry.content;
+      if (!firstAssistantChecked && entry.role === "assistant") {
+        content = normalizeInitialDocumentGreeting(content, documentType);
+        firstAssistantChecked = true;
+      }
+      return { role: entry.role, content };
+    });
+};
