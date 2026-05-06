@@ -11,17 +11,24 @@ const VIEW_OPTIONS = [
   { key: "global", label: "Global View" }
 ];
 
+const TYPE_FILTER_OPTIONS = [
+  { key: "all", label: "All types" },
+  { key: "RFQ", label: "RFQ" },
+  { key: "RFI", label: "RFI" },
+  { key: "POTENTIAL", label: "Potential" }
+];
+
 const PHASES = [
   {
     key: "RFQ",
-    label: "RFQ",
-    statuses: ["Potential", "New RFQ", "Validation", "Cancelled"],
-    subPhases: ["RFQ form", "Validation"]
+    label: "Request",
+    statuses: ["New RFQ", "Validation", "Cancelled"],
+    subPhases: ["Request form", "Validation"]
   },
   {
     key: "In costing",
     label: "In costing",
-    statuses: ["Feasability", "Pricing", "Cancelled"],
+    statuses: ["Feasability", "Pricing", "RFI completed", "Cancelled"],
     subPhases: ["Feasability", "Pricing"]
   },
   {
@@ -64,15 +71,16 @@ const phaseKeys = PHASES.map((phase) => phase.key);
 const knownStatuses = new Set(PHASES.flatMap((phase) => phase.statuses));
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
 const EXCLUDED_STATUSES = new Set(["Lost"]);
-const DEFAULT_SUBPHASE_STATUS = "Potential";
+const DEFAULT_SUBPHASE_STATUS = "New RFQ";
 const FILTER_STATUS_LABELS = {
+  "New RFQ": "New request",
   Validation: "Pending for validation"
 };
 
 const mapStatusToProgressSubPhase = (phaseKey, status) => {
   if (phaseKey === "RFQ") {
-    if (status === "Potential" || status === "New RFQ") {
-      return "RFQ form";
+    if (status === "New RFQ") {
+      return "Request form";
     }
     if (status === "Validation") {
       return "Validation";
@@ -122,6 +130,7 @@ const buildSearchHaystack = (rfq) =>
     rfq.location,
     rfq.validator,
     rfq.validatorRole,
+    rfq.documentType,
     rfq.status,
     rfq.pipelineStage,
     rfq.phaseKey,
@@ -160,6 +169,7 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState("detailed");
   const [activeStatus, setActiveStatus] = useState("RFQ");
   const [activeSubStatus, setActiveSubStatus] = useState("all");
+  const [activeTypeFilter, setActiveTypeFilter] = useState("all");
   const [globalPhaseFilter, setGlobalPhaseFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -176,7 +186,7 @@ export default function Dashboard() {
         }
       } catch (error) {
         setRfqs([]);
-        showToast("Unable to load RFQs. Please refresh.", {
+        showToast("Unable to load requests. Please refresh.", {
           type: "error",
           title: "Loading failed"
         });
@@ -199,6 +209,22 @@ export default function Dashboard() {
     [rfqsWithPhase]
   );
 
+  const typeFilteredDetailedRfqs = useMemo(
+    () =>
+      detailedRfqs.filter(
+        (rfq) => activeTypeFilter === "all" || rfq.documentType === activeTypeFilter
+      ),
+    [activeTypeFilter, detailedRfqs]
+  );
+
+  const typeFilteredGlobalRfqs = useMemo(
+    () =>
+      rfqsWithPhase.filter(
+        (rfq) => activeTypeFilter === "all" || rfq.documentType === activeTypeFilter
+      ),
+    [activeTypeFilter, rfqsWithPhase]
+  );
+
   const activePhase = PHASES.find((phase) => phase.key === activeStatus) || PHASES[0];
   const activeStatusIndex = Math.max(phaseKeys.indexOf(activePhase.key), 0);
   const subStatusOptions = activePhase.statuses;
@@ -206,7 +232,7 @@ export default function Dashboard() {
 
   const filteredDetailedRfqs = useMemo(
     () =>
-      detailedRfqs.filter((rfq) => {
+      typeFilteredDetailedRfqs.filter((rfq) => {
         const isTerminal = rfq.status === "Cancelled" || rfq.status === "Lost";
         if (isTerminal) {
           if (rfq.phaseKey !== activePhase.key) return false;
@@ -218,17 +244,17 @@ export default function Dashboard() {
         if (!normalizedSearchTerm) return true;
         return buildSearchHaystack(rfq).includes(normalizedSearchTerm);
       }),
-    [activePhase, activeSubStatus, detailedRfqs, normalizedSearchTerm]
+    [activePhase, activeSubStatus, normalizedSearchTerm, typeFilteredDetailedRfqs]
   );
 
   const filteredGlobalRfqs = useMemo(
     () =>
-      rfqsWithPhase.filter((rfq) => {
+      typeFilteredGlobalRfqs.filter((rfq) => {
         if (globalPhaseFilter !== "all" && rfq.phaseKey !== globalPhaseFilter) return false;
         if (!normalizedSearchTerm) return true;
         return buildSearchHaystack(rfq).includes(normalizedSearchTerm);
       }),
-    [globalPhaseFilter, normalizedSearchTerm, rfqsWithPhase]
+    [globalPhaseFilter, normalizedSearchTerm, typeFilteredGlobalRfqs]
   );
 
   const activeRows = viewMode === "global" ? filteredGlobalRfqs : filteredDetailedRfqs;
@@ -257,7 +283,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, globalPhaseFilter, rowsPerPage, searchTerm, viewMode]);
+  }, [activeSubStatus, activeTypeFilter, globalPhaseFilter, rowsPerPage, searchTerm, viewMode]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -349,37 +375,39 @@ export default function Dashboard() {
           <div className="app-shell rounded-[32px] border border-slate-200/70 p-5 shadow-card md:p-6 xl:p-7">
             <div className="flex flex-col gap-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="inline-flex rounded-2xl border border-slate-200 bg-white/80 p-1 shadow-soft">
-                  {VIEW_OPTIONS.map((view) => {
-                    const isActive = viewMode === view.key;
-                    return (
-                      <button
-                        key={view.key}
-                        type="button"
-                        onClick={() => setViewMode(view.key)}
-                        className={[
-                          "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                          isActive
-                            ? "text-white shadow-sm"
-                            : "text-slate-600 hover:bg-slate-100"
-                        ].join(" ")}
-                        style={
-                          isActive
-                            ? { backgroundColor: "#ef7807" }
-                            : undefined
-                        }
-                      >
-                        {view.label}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="inline-flex rounded-2xl border border-slate-200 bg-white/80 p-1 shadow-soft">
+                    {VIEW_OPTIONS.map((view) => {
+                      const isActive = viewMode === view.key;
+                      return (
+                        <button
+                          key={view.key}
+                          type="button"
+                          onClick={() => setViewMode(view.key)}
+                          className={[
+                            "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                            isActive
+                              ? "text-white shadow-sm"
+                              : "text-slate-600 hover:bg-slate-100"
+                          ].join(" ")}
+                          style={
+                            isActive
+                              ? { backgroundColor: "#ef7807" }
+                              : undefined
+                          }
+                        >
+                          {view.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
                     to="/rfqs/new"
                     className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft"
                   >
-                    + New RFQ
+                    + New request
                   </Link>
                 </div>
               </div>
@@ -463,7 +491,9 @@ export default function Dashboard() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Detailed View</p>
-                      <h2 className="font-display text-2xl text-ink">{activePhase.label}</h2>
+                      <h2 className="font-display text-2xl text-ink">
+                        Requests
+                      </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex w-full flex-col gap-1 sm:w-72">
@@ -486,10 +516,43 @@ export default function Dashboard() {
                           <input
                             className="input-field w-full pl-10"
                             type="search"
-                            placeholder="Search RFQs"
+                            placeholder="Search requests"
                             value={searchTerm}
                             onChange={(event) => setSearchTerm(event.target.value)}
                           />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end">
+                        <label
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          htmlFor="typeFilter"
+                        >
+                          Type
+                        </label>
+                        <div className="group relative">
+                          <select
+                            id="typeFilter"
+                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                            value={activeTypeFilter}
+                            onChange={(event) => setActiveTypeFilter(event.target.value)}
+                          >
+                            {TYPE_FILTER_OPTIONS.map((option) => (
+                              <option key={option.key} value={option.key}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-1 sm:self-end">
@@ -527,7 +590,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {filteredDetailedRfqs.length} RFQs
+                        {filteredDetailedRfqs.length} requests
                       </span>
                     </div>
                   </div>
@@ -543,7 +606,9 @@ export default function Dashboard() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Global View</p>
-                      <h2 className="font-display text-2xl text-ink">All RFQs</h2>
+                      <h2 className="font-display text-2xl text-ink">
+                        All requests
+                      </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex w-full flex-col gap-1 sm:w-72">
@@ -566,10 +631,43 @@ export default function Dashboard() {
                           <input
                             className="input-field w-full pl-10"
                             type="search"
-                            placeholder="Search all RFQs"
+                            placeholder="Search all requests"
                             value={searchTerm}
                             onChange={(event) => setSearchTerm(event.target.value)}
                           />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end">
+                        <label
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          htmlFor="globalTypeFilter"
+                        >
+                          Type
+                        </label>
+                        <div className="group relative">
+                          <select
+                            id="globalTypeFilter"
+                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                            value={activeTypeFilter}
+                            onChange={(event) => setActiveTypeFilter(event.target.value)}
+                          >
+                            {TYPE_FILTER_OPTIONS.map((option) => (
+                              <option key={option.key} value={option.key}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-1 sm:self-end">
@@ -607,7 +705,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {filteredGlobalRfqs.length} RFQs
+                        {filteredGlobalRfqs.length} requests
                       </span>
                     </div>
                   </div>

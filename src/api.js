@@ -6,7 +6,7 @@ import {
   setToken
 } from "./utils/session.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 300000;
 let refreshPromise = null;
 
@@ -261,8 +261,14 @@ export async function getMe() {
   return request("/api/auth/me");
 }
 
-export async function listRfqs() {
-  return request("/api/rfq");
+export async function listRfqs(documentType = "") {
+  const values = Array.isArray(documentType) ? documentType : [documentType];
+  const params = values
+    .map((value) => String(value || "").trim().toUpperCase())
+    .filter(Boolean)
+    .map((value) => `document_type=${encodeURIComponent(value)}`);
+  const query = params.length ? `?${params.join("&")}` : "";
+  return request(`/api/rfq${query}`);
 }
 
 export async function getRfq(rfqId) {
@@ -359,10 +365,15 @@ export async function downloadCostingTemplate(rfqId) {
   return requestBinary(`/api/rfq/${encodeURIComponent(rfqId)}/costing-template`);
 }
 
-export async function sendChat(rfqId, message, chatMode = "rfq") {
+export async function sendChat(rfqId, message, chatMode = "rfq", documentType = "RFQ") {
   return request("/api/chat", {
     method: "POST",
-    body: { rfq_id: rfqId, message, chat_mode: chatMode }
+    body: {
+      rfq_id: rfqId,
+      message,
+      chat_mode: chatMode,
+      document_type: documentType
+    }
   });
 }
 
