@@ -144,6 +144,8 @@ export const createEmptyProductItem = () => ({
   revisionLevel: "",
   quantity: "",
   targetPrice: "",
+  currency: "",
+  targetPriceIsEstimated: null,
   targetTo: ""
 });
 
@@ -155,6 +157,25 @@ const pickNonEmptyValue = (...values) => {
     return value;
   }
   return undefined;
+};
+
+const normalizeEstimatedFlag = (value) => {
+  if (value === true || value === false) return value;
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return null;
+  if (["true", "1", "yes", "y", "estimated", "estimated by avocarbon"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "n", "official", "official customer price", "given by customer"].includes(normalized)) {
+    return false;
+  }
+  return null;
 };
 
 export const calculateProductTargetTo = (product = {}) => {
@@ -201,11 +222,26 @@ const normalizeProductItem = (item = {}) => {
       item.targetPriceEur
     )
   );
+  const currency = pickNonEmptyValue(
+    item.currency,
+    item.target_price_currency,
+    item.targetPriceCurrency
+  );
+  const targetPriceIsEstimated = normalizeEstimatedFlag(
+    pickNonEmptyValue(
+      item.target_price_is_estimated,
+      item.targetPriceIsEstimated,
+      item.price_source,
+      item.priceSource
+    )
+  );
   const normalized = {
     partNumber: partNumber ?? "",
     revisionLevel: revisionLevel ?? "",
     quantity,
     targetPrice,
+    currency: String(currency || "").trim().toUpperCase(),
+    targetPriceIsEstimated,
     targetTo: ""
   };
   normalized.targetTo = calculateProductTargetTo(normalized);
@@ -213,15 +249,28 @@ const normalizeProductItem = (item = {}) => {
 };
 
 const hasProductValue = (product = {}) =>
-  ["partNumber", "revisionLevel", "quantity", "targetPrice"].some((key) => {
+  ["partNumber", "revisionLevel", "quantity", "targetPrice", "targetPriceIsEstimated"].some((key) => {
     const value = product[key];
     return value === 0 || String(value ?? "").trim() !== "";
   });
 
 export const normalizeProductsFromRfqData = (data = {}) => {
   const rawProducts = Array.isArray(data.products) ? data.products : [];
+  const legacyTargetPriceIsEstimated = pickNonEmptyValue(
+    data.target_price_is_estimated,
+    data.targetPriceIsEstimated
+  );
   const normalizedProducts = rawProducts
-    .map(normalizeProductItem)
+    .map((item) =>
+      normalizeProductItem({
+        ...item,
+        target_price_is_estimated: pickNonEmptyValue(
+          item?.target_price_is_estimated,
+          item?.targetPriceIsEstimated,
+          legacyTargetPriceIsEstimated
+        )
+      })
+    )
     .filter(hasProductValue);
 
   if (normalizedProducts.length) {
@@ -232,7 +281,9 @@ export const normalizeProductsFromRfqData = (data = {}) => {
     part_number: data.customer_pn || data.customerPn,
     revision_level: data.revision_level || data.revisionLevel,
     quantity: data.annual_volume || data.qty_per_year || data.qtyPerYear,
-    target_price: data.target_price_eur || data.targetPrice
+    target_price: data.target_price_eur || data.targetPrice,
+    currency: data.target_price_currency || data.targetPriceCurrency,
+    target_price_is_estimated: legacyTargetPriceIsEstimated
   });
   return hasProductValue(legacyProduct) ? [legacyProduct] : [createEmptyProductItem()];
 };
@@ -246,6 +297,8 @@ export const normalizeProductsForPayload = (products = []) =>
       revision_level: String(product.revisionLevel || "").trim(),
       quantity: product.quantity === "" ? null : Number(product.quantity),
       target_price: product.targetPrice === "" ? null : Number(product.targetPrice),
+      currency: String(product.currency || "").trim().toUpperCase(),
+      target_price_is_estimated: normalizeEstimatedFlag(product.targetPriceIsEstimated),
       target_to: calculateProductTargetTo(product) === ""
         ? null
         : Number(calculateProductTargetTo(product))
@@ -319,7 +372,7 @@ export const mapRfqDataToForm = (rfq) => {
     customer: pickFirst(data.customer_name, data.customer, data.client),
     application: pickFirst(data.application),
     productName: pickFirst(data.product_name, data.product_line_acronym),
-    productLine: pickFirst(data.product_line_acronym, data.product_name),
+    productLine: pickFirst(data.product_line_acronym) || "",
     projectName: pickFirst(data.project_name, data.projectName),
     costingData: pickFirst(data.costing_data, data.costingData),
     products,
@@ -356,8 +409,11 @@ export const mapRfqDataToForm = (rfq) => {
     targetPriceLocal: sanitizeNumberForInput(
       pickFirst(data.target_price_local, data.targetPriceLocal)
     ),
-    targetPriceCurrency: pickFirst(data.target_price_currency, data.targetPriceCurrency),
-    targetPriceIsEstimated: pickFirst(data.target_price_is_estimated, data.targetPriceIsEstimated),
+    targetPriceCurrency: pickFirst(
+      firstProduct.currency,
+      data.target_price_currency,
+      data.targetPriceCurrency
+    ),
     targetPriceNote: pickFirst(data.target_price_note, data.targetPriceNote),
     expectedDeliveryConditions: pickFirst(
       data.expected_delivery_conditions,
@@ -546,7 +602,7 @@ export const mapRfqToRow = (rfq) => {
     customer: data.customer_name || potential.customer,
     client: data.customer_name || potential.customer,
     productName: data.product_name || data.product_line_acronym,
-    productLine: data.product_line_acronym || data.product_name,
+    productLine: data.product_line_acronym || "",
     item: data.product_name || data.product_line_acronym,
     application: data.application || potential.application,
     deliveryZone: data.delivery_zone,

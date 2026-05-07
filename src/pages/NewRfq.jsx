@@ -6748,7 +6748,7 @@ export default function NewRfq() {
                               />
                               {form.targetPriceCurrency && form.targetPriceCurrency !== "EUR" && form.toTotal ? (
                                 <p className="mt-0.5 text-xs text-slate-400">
-                                  ≈ {form.toTotal} kEUR
+                                  ≈ {Number(form.toTotal).toFixed(2)} kEUR
                                 </p>
                               ) : null}
                             </div>
