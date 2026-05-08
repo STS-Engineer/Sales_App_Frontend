@@ -9,7 +9,6 @@ import {
   ChevronUp,
   Clock3,
   Layers3,
-  Plus,
   ShieldCheck,
   TrendingUp,
   Users
@@ -32,11 +31,11 @@ const compactFmt = new Intl.NumberFormat("en-US", { notation: "compact", maximum
 const intFmt     = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const decFmt     = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
-const fmtCompact  = (v) => compactFmt.format(Number(v || 0));
-const fmtPct      = (v) => `${decFmt.format(Number(v || 0))}%`;
-const fmtKeur     = (v) => `${decFmt.format(Number(v || 0))} kEUR`;
-const rfqLabel    = (v) => Math.abs(Number(v || 0)) === 1 ? "RFQ" : "RFQs";
-const fmtRfqCount = (v) => `${intFmt.format(Number(v || 0))} ${rfqLabel(v)}`;
+const fmtCompact      = (v) => compactFmt.format(Number(v || 0));
+const fmtPct          = (v) => `${decFmt.format(Number(v || 0))}%`;
+const fmtKeur         = (v) => `${decFmt.format(Number(v || 0))} kEUR`;
+const requestLabel    = (v) => Math.abs(Number(v || 0)) === 1 ? "request" : "requests";
+const fmtRequestCount = (v) => `${intFmt.format(Number(v || 0))} ${requestLabel(v)}`;
 
 /* ─── Color helpers ───────────────────────────────────────────────── */
 const hexRgba = (hex, a) => {
@@ -287,7 +286,7 @@ function PhaseComboChart({ segments, total, selectedLabel = "all", onSelectSegme
             x={tipX} y={6}
             lines={[
               active.label,
-              `${fmtRfqCount(active.value)} · ${fmtKeur(active.amount)}`
+              `${fmtRequestCount(active.value)} · ${fmtKeur(active.amount)}`
             ]}
           />
         </svg>
@@ -400,6 +399,195 @@ function PhasePieChart({ segments, total, selectedLabel = "all", onSelectSegment
 function polar(deg, r, cx, cy) {
   const rad = (deg * Math.PI) / 180;
   return { x: cx + Math.cos(rad) * r, y: cy + Math.sin(rad) * r };
+}
+
+function StackedDistributionChart({ data, selectedLabel = "all", onSelectLabel }) {
+  const [hover, setHover] = useState(null);
+  const columns = data?.columns || [];
+  const legend = data?.legend || [];
+  const maxV = Math.max(...columns.map((column) => column.total), 0);
+
+  if (!columns.length || maxV === 0) {
+    return <EmptyState h={250} label="No phase/status distribution for the current filters." />;
+  }
+
+  const W = 620, H = 260, PL = 38, PR = 12, PT = 18, PB = 64;
+  const IW = W - PL - PR, IH = H - PT - PB;
+  const ticks = 4;
+  const topV = Math.max(ticks, Math.ceil(maxV / ticks) * ticks);
+  const step = IW / Math.max(columns.length, 1);
+  const bW = Math.min(46, step * 0.42);
+  const tooltipWidth = 186;
+  const tooltipHeight = 48;
+  const tooltipX = hover
+    ? Math.min(Math.max(hover.x - tooltipWidth / 2, 10), W - tooltipWidth - 10)
+    : 0;
+  const tooltipY = hover ? Math.max(8, hover.y - tooltipHeight - 14) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {legend.map((item) => (
+          <span
+            key={item.label}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+          >
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-slate-100 bg-white/60 px-2 py-3 backdrop-blur-sm">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full overflow-visible">
+          {[0, 1, 2, 3, 4].map((i) => {
+            const value = Math.round((topV / ticks) * (ticks - i));
+            const y = PT + (IH / ticks) * i;
+            return (
+              <g key={i}>
+                <GridLine x1={PL} x2={PL + IW} y1={y} y2={y} />
+                <text x={PL - 6} y={y + 4} textAnchor="end" className={AXIS_TEXT}>
+                  {value}
+                </text>
+              </g>
+            );
+          })}
+
+          {columns.map((column, index) => {
+            const cx = PL + step * index + step / 2;
+            const zoneX = PL + step * index;
+            const barX = cx - bW / 2;
+            const totalHeight = (column.total / topV) * IH;
+            const barTop = PT + IH - totalHeight;
+            const isSelected = selectedLabel === column.label;
+            const isActive = hover?.column === column.label || isSelected;
+            let currentY = PT + IH;
+
+            return (
+              <g key={column.label}>
+                <rect
+                  x={zoneX}
+                  y={PT}
+                  width={step}
+                  height={IH + 32}
+                  rx="10"
+                  fill={isActive ? hexRgba("#0f172a", 0.03) : "transparent"}
+                  style={{ cursor: onSelectLabel ? "pointer" : "default" }}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => onSelectLabel?.(column.label)}
+                />
+
+                {column.segments.map((segment) => {
+                  const segmentHeight = (segment.value / topV) * IH;
+                  const segmentY = currentY - segmentHeight;
+                  currentY = segmentY;
+
+                  return (
+                    <rect
+                      key={`${column.label}-${segment.label}`}
+                      x={barX}
+                      y={segmentY}
+                      width={bW}
+                      height={segmentHeight}
+                      rx="4"
+                      fill={segment.color}
+                      opacity={
+                        hover && (hover.column !== column.label || hover.segment !== segment.label)
+                          ? 0.3
+                          : 1
+                      }
+                      style={{
+                        cursor: onSelectLabel ? "pointer" : "default",
+                        transition: "opacity 150ms"
+                      }}
+                      onMouseEnter={() =>
+                        setHover({
+                          column: column.label,
+                          segment: segment.label,
+                          value: segment.value,
+                          total: column.total,
+                          color: segment.color,
+                          x: cx,
+                          y: segmentY
+                        })
+                      }
+                      onClick={() => onSelectLabel?.(column.label)}
+                    />
+                  );
+                })}
+
+                {column.total > 0 ? (
+                  <text
+                    x={cx}
+                    y={barTop - 8}
+                    textAnchor="middle"
+                    className="fill-slate-500 text-[10px] font-semibold"
+                  >
+                    {intFmt.format(column.total)}
+                  </text>
+                ) : null}
+
+                {isSelected ? (
+                  <rect
+                    x={barX - 4}
+                    y={Math.max(PT, barTop - 6)}
+                    width={bW + 8}
+                    height={Math.max(totalHeight + 10, 16)}
+                    rx="8"
+                    fill="none"
+                    stroke="#046eaf"
+                    strokeWidth="1.5"
+                    strokeOpacity="0.3"
+                    strokeDasharray="4 3"
+                  />
+                ) : null}
+
+                <text
+                  x={cx}
+                  y={PT + IH + 20}
+                  textAnchor="middle"
+                  className={`text-[10px] font-semibold ${isActive ? "fill-ink" : "fill-slate-400"}`}
+                  style={{ transition: "fill 150ms" }}
+                >
+                  {column.label}
+                </text>
+              </g>
+            );
+          })}
+
+          {hover ? (
+            <g pointerEvents="none">
+              <rect
+                x={tooltipX}
+                y={tooltipY}
+                width={tooltipWidth}
+                height={tooltipHeight}
+                rx="14"
+                fill="rgba(255,255,255,0.98)"
+                stroke={hexRgba(hover.color, 0.72)}
+                strokeWidth="1.2"
+                style={{ filter: "drop-shadow(0 18px 32px rgba(15, 23, 42, 0.12))" }}
+              />
+              <text
+                x={tooltipX + 16}
+                y={tooltipY + 22}
+                className="fill-ink text-[11px] font-semibold uppercase tracking-[0.12em]"
+              >
+                {hover.column}
+              </text>
+              <text
+                x={tooltipX + 16}
+                y={tooltipY + 40}
+                className="fill-slate-600 text-[11px] font-semibold"
+              >
+                {`${hover.segment}: ${intFmt.format(hover.value)}`}
+              </text>
+            </g>
+          ) : null}
+        </svg>
+      </div>
+    </div>
+  );
 }
 
 /* ─── LineAreaChart ───────────────────────────────────────────────── */
@@ -636,12 +824,16 @@ function ColumnCategoryChart({ data, formatter, secondaryFormatter, emptyMessage
           const cx = PL + step * hoveredIndex + step / 2;
           const barHeight = Math.max((hoveredItem.value / topV) * IH, hoveredItem.value > 0 ? 4 : 0);
           const barTop = PT + IH - barHeight;
-          const lines = [hoveredItem.label, `count : ${String(formatter(hoveredItem.value))}`];
+          const primaryLabel =
+            String(hoveredItem.label || "").includes("@")
+              ? String(hoveredItem.label || "").toLowerCase()
+              : hoveredItem.label;
+          const lines = [primaryLabel, `count : ${String(formatter(hoveredItem.value))}`];
           const boxWidth = Math.max(
-            116,
-            ...lines.map((line) => 26 + String(line).length * 7.2)
+            220,
+            ...lines.map((line) => 34 + String(line).length * 8.1)
           );
-          const boxHeight = 58;
+          const boxHeight = 60;
           const x = Math.min(Math.max(cx - boxWidth / 2, 10), W - boxWidth - 10);
           const y = Math.max(8, barTop - boxHeight - 16);
 
@@ -731,7 +923,7 @@ function ColumnCategoryChart({ data, formatter, secondaryFormatter, emptyMessage
             <text
               x={tooltip.x + 18}
               y={tooltip.y + 24}
-              className="fill-ink text-[11px] font-semibold uppercase tracking-[0.12em]"
+              className="fill-ink text-[11px] font-semibold tracking-[0.04em]"
             >
               {tooltip.lines[0]}
             </text>
@@ -789,7 +981,7 @@ function KpiLoadingState() {
 /* ─── KpiDashboard (main) ─────────────────────────────────────────── */
 export default function KpiDashboard() {
   const { showToast } = useToast();
-  const [rfqs, setRfqs]       = useState([]);
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     timeframe: "all", phase: "all", productLine: "all", creator: "all"
@@ -800,9 +992,9 @@ export default function KpiDashboard() {
       try {
         setLoading(true);
         const data = await listRfqs();
-        setRfqs(Array.isArray(data) ? data : []);
+        setRequests(Array.isArray(data) ? data : []);
       } catch {
-        setRfqs([]);
+        setRequests([]);
         showToast("Unable to load KPI data. Please refresh.", { type: "error", title: "Dashboard unavailable" });
       } finally {
         setLoading(false);
@@ -810,7 +1002,7 @@ export default function KpiDashboard() {
     })();
   }, [showToast]);
 
-  const records        = useMemo(() => buildKpiRecords(rfqs),            [rfqs]);
+  const records        = useMemo(() => buildKpiRecords(requests),        [requests]);
   const filterOptions  = useMemo(() => getKpiFilterOptions(records),     [records]);
   const filteredRecs   = useMemo(() => filterKpiRecords(records, filters),[filters, records]);
   const summary        = useMemo(
@@ -835,7 +1027,7 @@ export default function KpiDashboard() {
       <TopBar />
 
       <div className="px-4 py-8 md:px-5 md:py-9 xl:px-6 xl:py-10">
-        <div className="mx-auto flex max-w-[1550px] flex-col gap-6">
+        <div className="mx-auto flex w-full flex-col gap-6">
           {loading ? <KpiLoadingState /> : (
             <>
               {/* Hero */}
@@ -851,16 +1043,10 @@ export default function KpiDashboard() {
                     </h1>
                     <div className="flex flex-wrap items-center gap-2.5">
                       <Link to="/dashboard" className="kpi-hero-button">
-                        RFQ dashboard <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                      <Link to="/rfqs/new" className="kpi-hero-button-secondary">
-                        <Plus className="h-3.5 w-3.5" /> Create RFQ
+                        Request dashboard <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </div>
                   </div>
-                  <p className="max-w-2xl text-[13px] leading-relaxed text-white/70">
-                    Track commercial value, pipeline shape, validation workload, and monthly movement in one visual workspace.
-                  </p>
                 </div>
               </section>
 
@@ -877,9 +1063,6 @@ export default function KpiDashboard() {
                     <h3 className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">
                       Interactive KPI controls
                     </h3>
-                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">
-                      Slice by time, phase, product line, or owner.
-                    </p>
                   </div>
 
                   {/* Reset button */}
@@ -936,20 +1119,20 @@ export default function KpiDashboard() {
 
               {/* Metric cards */}
               <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-                <MetricCard icon={BriefcaseBusiness} tone="blue"    label="Total RFQs"        value={fmtCompact(summary.totalRfqs)}   note="All RFQs visible after filters." />
-                <MetricCard icon={Activity}           tone="mint"    label="Open pipeline"     value={fmtCompact(summary.activeRfqs)}  note={`${fmtKeur(summary.openAmount)} active in the commercial flow.`} />
-                <MetricCard icon={TrendingUp}          tone="sun"     label="Commercial value"  value={fmtKeur(summary.totalAmount)}    note={`Avg. RFQ value: ${fmtKeur(summary.averageAmount)}.`} />
+                <MetricCard icon={BriefcaseBusiness} tone="blue"    label="Total requests"    value={fmtCompact(summary.totalRequests)}   note="All requests visible after filters." />
+                <MetricCard icon={Activity}           tone="mint"    label="Open pipeline"     value={fmtCompact(summary.activeRequests)}  note={`${fmtKeur(summary.openAmount)} active in the commercial flow.`} />
+                <MetricCard icon={Layers3}            tone="sun"     label="Closed pipeline"   value={fmtCompact(summary.closedRequests)}  note="Cancelled and lost requests." />
                 <MetricCard icon={ShieldCheck}         tone="success" label="Win rate"          value={fmtPct(summary.winRate)}         note="Positive outcomes vs. lost / cancelled." />
                 <MetricCard icon={Clock3}              tone="violet"  label="Average aging"     value={`${fmtCompact(summary.averageAgeDays)} days`} note="From creation to today." />
-                <MetricCard icon={AlertTriangle}       tone="sun"     label="At risk RFQs"      value={fmtCompact(summary.atRiskRfqs)}  note="Older items in validation or costing." />
+                <MetricCard icon={AlertTriangle}       tone="sun"     label="At risk requests"  value={fmtCompact(summary.atRiskRequests)}  note="Older items in validation or costing." />
               </div>
 
               {/* Phase charts */}
               <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
                 <Panel eyebrow="Pipeline anatomy" title="Phase split & commercial weight"
-                  subtitle="RFQ count and value across operating phases.">
+                  subtitle="Request count and value across operating phases.">
                   <PhaseComboChart
-                    segments={summary.phaseDistribution} total={summary.totalRfqs}
+                    segments={summary.phaseDistribution} total={summary.totalRequests}
                     selectedLabel={filters.phase}
                     onSelectSegment={label => toggle("phase", label)}
                   />
@@ -957,16 +1140,33 @@ export default function KpiDashboard() {
                 <Panel eyebrow="Phase share" title="Distribution"
                   subtitle="Phase mix in the filtered pipeline.">
                   <PhasePieChart
-                    segments={summary.phaseDistribution} total={summary.totalRfqs}
+                    segments={summary.phaseDistribution} total={summary.totalRequests}
                     selectedLabel={filters.phase}
                     onSelectSegment={label => toggle("phase", label)}
                   />
                 </Panel>
               </div>
 
+              <div className="grid gap-6 xl:grid-cols-2">
+                <Panel eyebrow="Phase x status" title="Status distribution by phase"
+                  subtitle="See how each operating phase is split across its underlying statuses.">
+                  <StackedDistributionChart
+                    data={summary.phaseStatusDistribution}
+                    selectedLabel={filters.phase}
+                    onSelectLabel={label => toggle("phase", label)}
+                  />
+                </Panel>
+                <Panel eyebrow="Type x phase" title="Phase distribution by type"
+                  subtitle="See where RFQ, RFI and Potential sit across the operating phases.">
+                  <StackedDistributionChart
+                    data={summary.typePhaseDistribution}
+                  />
+                </Panel>
+              </div>
+
               {/* Trend charts */}
               <div className="grid gap-6 xl:grid-cols-2">
-                <Panel eyebrow="Volume trend" title="Monthly RFQ creation"
+                <Panel eyebrow="Volume trend" title="Monthly request creation"
                   subtitle="Spot surges and dips across the last 8 visible months.">
                   <LineAreaChart
                     data={summary.monthlyVolume} color="#046eaf"
@@ -981,7 +1181,7 @@ export default function KpiDashboard() {
                     data={summary.monthlyValue} color="#ef7807"
                     gradientId="kpi-value-trend"
                     formatter={v => fmtCompact(v)}
-                    emptyLabel="No RFQ value for the selected filters."
+                    emptyLabel="No request value for the selected filters."
                   />
                 </Panel>
               </div>
@@ -997,12 +1197,12 @@ export default function KpiDashboard() {
                   <LeaderboardBars
                     data={summary.topCustomers}
                     formatter={v => fmtKeur(v)}
-                    secondaryFormatter={v => fmtRfqCount(v)}
+                    secondaryFormatter={v => fmtRequestCount(v)}
                     emptyMessage="No customer value data available."
                   />
                 </Panel>
                 <Panel eyebrow="Product lens" title="Product line mix"
-                  subtitle="RFQ volume across product lines.">
+                  subtitle="Request volume across product lines.">
                   <ColumnCategoryChart
                     data={summary.productLineDistribution}
                     formatter={v => `${intFmt.format(v)}`}
@@ -1012,8 +1212,8 @@ export default function KpiDashboard() {
                     selectedLabel={filters.productLine}
                   />
                 </Panel>
-                <Panel eyebrow="Customer volume" title="Top customers by RFQ volume"
-                  subtitle="Accounts generating the highest number of RFQs.">
+                <Panel eyebrow="Customer volume" title="Top customers by request volume"
+                  subtitle="Accounts generating the highest number of requests.">
                   <ColumnCategoryChart
                     data={summary.topCustomersByVolume}
                     formatter={v => `${intFmt.format(v)}`}
@@ -1021,7 +1221,7 @@ export default function KpiDashboard() {
                     emptyMessage="No customer volume data available."
                   />
                 </Panel>
-                <Panel eyebrow="Ownership lens" title="Top creators by RFQ volume"
+                <Panel eyebrow="Ownership lens" title="Top creators by request volume"
                   subtitle="Sales contributors with the strongest flow.">
                   <ColumnCategoryChart
                     data={summary.creatorLoad}

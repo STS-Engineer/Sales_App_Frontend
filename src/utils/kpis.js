@@ -1,21 +1,36 @@
 import { mapBackendStatusToPipelineStage, mapBackendStatusToUi } from "./rfq.js";
 
-export const KPI_PHASES = ["RFQ", "In costing", "Offer", "PO", "Prototype"];
+export const KPI_PHASES = ["Request", "In costing", "Offer", "PO", "Prototype"];
 
 export const KPI_PHASE_COLORS = {
-  RFQ: "#046eaf",
+  Request: "#046eaf",
   "In costing": "#ef7807",
   Offer: "#0e4e78",
   PO: "#1f9d6b",
   Prototype: "#7c3aed"
 };
 
+const KPI_DOCUMENT_TYPE_ORDER = ["RFQ", "RFI", "POTENTIAL"];
+const KPI_DOCUMENT_TYPE_LABELS = {
+  RFQ: "RFQ",
+  RFI: "RFI",
+  POTENTIAL: "Potential"
+};
+const KPI_DOCUMENT_TYPE_COLORS = {
+  RFQ: "#046eaf",
+  RFI: "#f97316",
+  POTENTIAL: "#eab308"
+};
+
 export const KPI_STATUS_COLORS = {
   Potential: "#60a5fa",
   "New RFQ": "#0284c7",
+  "New request": "#0284c7",
   Validation: "#0369a1",
+  "Pending for validation": "#0369a1",
   Feasability: "#f59e0b",
   Pricing: "#f97316",
+  "RFI completed": "#1f9d6b",
   "Offer preparation": "#8b5cf6",
   "Offer validation": "#7c3aed",
   "Get PO": "#10b981",
@@ -27,6 +42,24 @@ export const KPI_STATUS_COLORS = {
   Lost: "#94a3b8",
   Cancelled: "#64748b"
 };
+
+const KPI_STATUS_ORDER = [
+  "New request",
+  "Pending for validation",
+  "Feasability",
+  "Pricing",
+  "RFI completed",
+  "Offer preparation",
+  "Offer validation",
+  "Get PO",
+  "PO accepted",
+  "Mission accepted",
+  "Mission not accepted",
+  "Get prototype orders",
+  "Prototype ongoing",
+  "Cancelled",
+  "Lost"
+];
 
 export const KPI_TIMEFRAME_OPTIONS = [
   { value: "all", label: "All time" },
@@ -82,7 +115,7 @@ const AT_RISK_STATUSES = new Set([
 ]);
 
 const KPI_PHASE_GROUP_MAP = {
-  RFQ: "RFQ",
+  RFQ: "Request",
   "In costing": "In costing",
   Offer: "Offer",
   "Offer preparation": "Offer",
@@ -98,12 +131,12 @@ const KPI_PHASE_GROUP_MAP = {
 };
 
 const KPI_PHASE_FROM_BACKEND = {
-  RFQ: "RFQ",
+  RFQ: "Request",
   COSTING: "In costing",
   OFFER: "Offer",
   PO: "PO",
   PROTOTYPE: "Prototype",
-  CLOSED: "RFQ"
+  CLOSED: "Request"
 };
 
 const monthLabelFormatter = new Intl.DateTimeFormat("en-US", {
@@ -114,6 +147,13 @@ const monthLabelFormatter = new Intl.DateTimeFormat("en-US", {
 const normalizeText = (value, fallback) => {
   const text = String(value ?? "").trim();
   return text || fallback;
+};
+
+const normalizeDocumentType = (value) => {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "RFI") return "RFI";
+  if (normalized === "POTENTIAL") return "POTENTIAL";
+  return "RFQ";
 };
 
 const normalizeProductLine = (value) => {
@@ -183,6 +223,55 @@ const getMonthKey = (date) =>
 
 const getMonthLabel = (date) => monthLabelFormatter.format(date);
 
+const normalizeKpiStatusLabel = (status) => {
+  if (status === "New RFQ") return "New request";
+  if (status === "Validation") return "Pending for validation";
+  return status;
+};
+
+const normalizeChartEntityKey = (value) =>
+  String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+const pickPreferredChartLabel = (currentLabel, nextLabel) => {
+  const current = String(currentLabel ?? "").trim();
+  const next = String(nextLabel ?? "").trim();
+
+  if (!current) return next;
+  if (!next) return current;
+
+  const currentHasUppercase = /[A-Z]/.test(current);
+  const nextHasUppercase = /[A-Z]/.test(next);
+
+  if (!currentHasUppercase && nextHasUppercase) {
+    return next;
+  }
+
+  return current;
+};
+
+const KPI_STATUS_RANK = new Map(
+  KPI_STATUS_ORDER.map((status, index) => [status, index])
+);
+
+const sortKpiStatuses = (statuses = []) =>
+  [...statuses].sort((left, right) => {
+    const leftRank = KPI_STATUS_RANK.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = KPI_STATUS_RANK.get(right) ?? Number.MAX_SAFE_INTEGER;
+
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+
+    return left.localeCompare(right);
+  });
+
+const resolveSeriesColor = (label, index, colorMap, fallbackColor = "#046eaf") =>
+  colorMap?.[label] ||
+  [fallbackColor, "#0e4e78", "#ef7807", "#1f9d6b", "#7c3aed", "#0891b2"][index % 6];
+
 const resolveKpiPhase = (rfq) => {
   const rawPhase = typeof rfq?.phase === "string" ? rfq.phase : rfq?.phase?.value;
   if (rawPhase && KPI_PHASE_FROM_BACKEND[rawPhase]) {
@@ -190,7 +279,7 @@ const resolveKpiPhase = (rfq) => {
   }
 
   const pipelineStage = mapBackendStatusToPipelineStage(rfq);
-  return KPI_PHASE_GROUP_MAP[pipelineStage] || "RFQ";
+  return KPI_PHASE_GROUP_MAP[pipelineStage] || "Request";
 };
 
 const buildRecentMonthWindow = (records, size = 8, now = new Date()) => {
@@ -218,21 +307,18 @@ const buildRankedSeries = (entries, { limit = 6, colorMap, fallbackColor = "#046
     .slice(0, limit)
     .map((entry, index) => ({
       ...entry,
-      color:
-        entry.color ||
-        colorMap?.[entry.label] ||
-        [fallbackColor, "#0e4e78", "#ef7807", "#1f9d6b", "#7c3aed", "#0891b2"][index % 6]
+      color: entry.color || resolveSeriesColor(entry.label, index, colorMap, fallbackColor)
     }));
 
-export const buildKpiRecords = (rfqs = []) =>
-  rfqs.map((rfq) => {
-    const data = rfq?.rfq_data || {};
-    const potential = rfq?.potential || {};
-    const status = mapBackendStatusToUi(rfq);
-    const phaseKey = resolveKpiPhase(rfq);
-    const createdAt = parseDate(rfq?.created_at);
+export const buildKpiRecords = (requests = []) =>
+  requests.map((request) => {
+    const data = request?.rfq_data || {};
+    const potential = request?.potential || {};
+    const status = mapBackendStatusToUi(request);
+    const phaseKey = resolveKpiPhase(request);
+    const createdAt = parseDate(request?.created_at);
     const normalizedProductLine = normalizeProductLine(
-      data.product_line_acronym || rfq?.product_line_acronym || data.product_name
+      data.product_line_acronym || request?.product_line_acronym || data.product_name
     );
     const amount = parseAmount(
       data.to_total ??
@@ -243,12 +329,13 @@ export const buildKpiRecords = (rfqs = []) =>
     );
 
     return {
-      id: rfq?.rfq_id || "",
+      id: request?.rfq_id || "",
       displayId: normalizeText(data.systematic_rfq_id, "Draft"),
+      documentType: normalizeDocumentType(request?.document_type),
       customer: normalizeText(data.customer_name || potential.customer, "No customer"),
-      creator: normalizeText(rfq?.created_by_email, "Unknown owner"),
+      creator: normalizeText(request?.created_by_email, "Unknown owner"),
       validator: normalizeText(
-        data.zone_manager_email || rfq?.zone_manager_email || data.validator_email,
+        data.zone_manager_email || request?.zone_manager_email || data.validator_email,
         "No validator"
       ),
       productLine: normalizeText(normalizedProductLine, "Not set"),
@@ -304,8 +391,8 @@ export const filterKpiRecords = (records = [], filters = {}, now = new Date()) =
 };
 
 export const buildKpiSummary = (records = [], now = new Date(), productLineUniverse = []) => {
-  const totalRfqs = records.length;
-  const activeRfqs = records.filter((record) => !record.isTerminal).length;
+  const totalRequests = records.length;
+  const activeRequests = records.filter((record) => !record.isTerminal).length;
   const amountRecords = records.filter((record) => record.amount > 0);
   const totalAmount = amountRecords.reduce((sum, record) => sum + record.amount, 0);
   const openAmount = records
@@ -316,14 +403,17 @@ export const buildKpiSummary = (records = [], now = new Date(), productLineUnive
   const averageAgeDays = ageSamples.length
     ? ageSamples.reduce((sum, record) => sum + diffInDays(now, record.createdAt), 0) / ageSamples.length
     : 0;
-  const atRiskRfqs = records.filter((record) => {
+  const atRiskRequests = records.filter((record) => {
     if (record.isTerminal || !record.createdAt) return false;
     return AT_RISK_STATUSES.has(record.status) && diffInDays(now, record.createdAt) >= 45;
   }).length;
 
-  const wonRfqs = records.filter((record) => POSITIVE_OUTCOME_STATUSES.has(record.status)).length;
-  const lostRfqs = records.filter((record) => record.isTerminal).length;
-  const winRate = wonRfqs + lostRfqs > 0 ? (wonRfqs / (wonRfqs + lostRfqs)) * 100 : 0;
+  const wonRequests = records.filter((record) => POSITIVE_OUTCOME_STATUSES.has(record.status)).length;
+  const closedRequests = records.filter((record) => record.isTerminal).length;
+  const winRate =
+    wonRequests + closedRequests > 0
+      ? (wonRequests / (wonRequests + closedRequests)) * 100
+      : 0;
 
   const phaseDistribution = KPI_PHASES.map((phase) => {
     const phaseRecords = records.filter((record) => record.phaseKey === phase);
@@ -332,13 +422,24 @@ export const buildKpiSummary = (records = [], now = new Date(), productLineUnive
       label: phase,
       value: phaseRecords.length,
       amount: phaseAmount,
-      share: totalRfqs ? phaseRecords.length / totalRfqs : 0,
+      share: totalRequests ? phaseRecords.length / totalRequests : 0,
       color: KPI_PHASE_COLORS[phase]
     };
   });
 
+  const typeDistribution = KPI_DOCUMENT_TYPE_ORDER.map((documentType) => {
+    const typeRecords = records.filter((record) => record.documentType === documentType);
+    return {
+      label: KPI_DOCUMENT_TYPE_LABELS[documentType],
+      value: typeRecords.length,
+      share: totalRequests ? typeRecords.length / totalRequests : 0,
+      color: KPI_DOCUMENT_TYPE_COLORS[documentType]
+    };
+  });
+
   const statusCounts = records.reduce((accumulator, record) => {
-    accumulator.set(record.status, (accumulator.get(record.status) || 0) + 1);
+    const statusLabel = normalizeKpiStatusLabel(record.status);
+    accumulator.set(statusLabel, (accumulator.get(statusLabel) || 0) + 1);
     return accumulator;
   }, new Map());
 
@@ -347,19 +448,74 @@ export const buildKpiSummary = (records = [], now = new Date(), productLineUnive
     { limit: 8, colorMap: KPI_STATUS_COLORS, fallbackColor: "#0e4e78" }
   );
 
+  const normalizedStatuses = sortKpiStatuses(Array.from(statusCounts.keys()));
+  const phaseStatusDistribution = {
+    legend: normalizedStatuses.map((label, index) => ({
+      label,
+      color: resolveSeriesColor(label, index, KPI_STATUS_COLORS, "#0e4e78")
+    })),
+    columns: KPI_PHASES.map((phase) => {
+      const phaseRecords = records.filter((record) => record.phaseKey === phase);
+      const phaseStatusCounts = phaseRecords.reduce((accumulator, record) => {
+        const statusLabel = normalizeKpiStatusLabel(record.status);
+        accumulator.set(statusLabel, (accumulator.get(statusLabel) || 0) + 1);
+        return accumulator;
+      }, new Map());
+
+      return {
+        label: phase,
+        total: phaseRecords.length,
+        segments: normalizedStatuses
+          .map((label, index) => ({
+            label,
+            value: phaseStatusCounts.get(label) || 0,
+            color: resolveSeriesColor(label, index, KPI_STATUS_COLORS, "#0e4e78")
+          }))
+          .filter((segment) => segment.value > 0)
+      };
+    })
+  };
+
+  const typePhaseDistribution = {
+    legend: KPI_PHASES.map((phase) => ({
+      label: phase,
+      color: KPI_PHASE_COLORS[phase]
+    })),
+    columns: KPI_DOCUMENT_TYPE_ORDER.map((documentType) => {
+      const typeLabel = KPI_DOCUMENT_TYPE_LABELS[documentType];
+      const typeRecords = records.filter((record) => record.documentType === documentType);
+      const typePhaseCounts = typeRecords.reduce((accumulator, record) => {
+        accumulator.set(record.phaseKey, (accumulator.get(record.phaseKey) || 0) + 1);
+        return accumulator;
+      }, new Map());
+
+      return {
+        label: typeLabel,
+        total: typeRecords.length,
+        segments: KPI_PHASES.map((phase) => ({
+          label: phase,
+          value: typePhaseCounts.get(phase) || 0,
+          color: KPI_PHASE_COLORS[phase]
+        })).filter((segment) => segment.value > 0)
+      };
+    })
+  };
+
   const customerMap = new Map();
   const validatorMap = new Map();
   const creatorMap = new Map();
 
   records.forEach((record) => {
-    const customerEntry = customerMap.get(record.customer) || {
+    const customerKey = normalizeChartEntityKey(record.customer);
+    const customerEntry = customerMap.get(customerKey) || {
       label: record.customer,
       value: 0,
       secondaryValue: 0
     };
+    customerEntry.label = pickPreferredChartLabel(customerEntry.label, record.customer);
     customerEntry.value += record.amount;
     customerEntry.secondaryValue += 1;
-    customerMap.set(record.customer, customerEntry);
+    customerMap.set(customerKey, customerEntry);
 
     const validatorEntry = validatorMap.get(record.validator) || {
       label: record.validator,
@@ -455,15 +611,19 @@ export const buildKpiSummary = (records = [], now = new Date(), productLineUnive
   const busiestPhase =
     [...phaseDistribution].sort((left, right) => right.value - left.value)[0] || null;
   return {
-    totalRfqs,
-    activeRfqs,
+    totalRequests,
+    activeRequests,
+    closedRequests,
     totalAmount,
     openAmount,
     averageAmount,
     averageAgeDays,
-    atRiskRfqs,
+    atRiskRequests,
     winRate,
     phaseDistribution,
+    typeDistribution,
+    phaseStatusDistribution,
+    typePhaseDistribution,
     statusDistribution,
     topCustomers,
     topCustomersByVolume,
