@@ -48,6 +48,7 @@ import {
   calculateProductTargetTo,
   calculateTotalTargetTo,
   createEmptyProductItem,
+  getDeliveryZoneOptions,
   normalizeProductsForPayload,
   sanitizeNumberForInput
 } from "../utils/rfq.js";
@@ -540,6 +541,21 @@ const getRfqStepCompletionMap = (form = {}) =>
     ])
   );
 
+/**
+ * Auto-reveal guard: returns the 0-based index of the highest step the UI
+ * should auto-navigate to after background chatbot updates. Manual step clicks
+ * remain unlocked elsewhere.
+ */
+const getHighestAllowedStepIndex = (form = {}) => {
+  const completion = getRfqStepCompletionMap(form);
+  for (let i = 0; i < STEPS.length; i += 1) {
+    if (!completion[STEPS[i].id]) {
+      return i;           // first incomplete step is the ceiling
+    }
+  }
+  return STEPS.length - 1; // all complete
+};
+
 const buildStepRevealTarget = (stepId) =>
   stepId
     ? {
@@ -558,15 +574,24 @@ const buildRfqAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
   }
 
   const lastChangedField = changedFields[changedFields.length - 1];
-  const targetStepId =
+  const rawTargetStepId =
     RFQ_FIELD_TO_STEP_MAP[lastChangedField] ||
     RFQ_FIELD_TO_STEP_MAP[changedFields[0]] ||
     "step-client";
 
+  // --- Stepper guard: clamp target step to the highest allowed step -----
+  const highestAllowed = getHighestAllowedStepIndex(nextForm);
+  const rawTargetIndex = STEP_ORDER_INDEX[rawTargetStepId] ?? 0;
+  const clampedIndex = Math.min(rawTargetIndex, highestAllowed);
+  const targetStepId = STEPS[clampedIndex]?.id || "step-client";
+  // If clamped, switch to "step" mode so we don't try to scroll to a field
+  // that lives on a later (unreachable) step.
+  const wasClamped = clampedIndex < rawTargetIndex;
+
   return {
     stepId: targetStepId,
-    mode: "field",
-    fieldName: lastChangedField,
+    mode: wasClamped ? "step" : "field",
+    fieldName: wasClamped ? "" : lastChangedField,
     updatedFields: changedFields,
     highlight: false
   };
@@ -1936,15 +1961,6 @@ export default function NewRfq() {
     setValidationSuccess("");
   }, [validationSuccess, showToast]);
 
-  const highestCompletedStepIndex = useMemo(() => {
-    let highestIndex = -1;
-    STEPS.forEach((step, index) => {
-      if (stepCompletion[step.id] || fulfilledSteps[step.id]) {
-        highestIndex = index;
-      }
-    });
-    return highestIndex;
-  }, [stepCompletion, fulfilledSteps]);
   const hasWorkflowMovedBeyondRfq = Boolean(activeStage && activeStage !== "RFQ");
   const isCancelledAfterRfqValidation = Boolean(
     normalizePipelineStageKey(activeStage) === "RFQ" &&
@@ -1959,10 +1975,6 @@ export default function NewRfq() {
       rfqValidationReached ||
       hasWorkflowMovedBeyondRfq
     );
-
-  const reviewNavigationUnlocked =
-    isRfqStage &&
-    (hasValidationLock || selectedSubPhase === "Validation");
 
   const getActiveDisplaySubPhase = (stageKey) => {
     if (stageKey === "RFQ" && isRevisionModeActive) {
@@ -1986,21 +1998,9 @@ export default function NewRfq() {
       : selectedSubPhase || getActiveDisplaySubPhase("RFQ") || "RFQ form"
     : "";
   const isRfqFormView = isRfqStage && rfqDisplaySubPhase === "RFQ form";
-  const unlockAllNewRfqSteps =
-    isFormalDocumentTab && isRfqStage && isRfqFormView;
   const isRfqValidationView =
     isRfqStage && !isRevisionModeActive && rfqDisplaySubPhase === "Validation";
-  const highestUnlockedStepIndex = useMemo(() => {
-    if (reviewNavigationUnlocked || unlockAllNewRfqSteps) {
-      return lastStepIndex;
-    }
-    return Math.min(lastStepIndex, Math.max(0, highestCompletedStepIndex + 1));
-  }, [
-    reviewNavigationUnlocked,
-    unlockAllNewRfqSteps,
-    lastStepIndex,
-    highestCompletedStepIndex
-  ]);
+  const highestUnlockedStepIndex = useMemo(() => lastStepIndex, [lastStepIndex]);
 
   const stepStates = useMemo(() => {
     const entries = STEPS.map((step, index) => {
@@ -2210,7 +2210,7 @@ export default function NewRfq() {
   };
   const handleStepViewChange = (stepId) => {
     const targetIndex = stepIds.indexOf(stepId);
-    if (targetIndex < 0 || targetIndex > highestUnlockedStepIndex) {
+    if (targetIndex < 0) {
       return;
     }
     setActiveStep(stepId);
@@ -2307,7 +2307,20 @@ export default function NewRfq() {
     }
 
     if (activeStep !== pendingRfqAutofillReveal.stepId) {
-      setActiveStep(pendingRfqAutofillReveal.stepId);
+      // --- Stepper guard: clamp the reveal target to the highest allowed
+      const allowedIdx = getHighestAllowedStepIndex(form);
+      const requestedIdx = STEP_ORDER_INDEX[pendingRfqAutofillReveal.stepId] ?? 0;
+      const clampedIdx = Math.min(requestedIdx, allowedIdx);
+      const clampedStepId = STEPS[clampedIdx]?.id || "step-client";
+      if (clampedStepId !== pendingRfqAutofillReveal.stepId) {
+        // The reveal was targeting a step beyond what is allowed; update the
+        // pending reveal to point at the clamped step instead.
+        setPendingRfqAutofillReveal((prev) =>
+          prev ? { ...prev, stepId: clampedStepId, mode: "step", fieldName: "" } : null
+        );
+        return;
+      }
+      setActiveStep(clampedStepId);
       return;
     }
 
@@ -2428,7 +2441,7 @@ export default function NewRfq() {
     lastStepIndex
   ]);
 
-  const canGoNext = Boolean(!isLastStep && stepIndex < highestUnlockedStepIndex);
+  const canGoNext = Boolean(!isLastStep);
   const prevStepId = stepIndex > 0 ? stepIds[stepIndex - 1] : "";
   const canGoPrev = Boolean(prevStepId);
 
@@ -4330,6 +4343,10 @@ export default function NewRfq() {
   const productRows = Array.isArray(form.products) && form.products.length
     ? form.products
     : [createEmptyProductItem()];
+  const deliveryZoneOptions = useMemo(
+    () => getDeliveryZoneOptions(form.deliveryZone),
+    [form.deliveryZone]
+  );
   const totalTargetTo = calculateTotalTargetTo(productRows);
   const sharedProductCurrency = useMemo(
     () =>
@@ -6869,7 +6886,14 @@ export default function NewRfq() {
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
                               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                <FormField label="Delivery zone" name="deliveryZone" value={form.deliveryZone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <FormField
+                                  label="Delivery zone"
+                                  name="deliveryZone"
+                                  value={form.deliveryZone}
+                                  onChange={handleChange}
+                                  options={deliveryZoneOptions}
+                                  readOnly={rfqFormFieldReadOnly}
+                                />
                                 <FormField label="Plant" name="plant" value={form.plant} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="Country" name="country" value={form.country} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                                 <FormField label="PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />

@@ -149,6 +149,42 @@ export const createEmptyProductItem = () => ({
   targetTo: ""
 });
 
+export const DELIVERY_ZONE_OPTIONS = [
+  { value: "Europe", label: "Europe" },
+  { value: "Africa", label: "Africa" },
+  { value: "India", label: "India" },
+  { value: "North America", label: "North America" },
+  { value: "South America", label: "South America" },
+  { value: "China / South Pacific", label: "China / South Pacific" },
+  { value: "Korea / Japan", label: "Korea / Japan" }
+];
+
+const DELIVERY_ZONE_OPTION_VALUES = new Set(
+  DELIVERY_ZONE_OPTIONS.map((option) => option.value)
+);
+
+export const getDeliveryZoneOptions = (currentValue = "") => {
+  const baseOptions = [
+    { value: "", label: "Not selected yet" },
+    ...DELIVERY_ZONE_OPTIONS
+  ];
+  const normalizedCurrentValue =
+    typeof currentValue === "string" ? currentValue.trim() : "";
+
+  if (
+    !normalizedCurrentValue ||
+    DELIVERY_ZONE_OPTION_VALUES.has(normalizedCurrentValue)
+  ) {
+    return baseOptions;
+  }
+
+  return [
+    { value: "", label: "Not selected yet" },
+    { value: normalizedCurrentValue, label: `${normalizedCurrentValue} (Legacy)` },
+    ...DELIVERY_ZONE_OPTIONS
+  ];
+};
+
 const pickNonEmptyValue = (...values) => {
   for (const value of values) {
     if (value === 0 || value === false) return value;

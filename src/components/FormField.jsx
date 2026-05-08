@@ -34,7 +34,7 @@ export default function FormField({
           name={name}
           value={normalizedValue}
           onChange={onChange}
-          disabled={disabled}
+          disabled={disabled || readOnly}
           aria-readonly={readOnly}
         >
           {options.map((option) => {
