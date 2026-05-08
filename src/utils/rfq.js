@@ -217,9 +217,7 @@ const normalizeProductItem = (item = {}) => {
   const targetPrice = sanitizeNumberForInput(
     pickNonEmptyValue(
       item.target_price,
-      item.targetPrice,
-      item.target_price_eur,
-      item.targetPriceEur
+      item.targetPrice
     )
   );
   const currency = pickNonEmptyValue(
@@ -281,7 +279,13 @@ export const normalizeProductsFromRfqData = (data = {}) => {
     part_number: data.customer_pn || data.customerPn,
     revision_level: data.revision_level || data.revisionLevel,
     quantity: data.annual_volume || data.qty_per_year || data.qtyPerYear,
-    target_price: data.target_price_eur || data.targetPrice,
+    target_price: pickNonEmptyValue(
+      data.target_price_local,
+      data.targetPriceLocal,
+      data.target_price_eur,
+      data.targetPriceEur,
+      data.targetPrice
+    ),
     currency: data.target_price_currency || data.targetPriceCurrency,
     target_price_is_estimated: legacyTargetPriceIsEstimated
   });
@@ -404,10 +408,21 @@ export const mapRfqDataToForm = (rfq) => {
     contactPhone: pickFirst(data.contact_phone, data.contactPhone),
     contactEmail: pickFirst(data.contact_email, data.contactEmail),
     targetPrice: sanitizeNumberForInput(
-      pickFirst(firstProduct.targetPrice, data.target_price_eur, data.targetPrice)
+      pickFirst(
+        firstProduct.targetPrice,
+        data.target_price_local,
+        data.targetPriceLocal,
+        data.target_price_eur,
+        data.targetPriceEur,
+        data.targetPrice
+      )
     ),
     targetPriceLocal: sanitizeNumberForInput(
-      pickFirst(data.target_price_local, data.targetPriceLocal)
+      pickFirst(
+        data.target_price_local,
+        data.targetPriceLocal,
+        firstProduct.targetPrice
+      )
     ),
     targetPriceCurrency: pickFirst(
       firstProduct.currency,
@@ -587,12 +602,18 @@ export const mapRfqToRow = (rfq) => {
     typeof totalTargetToRaw === "string" && totalTargetToRaw.trim() !== ""
       ? Number(totalTargetToRaw)
       : totalTargetToRaw;
-  const toTotalRaw =
-    data.to_total ?? (Number.isFinite(totalTargetTo) ? totalTargetTo / 1000 : undefined);
+  const derivedToTotal = Number.isFinite(totalTargetTo) ? totalTargetTo / 1000 : undefined;
+  const explicitToTotalRaw = data.to_total ?? data.toTotal;
+  const explicitToTotal =
+    typeof explicitToTotalRaw === "string" && explicitToTotalRaw.trim() !== ""
+      ? Number(explicitToTotalRaw)
+      : explicitToTotalRaw;
   const toTotal =
-    typeof toTotalRaw === "string" && toTotalRaw.trim() !== ""
-      ? Number(toTotalRaw)
-      : toTotalRaw;
+    explicitToTotal === 0 && Number.isFinite(derivedToTotal) && derivedToTotal > 0
+      ? derivedToTotal
+      : Number.isFinite(explicitToTotal)
+        ? explicitToTotal
+        : derivedToTotal ?? explicitToTotalRaw;
 
   return {
     id: rfq?.rfq_id,
@@ -613,7 +634,7 @@ export const mapRfqToRow = (rfq) => {
       data.validator_email ||
       "",
     validatorRole: data.validator_role || "",
-    toTotal: Number.isFinite(toTotal) ? toTotal : toTotalRaw,
+    toTotal: Number.isFinite(toTotal) ? toTotal : explicitToTotalRaw,
     status: mapBackendStatusToUi(rfq),
     pipelineStage: mapBackendStatusToPipelineStage(rfq),
     potentialSystematicId: potential.potential_systematic_id || "",

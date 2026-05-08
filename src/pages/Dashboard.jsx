@@ -72,8 +72,8 @@ const knownStatuses = new Set(PHASES.flatMap((phase) => phase.statuses));
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
 const EXCLUDED_STATUSES = new Set(["Lost"]);
 const DEFAULT_SUBPHASE_STATUS = "New RFQ";
-const rfqLabel = (value) => Math.abs(Number(value || 0)) === 1 ? "RFQ" : "RFQs";
-const formatRfqCount = (value) => `${Number(value || 0)} ${rfqLabel(value)}`;
+const requestLabel = (value) => Math.abs(Number(value || 0)) === 1 ? "Request" : "Requests";
+const formatRequestCount = (value) => `${Number(value || 0)} ${requestLabel(value)}`;
 const FILTER_STATUS_LABELS = {
   "New RFQ": "New request",
   Validation: "Pending for validation"
@@ -592,7 +592,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {formatRfqCount(filteredDetailedRfqs.length)}
+                        {formatRequestCount(filteredDetailedRfqs.length)}
                       </span>
                     </div>
                   </div>
@@ -707,7 +707,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {formatRfqCount(filteredGlobalRfqs.length)}
+                        {formatRequestCount(filteredGlobalRfqs.length)}
                       </span>
                     </div>
                   </div>

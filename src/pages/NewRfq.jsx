@@ -48,8 +48,10 @@ import {
   calculateProductTargetTo,
   calculateTotalTargetTo,
   createEmptyProductItem,
-  normalizeProductsForPayload
+  normalizeProductsForPayload,
+  sanitizeNumberForInput
 } from "../utils/rfq.js";
+import { useEurFxRates } from "../utils/useEurFxRates.js";
 
 const COSTING_READ_ONLY_ROLES = ["COSTING_TEAM", "RND", "PLM"];
 const RFQ_CREATOR_ROLES = ["OWNER", "COMMERCIAL", "ZONE_MANAGER"];
@@ -85,7 +87,7 @@ const initialForm = {
   targetPrice: "",
   targetPriceLocal: "",
   targetPriceCurrency: "",
-  targetPriceIsEstimated: false,
+  targetPriceIsEstimated: null,
   targetPriceNote: "",
   expectedDeliveryConditions: "",
   expectedPaymentTerms: "",
@@ -495,9 +497,13 @@ const hasMeaningfulValue = (value) => {
   if (value === null || value === undefined) return false;
   if (Array.isArray(value)) {
     return value.length > 0 && value.every((item) =>
-      ["partNumber", "revisionLevel", "quantity", "targetPrice"].every((key) =>
-        hasMeaningfulValue(item?.[key])
-      )
+      hasMeaningfulValue(item?.partNumber) &&
+      hasMeaningfulValue(item?.revisionLevel) &&
+      hasMeaningfulValue(item?.quantity) &&
+      hasMeaningfulValue(item?.targetPrice) &&
+      hasMeaningfulValue(item?.currency) &&
+      item?.targetPriceIsEstimated !== null &&
+      item?.targetPriceIsEstimated !== undefined
     );
   }
   return String(value).trim().length > 0;
@@ -1093,11 +1099,41 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const PRODUCT_ROW_READONLY_VALUE_CLASSES =
+  "min-h-[44px] rounded-2xl bg-slate-50/80 px-4 py-3 text-sm font-medium text-ink";
+const PRODUCT_PRICE_SOURCE_OPTIONS = [
+  { value: false, label: "Official Customer Price" },
+  { value: true, label: "Estimated" }
+];
 const omitUndefinedValues = (obj = {}) =>
   Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined)
   );
+const sanitizeProductCurrencyCode = (value) =>
+  String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, 3);
+const parseNumericInputValue = (value) => {
+  const normalized = sanitizeNumberForInput(value);
+  return normalized === "" ? null : Number(normalized);
+};
+const formatInlineEurPreview = (value) => {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  return number.toLocaleString("en-US", { maximumFractionDigits: 5 });
+};
+const getPriceSourceBadgeClasses = (isEstimated, isActive = true) => {
+  if (!isActive) {
+    return "border-slate-200 bg-slate-50 text-slate-500";
+  }
+  if (isEstimated) {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+};
 const buildProductMirrorFields = (products = []) => {
   const safeProducts = Array.isArray(products) && products.length
     ? products
@@ -1110,6 +1146,9 @@ const buildProductMirrorFields = (products = []) => {
     revisionLevel: firstProduct.revisionLevel || "",
     qtyPerYear: firstProduct.quantity || "",
     targetPrice: firstProduct.targetPrice || "",
+    targetPriceLocal: firstProduct.targetPrice || "",
+    targetPriceCurrency: sanitizeProductCurrencyCode(firstProduct.currency),
+    targetPriceIsEstimated: firstProduct.targetPriceIsEstimated ?? null,
     toTotal: totalTargetTo > 0 ? totalTargetTo / 1000 : ""
   };
 };
@@ -1117,6 +1156,10 @@ const buildProductMirrorFields = (products = []) => {
 const buildRfqDataPayloadFromForm = (form = {}) => {
   const products = normalizeProductsForPayload(form.products);
   const firstProduct = products[0] || {};
+  const firstProductCurrency = sanitizeProductCurrencyCode(
+    firstProduct.currency || form.targetPriceCurrency
+  );
+  const firstProductTargetPrice = firstProduct.target_price ?? null;
   const totalTargetTo = products.reduce(
     (total, product) => total + (Number(product.target_to) || 0),
     0
@@ -1146,10 +1189,13 @@ const buildRfqDataPayloadFromForm = (form = {}) => {
     contact_role: form.contactFunction || "",
     contact_phone: form.contactPhone || "",
     contact_email: form.contactEmail || "",
-    target_price_eur: firstProduct.target_price ?? form.targetPrice ?? "",
-    target_price_local: form.targetPriceLocal || "",
-    target_price_currency: form.targetPriceCurrency || "",
-    target_price_is_estimated: form.targetPriceIsEstimated || false,
+    target_price_eur: firstProductCurrency === "EUR"
+      ? (firstProductTargetPrice ?? form.targetPrice ?? "")
+      : "",
+    target_price_local: firstProductTargetPrice ?? form.targetPriceLocal ?? "",
+    target_price_currency: firstProductCurrency || "",
+    target_price_is_estimated:
+      firstProduct.target_price_is_estimated ?? form.targetPriceIsEstimated ?? null,
     target_price_note: form.targetPriceNote || "",
     expected_delivery_conditions: form.expectedDeliveryConditions || "",
     expected_payment_terms: form.expectedPaymentTerms || "",
@@ -1716,9 +1762,6 @@ export default function NewRfq() {
   const isPotentialDraft = isPotentialDocument;
   const isRevisionRequested = rfqSubStatus === "REVISION_REQUESTED";
   const isRevisionModeActive = isRevisionRequested || optimisticRevisionMode;
-  const isTargetPriceEstimated =
-    form.targetPriceIsEstimated === true ||
-    String(form.targetPriceIsEstimated ?? "").trim().toLowerCase() === "true";
   const assignedValidatorEmail = normalizeEmailValue(form.validatorEmail);
   const isAssignedValidatorUser =
     Boolean(assignedValidatorEmail) &&
@@ -1832,9 +1875,9 @@ export default function NewRfq() {
       ? POTENTIAL_CHATBOT_INITIAL_GREETING
       : isOfferStage
         ? OFFER_CHATBOT_INITIAL_GREETING
-      : isRevisionModeActive && isFormalDocumentTab
-        ? buildRevisionGreeting(revisionNotes)
-        : getDocumentChatInitialGreeting(activeFormalDocumentType);
+        : isRevisionModeActive && isFormalDocumentTab
+          ? buildRevisionGreeting(revisionNotes)
+          : getDocumentChatInitialGreeting(activeFormalDocumentType);
   const activeChatMessages =
     activeRfqTab === "potential"
       ? potentialChatMessages
@@ -2127,10 +2170,10 @@ export default function NewRfq() {
         ? "This offer phase is read-only for your role"
         : "Offer preparation is read-only while the RFQ is in offer validation"
       : !canUseRfqActions
-      ? "This phase is read-only for your role"
-      : isPotentialAssistantLocked && activeRfqTab === "potential"
-        ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
-        : "Chat is locked once the RFQ enters validation";
+        ? "This phase is read-only for your role"
+        : isPotentialAssistantLocked && activeRfqTab === "potential"
+          ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
+          : "Chat is locked once the RFQ enters validation";
   const rfqFormFieldReadOnly =
     !canUseRfqActions || lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !rfqFormFieldReadOnly;
@@ -2762,7 +2805,7 @@ export default function NewRfq() {
         setSelfValidationPromptOpen(false);
         setSelfValidationPromptSignature("");
         setHoldSelfValidationPrompt(false);
-      setRfqError(`Unable to load the ${formalDocumentLabel}. Please try again.`);
+        setRfqError(`Unable to load the ${formalDocumentLabel}. Please try again.`);
       } finally {
         if (alive) {
           setLoadingRfq(false);
@@ -2959,9 +3002,16 @@ export default function NewRfq() {
       const currentProducts = Array.isArray(prev.products) && prev.products.length
         ? prev.products
         : [createEmptyProductItem()];
+      const sanitizedValue = fieldName === "currency"
+        ? sanitizeProductCurrencyCode(value)
+        : value;
       const nextProducts = currentProducts.map((product, productIndex) => {
-        if (productIndex !== index) return product;
-        const nextProduct = { ...product, [fieldName]: value };
+        const nextProduct = { ...product };
+        if (fieldName === "currency") {
+          nextProduct.currency = sanitizedValue;
+        } else if (productIndex === index) {
+          nextProduct[fieldName] = sanitizedValue;
+        }
         nextProduct.targetTo = calculateProductTargetTo(nextProduct);
         return nextProduct;
       });
@@ -2977,15 +3027,24 @@ export default function NewRfq() {
     if (isFormalDocumentTab && rfqFormFieldReadOnly) {
       return;
     }
-    setForm((prev) => ({
-      ...prev,
-      products: [
-        ...(Array.isArray(prev.products) && prev.products.length
-          ? prev.products
-          : [createEmptyProductItem()]),
-        createEmptyProductItem()
-      ]
-    }));
+    setForm((prev) => {
+      const currentProducts = Array.isArray(prev.products) && prev.products.length
+        ? prev.products
+        : [createEmptyProductItem()];
+      const sharedCurrency = sanitizeProductCurrencyCode(
+        currentProducts[0]?.currency || prev.targetPriceCurrency
+      );
+      return {
+        ...prev,
+        products: [
+          ...currentProducts,
+          {
+            ...createEmptyProductItem(),
+            currency: sharedCurrency
+          }
+        ]
+      };
+    });
   };
 
   const handleRemoveProduct = (index) => {
@@ -4272,12 +4331,42 @@ export default function NewRfq() {
     ? form.products
     : [createEmptyProductItem()];
   const totalTargetTo = calculateTotalTargetTo(productRows);
+  const sharedProductCurrency = useMemo(
+    () =>
+      sanitizeProductCurrencyCode(
+        productRows.find((product) => sanitizeProductCurrencyCode(product?.currency))?.currency ||
+        form.targetPriceCurrency
+      ),
+    [form.targetPriceCurrency, productRows]
+  );
+  const { ratesByCurrency, loadingByCurrency, fallbackByCurrency } = useEurFxRates(
+    productRows.map((product) => product?.currency)
+  );
+  const sharedCurrencyRate = ratesByCurrency[sharedProductCurrency];
+  const sharedCurrencyRateLoading = loadingByCurrency[sharedProductCurrency];
+  const sharedCurrencyFallbackUsed = fallbackByCurrency[sharedProductCurrency];
+  const totalTargetToNumber = parseNumericInputValue(totalTargetTo);
+  const totalTargetToEurPreview = sharedProductCurrency &&
+    sharedProductCurrency !== "EUR" &&
+    totalTargetToNumber !== null &&
+    Number.isFinite(sharedCurrencyRate)
+    ? totalTargetToNumber * sharedCurrencyRate
+    : null;
   const formatTurnover = (value) => {
     if (value === "" || value === null || value === undefined) return "";
     const number = Number(value);
     if (!Number.isFinite(number)) return "";
     return number.toLocaleString("en-US", { maximumFractionDigits: 5 });
   };
+  const formatTurnoverInThousands = (value) => {
+    if (value === "" || value === null || value === undefined) return "";
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "";
+    return (number / 1000).toLocaleString("en-US", { maximumFractionDigits: 5 });
+  };
+  const sharedTurnoverUnit = sharedProductCurrency
+    ? `k${sharedProductCurrency}`
+    : "k";
 
   return (
     <div className="min-h-screen overflow-y-auto bg-slate-100/70 flex flex-col lg:h-screen lg:overflow-hidden">
@@ -4451,7 +4540,7 @@ export default function NewRfq() {
                                                     : `Submit the ${formalDocumentLabel} for validation to unlock this tab`
                                                   : isOfferValidationSubPhase
                                                     ? "This tab is locked for now"
-                                                  : "Complete feasibility handoff to unlock this tab"
+                                                    : "Complete feasibility handoff to unlock this tab"
                                                 : `${formatFormalDocumentText(stage.label)} - ${formatFormalDocumentText(subPhase)}`
                                             }
                                           >
@@ -6542,79 +6631,200 @@ export default function NewRfq() {
                                     </button>
                                   </div>
                                   <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200/70">
-                                    <table className="w-full min-w-[760px] text-left text-xs">
+                                    <table className="w-full min-w-[980px] text-left text-xs">
                                       <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
                                         <tr>
                                           <th className="px-3 py-3">Part Number</th>
                                           <th className="px-3 py-3">Revision Level</th>
                                           <th className="px-3 py-3">Quantity</th>
                                           <th className="px-3 py-3">Target Price</th>
-                                          <th className="px-3 py-3">Target TO</th>
+                                          <th className="px-3 py-3">
+                                            {sharedProductCurrency
+                                              ? `Target TO (k${sharedProductCurrency})`
+                                              : "Target TO (k)"}
+                                          </th>
                                           <th className="px-3 py-3" aria-label="Remove product" />
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {productRows.map((product, productIndex) => {
                                           const rowTargetTo = calculateProductTargetTo(product);
+                                          const rowTargetToNumber = parseNumericInputValue(rowTargetTo);
+                                          const rowCurrency = sanitizeProductCurrencyCode(product.currency);
+                                          const rowRate = ratesByCurrency[rowCurrency];
+                                          const rowRateLoading = loadingByCurrency[rowCurrency];
+                                          const rowFallbackUsed = fallbackByCurrency[rowCurrency];
+                                          const rowPriceNumber = parseNumericInputValue(product.targetPrice);
+                                          const rowEurPreview = rowCurrency &&
+                                            rowCurrency !== "EUR" &&
+                                            rowPriceNumber !== null &&
+                                            Number.isFinite(rowRate)
+                                            ? rowPriceNumber * rowRate
+                                            : null;
+                                          const rowTargetToEurPreview = rowCurrency &&
+                                            rowCurrency !== "EUR" &&
+                                            rowTargetToNumber !== null &&
+                                            Number.isFinite(rowRate)
+                                            ? rowTargetToNumber * rowRate
+                                            : null;
+                                          const rowPriceSourceLabel = product.targetPriceIsEstimated === true
+                                            ? "Estimated"
+                                            : product.targetPriceIsEstimated === false
+                                              ? "Official Customer Price"
+                                              : "";
                                           return (
                                             <tr key={`product-${productIndex}`} className="border-t border-slate-200/70 bg-white">
                                               <td className="px-3 py-3">
-                                                <input
-                                                  className="input-field min-w-[130px]"
-                                                  value={product.partNumber || ""}
-                                                  onChange={(event) => handleProductChange(productIndex, "partNumber", event.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
-                                                  aria-label={`Product ${productIndex + 1} part number`}
-                                                />
+                                                {rfqFormFieldReadOnly ? (
+                                                  <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
+                                                    {product.partNumber || "—"}
+                                                  </div>
+                                                ) : (
+                                                  <input
+                                                    className="input-field min-w-[130px]"
+                                                    value={product.partNumber || ""}
+                                                    onChange={(event) => handleProductChange(productIndex, "partNumber", event.target.value)}
+                                                    readOnly={rfqFormFieldReadOnly}
+                                                    aria-label={`Product ${productIndex + 1} part number`}
+                                                  />
+                                                )}
                                               </td>
                                               <td className="px-3 py-3">
-                                                <input
-                                                  className="input-field min-w-[120px]"
-                                                  value={product.revisionLevel || ""}
-                                                  onChange={(event) => handleProductChange(productIndex, "revisionLevel", event.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
-                                                  aria-label={`Product ${productIndex + 1} revision level`}
-                                                />
+                                                {rfqFormFieldReadOnly ? (
+                                                  <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
+                                                    {product.revisionLevel || "—"}
+                                                  </div>
+                                                ) : (
+                                                  <input
+                                                    className="input-field min-w-[120px]"
+                                                    value={product.revisionLevel || ""}
+                                                    onChange={(event) => handleProductChange(productIndex, "revisionLevel", event.target.value)}
+                                                    readOnly={rfqFormFieldReadOnly}
+                                                    aria-label={`Product ${productIndex + 1} revision level`}
+                                                  />
+                                                )}
                                               </td>
                                               <td className="px-3 py-3">
-                                                <input
-                                                  className="input-field min-w-[110px]"
-                                                  type="number"
-                                                  value={product.quantity ?? ""}
-                                                  onChange={(event) => handleProductChange(productIndex, "quantity", event.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
-                                                  aria-label={`Product ${productIndex + 1} quantity`}
-                                                />
+                                                {rfqFormFieldReadOnly ? (
+                                                  <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
+                                                    {formatTurnover(product.quantity) || "—"}
+                                                  </div>
+                                                ) : (
+                                                  <input
+                                                    className="input-field min-w-[110px]"
+                                                    type="number"
+                                                    value={product.quantity ?? ""}
+                                                    onChange={(event) => handleProductChange(productIndex, "quantity", event.target.value)}
+                                                    readOnly={rfqFormFieldReadOnly}
+                                                    aria-label={`Product ${productIndex + 1} quantity`}
+                                                  />
+                                                )}
                                               </td>
                                               <td className="px-3 py-3">
-                                                <input
-                                                  className="input-field min-w-[120px]"
-                                                  type="number"
-                                                  value={product.targetPrice ?? ""}
-                                                  onChange={(event) => handleProductChange(productIndex, "targetPrice", event.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
-                                                  aria-label={`Product ${productIndex + 1} target price`}
-                                                />
+                                                <div className="min-w-[280px] space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
+                                                  {rfqFormFieldReadOnly ? (
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                      <div className="text-sm font-semibold text-ink">
+                                                        {formatTurnover(product.targetPrice) || "—"}
+                                                      </div>
+                                                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                                        {rowCurrency || "—"}
+                                                      </span>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="flex items-start gap-2">
+                                                      <input
+                                                        className="input-field min-w-0 flex-1"
+                                                        type="number"
+                                                        value={product.targetPrice ?? ""}
+                                                        onChange={(event) => handleProductChange(productIndex, "targetPrice", event.target.value)}
+                                                        aria-label={`Product ${productIndex + 1} target price`}
+                                                      />
+                                                      <input
+                                                        className="w-20 rounded-2xl border border-slate-300/60 bg-white px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-ink shadow-sm transition placeholder:text-slate-300 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20"
+                                                        value={rowCurrency}
+                                                        onChange={(event) => handleProductChange(productIndex, "currency", event.target.value)}
+                                                        maxLength={3}
+                                                        placeholder="EUR"
+                                                        aria-label={`Product ${productIndex + 1} currency`}
+                                                      />
+                                                    </div>
+                                                  )}
+                                                  {rowCurrency && rowCurrency !== "EUR" && rowPriceNumber !== null ? (
+                                                    <p className="text-[11px] font-medium text-slate-400">
+                                                      {rowFallbackUsed
+                                                        ? "FX unavailable"
+                                                        : rowRateLoading
+                                                          ? "Loading FX..."
+                                                          : rowEurPreview !== null
+                                                            ? `≈ ${formatInlineEurPreview(rowEurPreview)} EUR`
+                                                            : ""}
+                                                    </p>
+                                                  ) : null}
+                                                  <div className="flex flex-wrap gap-2">
+                                                    {rfqFormFieldReadOnly ? (
+                                                      rowPriceSourceLabel ? (
+                                                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${getPriceSourceBadgeClasses(product.targetPriceIsEstimated === true)}`}>
+                                                          {rowPriceSourceLabel}
+                                                        </span>
+                                                      ) : (
+                                                        <span className="text-[11px] text-slate-400">Price source pending</span>
+                                                      )
+                                                    ) : (
+                                                      PRODUCT_PRICE_SOURCE_OPTIONS.map((option) => {
+                                                        const isSelected = product.targetPriceIsEstimated === option.value;
+                                                        return (
+                                                          <button
+                                                            key={`${productIndex}-${option.label}`}
+                                                            type="button"
+                                                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${getPriceSourceBadgeClasses(option.value, isSelected)}`}
+                                                            onClick={() => handleProductChange(productIndex, "targetPriceIsEstimated", option.value)}
+                                                            aria-pressed={isSelected}
+                                                          >
+                                                            {option.label}
+                                                          </button>
+                                                        );
+                                                      })
+                                                    )}
+                                                  </div>
+                                                </div>
                                               </td>
                                               <td className="px-3 py-3">
-                                                <input
-                                                  className="input-field min-w-[120px] bg-slate-100/80 text-slate-500"
-                                                  value={formatTurnover(rowTargetTo)}
-                                                  readOnly
-                                                  aria-label={`Product ${productIndex + 1} target turnover`}
-                                                />
+                                                <div className="min-w-[220px] space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                    <div className="text-sm font-semibold text-ink">
+                                                      {formatTurnoverInThousands(rowTargetTo) || "—"}
+                                                    </div>
+                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                                      {rowCurrency ? `k${rowCurrency}` : "k"}
+                                                    </span>
+                                                  </div>
+                                                  {rowCurrency && rowCurrency !== "EUR" && rowTargetToNumber !== null ? (
+                                                    <p className="text-[11px] font-medium text-slate-400">
+                                                      {rowFallbackUsed
+                                                        ? "FX unavailable"
+                                                        : rowRateLoading
+                                                          ? "Loading FX..."
+                                                          : rowTargetToEurPreview !== null
+                                                            ? `≈ ${formatTurnoverInThousands(rowTargetToEurPreview)} kEUR`
+                                                            : ""}
+                                                    </p>
+                                                  ) : null}
+                                                </div>
                                               </td>
                                               <td className="px-3 py-3 text-right">
-                                                <button
-                                                  type="button"
-                                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                                  onClick={() => handleRemoveProduct(productIndex)}
-                                                  disabled={rfqFormFieldReadOnly}
-                                                  aria-label={`Delete product ${productIndex + 1}`}
-                                                  title="Delete product"
-                                                >
-                                                  <Trash2 className="h-4 w-4" />
-                                                </button>
+                                                {rfqFormFieldReadOnly ? null : (
+                                                  <button
+                                                    type="button"
+                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    onClick={() => handleRemoveProduct(productIndex)}
+                                                    disabled={rfqFormFieldReadOnly}
+                                                    aria-label={`Delete product ${productIndex + 1}`}
+                                                    title="Delete product"
+                                                  >
+                                                    <Trash2 className="h-4 w-4" />
+                                                  </button>
+                                                )}
                                               </td>
                                             </tr>
                                           );
@@ -6624,12 +6834,32 @@ export default function NewRfq() {
                                   </div>
                                   <div className="mt-3 flex justify-end">
                                     <label className="flex w-full max-w-xs flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                                      <span>Total Target TO</span>
-                                      <input
-                                        className="input-field bg-slate-100/80 text-slate-600"
-                                        value={formatTurnover(totalTargetTo)}
-                                        readOnly
-                                      />
+                                      <span>
+                                        {sharedProductCurrency
+                                          ? `Total Target TO (k${sharedProductCurrency})`
+                                          : "Total Target TO (k)"}
+                                      </span>
+                                      <div className="space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <div className="text-sm font-semibold text-ink">
+                                            {formatTurnoverInThousands(totalTargetTo) || "—"}
+                                          </div>
+                                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                            {sharedTurnoverUnit}
+                                          </span>
+                                        </div>
+                                        {sharedProductCurrency && sharedProductCurrency !== "EUR" && totalTargetToNumber !== null ? (
+                                          <p className="text-[11px] font-medium text-slate-400">
+                                            {sharedCurrencyFallbackUsed
+                                              ? "FX unavailable"
+                                              : sharedCurrencyRateLoading
+                                                ? "Loading FX..."
+                                                : totalTargetToEurPreview !== null
+                                                  ? `≈ ${formatTurnoverInThousands(totalTargetToEurPreview)} kEUR`
+                                                  : ""}
+                                          </p>
+                                        ) : null}
+                                      </div>
                                     </label>
                                   </div>
                                 </div>
@@ -6669,34 +6899,6 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <div className="col-span-full">
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-1">
-                                  <FormField label="Currency" name="targetPriceCurrency" value={form.targetPriceCurrency || ""} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                  {form.targetPriceCurrency && form.targetPriceCurrency !== "EUR" && form.targetPrice ? (
-                                    <p className="mt-0.5 text-xs text-slate-400">
-                                      ≈ {form.targetPrice} EUR
-                                    </p>
-                                  ) : null}
-                                  <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                    {isTargetPriceEstimated ? (
-                                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 ring-1 ring-inset ring-amber-200">
-                                        Estimated
-                                      </span>
-                                    ) : form.targetPrice || form.targetPriceLocal ? (
-                                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                                        Customer Price
-                                      </span>
-                                    ) : null}
-                                    {form.targetPriceNote ? (
-                                      <span className="text-[11px] italic text-slate-400" title={form.targetPriceNote}>
-                                        {form.targetPriceNote.length > 40 ? form.targetPriceNote.slice(0, 40) + "…" : form.targetPriceNote}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
                             <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
                             <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
@@ -6732,25 +6934,30 @@ export default function NewRfq() {
                         >
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-1">
-                              <FormField
-                                label={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
-                                  ? `TO (k${form.targetPriceCurrency})`
-                                  : "TO (kEUR)"}
-                                name={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
-                                  ? "toTotalLocal"
-                                  : "toTotal"}
-                                type="number"
-                                value={form.targetPriceCurrency && form.targetPriceCurrency !== "EUR"
-                                  ? (form.toTotalLocal || "")
-                                  : (form.toTotal || "")}
-                                onChange={handleChange}
-                                readOnly={rfqFormFieldReadOnly}
-                              />
-                              {form.targetPriceCurrency && form.targetPriceCurrency !== "EUR" && form.toTotal ? (
-                                <p className="mt-0.5 text-xs text-slate-400">
-                                  ≈ {Number(form.toTotal).toFixed(2)} kEUR
-                                </p>
-                              ) : null}
+                              <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                                Total Turnover
+                              </p>
+                              <div className="space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="text-sm font-semibold text-ink">
+                                    {formatTurnoverInThousands(totalTargetTo) || "—"}
+                                  </div>
+                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    {sharedTurnoverUnit}
+                                  </span>
+                                </div>
+                                {sharedProductCurrency && sharedProductCurrency !== "EUR" && totalTargetToNumber !== null ? (
+                                  <p className="text-[11px] font-medium text-slate-400">
+                                    {sharedCurrencyFallbackUsed
+                                      ? "FX unavailable"
+                                      : sharedCurrencyRateLoading
+                                        ? "Loading FX..."
+                                        : totalTargetToEurPreview !== null
+                                          ? `≈ ${formatTurnoverInThousands(totalTargetToEurPreview)} kEUR`
+                                          : ""}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
                             <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
                           </div>

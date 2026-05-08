@@ -6,7 +6,7 @@ import {
   setToken
 } from "./utils/session.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 300000;
 let refreshPromise = null;
 
@@ -273,6 +273,12 @@ export async function listRfqs(documentType = "") {
 
 export async function getRfq(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}`);
+}
+
+export async function getEurFxRate(currencyCode) {
+  return request(
+    `/api/rfq/fx/eur-rate?currency_code=${encodeURIComponent(String(currencyCode || ""))}`
+  );
 }
 
 export async function getRfqAuditLogs(rfqId) {
