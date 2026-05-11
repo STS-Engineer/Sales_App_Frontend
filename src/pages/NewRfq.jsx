@@ -52,6 +52,7 @@ import {
   normalizeProductsForPayload,
   sanitizeNumberForInput
 } from "../utils/rfq.js";
+import { formatStandardTimestamp } from "../utils/dateUtils.js";
 import { useEurFxRates } from "../utils/useEurFxRates.js";
 
 const COSTING_READ_ONLY_ROLES = ["COSTING_TEAM", "RND", "PLM"];
@@ -1013,15 +1014,29 @@ const getFileAccentClasses = (name = "") => {
 };
 
 const parseFileTimestamp = (value) => {
-  if (!value) return 0;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
+  const parsed = parseServerTimestamp(value);
+  return parsed ? parsed.getTime() : 0;
+};
+
+const parseServerTimestamp = (value) => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const formatFileDate = (value, { withTime = false } = {}) => {
-  if (!value) return "Date unavailable";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
+  if (value === null || value === undefined || value === "") return "Date unavailable";
+  const parsed = parseServerTimestamp(value);
+  if (!parsed) return String(value);
   return parsed.toLocaleString("en-GB", withTime
     ? {
       day: "2-digit",
@@ -1373,6 +1388,11 @@ const createEmptyValidationAudit = () => ({
   rejectionReason: ""
 });
 
+const createEmptyActionAudit = () => ({
+  completedAt: "",
+  completedBy: ""
+});
+
 const normalizeAuditValue = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim();
@@ -1479,26 +1499,80 @@ const extractCostingReviewAudit = (rfq, auditLogs = []) => {
   };
 };
 
-const extractPricingFileDecisionAudit = (costingFileState) => {
+const extractFeasibilitySaveAudit = (rfq, auditLogs = []) => {
+  const phaseValue = normalizeAuditValue(rfq?.phase).toUpperCase();
+  const subStatusValue = normalizeAuditValue(rfq?.sub_status).toUpperCase();
+  const saveLog = [...auditLogs]
+    .reverse()
+    .find(
+      (entry) =>
+        normalizeAuditValue(entry?.action)
+          .toLowerCase()
+          .includes("status advanced to costing/pricing")
+    );
+  const groupedStage = GROUPED_PIPELINE_STAGE_MAP[mapBackendStatusToPipelineStage(rfq)] || "";
+  const isCurrentPricingStep =
+    phaseValue === "COSTING" && subStatusValue === "PRICING";
+  const hasMovedBeyondCosting = ["Offer", "PO", "Prototype"].includes(groupedStage);
+
+  if (!saveLog && !isCurrentPricingStep && !hasMovedBeyondCosting) {
+    return createEmptyActionAudit();
+  }
+
+  return {
+    completedAt:
+      normalizeAuditValue(saveLog?.timestamp) || normalizeAuditValue(rfq?.updated_at),
+    completedBy: normalizeAuditValue(saveLog?.performed_by)
+  };
+};
+
+const extractPricingFileDecisionAudit = (
+  rfq,
+  auditLogs = [],
+  costingFileState = normalizeCostingFileState(rfq)
+) => {
   const workflowState = normalizeAuditValue(costingFileState?.workflowState).toUpperCase();
   const validationAt = normalizeAuditValue(costingFileState?.validationAt);
   const validationBy = normalizeAuditValue(costingFileState?.validationBy);
   const rejectionReason = normalizeAuditValue(costingFileState?.rejectionReason);
+  const fallbackUpdatedAt = normalizeAuditValue(rfq?.updated_at);
+  const approvalLog = [...auditLogs]
+    .reverse()
+    .find((entry) =>
+      normalizeAuditValue(entry?.action).toLowerCase().includes("pricing file approved")
+    );
+  const rejectionLog = [...auditLogs]
+    .reverse()
+    .find((entry) =>
+      normalizeAuditValue(entry?.action).toLowerCase().includes("pricing file rejected:")
+    );
 
   if (workflowState === PRICING_WORKFLOW_STATE_APPROVED) {
     return {
       ...createEmptyValidationAudit(),
-      approvedAt: validationAt,
-      approvedBy: validationBy
+      approvedAt:
+        validationAt ||
+        normalizeAuditValue(approvalLog?.timestamp) ||
+        fallbackUpdatedAt,
+      approvedBy:
+        validationBy ||
+        normalizeAuditValue(approvalLog?.performed_by)
     };
   }
 
   if (workflowState === PRICING_WORKFLOW_STATE_REJECTED) {
     return {
       ...createEmptyValidationAudit(),
-      rejectedAt: validationAt,
-      rejectedBy: validationBy,
-      rejectionReason
+      rejectedAt:
+        validationAt ||
+        normalizeAuditValue(rejectionLog?.timestamp) ||
+        fallbackUpdatedAt,
+      rejectedBy:
+        validationBy ||
+        normalizeAuditValue(rejectionLog?.performed_by),
+      rejectionReason:
+        rejectionReason ||
+        extractAuditReasonFromAction(rejectionLog?.action)
     };
   }
 
@@ -1511,13 +1585,7 @@ const formatValidationAuditValue = (value) => {
 };
 
 const formatValidationAuditDate = (value) => {
-  const text = normalizeAuditValue(value);
-  if (!text) return "Not available";
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) {
-    return text;
-  }
-  return parsed.toLocaleString();
+  return formatStandardTimestamp(value);
 };
 
 const getPricingFileDecisionStorageKey = (rfqId) => {
@@ -1614,6 +1682,8 @@ export default function NewRfq() {
   const [documentType, setDocumentType] = useState(() => documentTypeParam);
   const [saving, setSaving] = useState(false);
   const [rfqId, setRfqId] = useState("");
+  const [rfqSnapshot, setRfqSnapshot] = useState(null);
+  const [rfqAuditLogs, setRfqAuditLogs] = useState([]);
   const [rfqCreatorEmail, setRfqCreatorEmail] = useState("");
   const [potentialChatMessages, setPotentialChatMessages] = useState([]);
   const [rfqChatMessages, setRfqChatMessages] = useState([]);
@@ -1700,7 +1770,6 @@ export default function NewRfq() {
   const [rfqValidationReached, setRfqValidationReached] = useState(false);
   const [validationAudit, setValidationAudit] = useState(createEmptyValidationAudit);
   const [costingReviewAudit, setCostingReviewAudit] = useState(createEmptyValidationAudit);
-  const [pricingFileDecisionAudit, setPricingFileDecisionAudit] = useState(createEmptyValidationAudit);
   const [persistValidationView, setPersistValidationView] = useState(false);
   const [holdSelfValidationPrompt, setHoldSelfValidationPrompt] = useState(false);
   const [persistCostingReviewView, setPersistCostingReviewView] = useState(false);
@@ -1711,9 +1780,30 @@ export default function NewRfq() {
   const rfqFileInputRef = useRef(null);
   const offerTemplateViewerRef = useRef(null);
   const localFilesRef = useRef([]);
+  const rfqAuditLogsRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
   const resizeState = useRef({ startX: 0, startWidth: 420 });
   const previousStepCompletionRef = useRef({});
+  const feasibilitySaveAudit = useMemo(
+    () => (
+      rfqSnapshot
+        ? extractFeasibilitySaveAudit(rfqSnapshot, rfqAuditLogs)
+        : createEmptyActionAudit()
+    ),
+    [rfqSnapshot, rfqAuditLogs]
+  );
+  const pricingFileDecisionAudit = useMemo(
+    () => (
+      rfqSnapshot
+        ? extractPricingFileDecisionAudit(
+          rfqSnapshot,
+          rfqAuditLogs,
+          normalizeCostingFileState(rfqSnapshot)
+        )
+        : createEmptyValidationAudit()
+    ),
+    [rfqSnapshot, rfqAuditLogs]
+  );
   const minChatWidth = 320;
   const maxChatWidth = 620;
   const stepIds = STEPS.map((step) => step.id);
@@ -1840,10 +1930,6 @@ export default function NewRfq() {
     costingReviewAudit.approvedAt || costingReviewAudit.rejectedAt
   );
   const isCostingReviewRejected = Boolean(costingReviewAudit.rejectedAt);
-  const hasRecordedPricingFileDecision = Boolean(
-    pricingFileDecisionAudit.approvedAt || pricingFileDecisionAudit.rejectedAt
-  );
-  const isPricingFileRejected = Boolean(pricingFileDecisionAudit.rejectedAt);
   const effectiveCostingFileState = useMemo(
     () => costingFileState || buildLegacyCostingFileState(costingFiles),
     [costingFileState, costingFiles]
@@ -1871,6 +1957,19 @@ export default function NewRfq() {
     rfqSubStatus,
     selectedStage
   ]);
+  const hasTerminalPricingWorkflowDecision = [
+    PRICING_WORKFLOW_STATE_APPROVED,
+    PRICING_WORKFLOW_STATE_REJECTED
+  ].includes(pricingWorkflowState);
+  const hasRecordedPricingFileDecision = Boolean(
+    hasTerminalPricingWorkflowDecision ||
+    pricingFileDecisionAudit.approvedAt ||
+    pricingFileDecisionAudit.rejectedAt
+  );
+  const isPricingFileRejected = Boolean(
+    pricingWorkflowState === PRICING_WORKFLOW_STATE_REJECTED ||
+    pricingFileDecisionAudit.rejectedAt
+  );
   const validationButtonsDisabled = Boolean(
     validationActionId ||
     hasRecordedValidationDecision ||
@@ -2075,10 +2174,14 @@ export default function NewRfq() {
     !costingSavePending
   );
   const hasSavedCostingFeasability = Boolean(
-    costingFeasabilitySaved ||
-    normalizePipelineStageKey(activeStage) === "In costing" &&
-    activeSubPhase === "Pricing"
+    feasibilitySaveAudit.completedAt || costingFeasabilitySaved
   );
+  const feasibilitySavedAtDisplayValue =
+    parseServerTimestamp(
+      feasibilitySaveAudit.completedAt || effectiveCostingFileState?.actionAt
+    ) ||
+    feasibilitySaveAudit.completedAt ||
+    effectiveCostingFileState?.actionAt;
   const hasPricingBomUpload = Boolean(
     costingFileState?.bomFile || pricingBomUpload?.file
   );
@@ -2265,7 +2368,6 @@ export default function NewRfq() {
     setRfqValidationReached(false);
     setPersistValidationView(false);
     setPersistCostingReviewView(false);
-    setPricingFileDecisionAudit(createEmptyValidationAudit());
     setPendingRfqAutofillReveal(null);
     setSelfValidationPromptOpen(false);
     setSelfValidationPromptSignature("");
@@ -2449,12 +2551,19 @@ export default function NewRfq() {
     rfq,
     {
       syncChat = true,
-      auditLogs = [],
+      auditLogs,
       preserveActiveTab = false,
       revealUpdatedRfqFields = false
     } = {}
   ) => {
     if (!rfq) return;
+    const hasProvidedAuditLogs = Array.isArray(auditLogs);
+    const effectiveAuditLogs = hasProvidedAuditLogs ? auditLogs : rfqAuditLogsRef.current;
+    setRfqSnapshot(rfq);
+    if (hasProvidedAuditLogs) {
+      rfqAuditLogsRef.current = effectiveAuditLogs;
+      setRfqAuditLogs(effectiveAuditLogs);
+    }
     const subStatusValue =
       typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
     const nextDocumentType = normalizeDocumentType(rfq?.document_type);
@@ -2467,10 +2576,9 @@ export default function NewRfq() {
     });
     const nextUiStatus = mapBackendStatusToUi(rfq);
     const nextPipelineStage = mapBackendStatusToPipelineStage(rfq);
-    const nextValidationAudit = extractValidationAudit(rfq, auditLogs);
-    const nextCostingReviewAudit = extractCostingReviewAudit(rfq, auditLogs);
+    const nextValidationAudit = extractValidationAudit(rfq, effectiveAuditLogs);
+    const nextCostingReviewAudit = extractCostingReviewAudit(rfq, effectiveAuditLogs);
     const nextCostingFileState = normalizeCostingFileState(rfq);
-    const nextPricingDecisionAudit = extractPricingFileDecisionAudit(nextCostingFileState);
     const keepRfqValidationView =
       nextPipelineStage === "RFQ" &&
       nextUiStatus === "Cancelled" &&
@@ -2500,7 +2608,6 @@ export default function NewRfq() {
     );
     setValidationAudit(nextValidationAudit);
     setCostingReviewAudit(nextCostingReviewAudit);
-    setPricingFileDecisionAudit(nextPricingDecisionAudit);
     setCostingFiles(normalizeCostingFiles(rfq));
     setCostingFileState(nextCostingFileState);
     setPricingBomUpload(nextPricingBomUpload);
@@ -2551,7 +2658,7 @@ export default function NewRfq() {
       nextAssignedValidatorEmail === normalizedCurrentUserEmail
     );
     const nextSelfValidationPromptSignature = matchesSelfValidationPromptCase
-      ? buildSelfValidationPromptSignature(rfq, auditLogs)
+      ? buildSelfValidationPromptSignature(rfq, effectiveAuditLogs)
       : "";
     const hasAcknowledgedSelfValidationPrompt =
       matchesSelfValidationPromptCase &&
@@ -2644,6 +2751,20 @@ export default function NewRfq() {
     }
   };
 
+  const hydrateRfqAfterMutation = async (targetId, options = {}) => {
+    const idToLoad = targetId || rfqId;
+    if (!idToLoad) return false;
+    setRfqError("");
+    try {
+      const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
+      applyRfq(rfq, { auditLogs, preserveActiveTab: true, ...options });
+      return true;
+    } catch (error) {
+      setRfqError(`Unable to refresh this ${formalDocumentLabel}. Please try again.`);
+      return false;
+    }
+  };
+
   const ensureRfqExists = async () => {
     if (rfqId) {
       return rfqId;
@@ -2689,6 +2810,9 @@ export default function NewRfq() {
       try {
         if (!rfqIdParam) {
           if (!alive) return;
+          setRfqSnapshot(null);
+          setRfqAuditLogs([]);
+          rfqAuditLogsRef.current = [];
           setRfqId("");
           setDocumentType(documentTypeParam);
           setForm({ ...initialForm });
@@ -2734,7 +2858,6 @@ export default function NewRfq() {
           setPricingFinalPriceSaved(false);
           setPricingFileValidationOpen(false);
           setPricingFileValidationActionId("");
-          setPricingFileDecisionAudit(createEmptyValidationAudit());
           setPricingFileRejectModalOpen(false);
           setPricingFileRejectReason("");
           setCostingFeasabilitySaved(false);
@@ -2770,6 +2893,9 @@ export default function NewRfq() {
           return;
         }
 
+        setRfqSnapshot(null);
+        setRfqAuditLogs([]);
+        rfqAuditLogsRef.current = [];
         const { rfq, auditLogs } = await loadRfqSnapshot(rfqIdParam);
 
         if (!alive) return;
@@ -2777,6 +2903,9 @@ export default function NewRfq() {
         applyRfq(rfq, { auditLogs });
       } catch {
         if (!alive) return;
+        setRfqSnapshot(null);
+        setRfqAuditLogs([]);
+        rfqAuditLogsRef.current = [];
         setRfqSubStatus("");
         setRfqCreatorEmail("");
         setRevisionNotes("");
@@ -2805,7 +2934,6 @@ export default function NewRfq() {
         setPricingFinalPriceSaved(false);
         setPricingFileValidationOpen(false);
         setPricingFileValidationActionId("");
-        setPricingFileDecisionAudit(createEmptyValidationAudit());
         setPricingFileRejectModalOpen(false);
         setPricingFileRejectReason("");
         setCostingFeasabilitySaved(false);
@@ -4127,7 +4255,7 @@ export default function NewRfq() {
 
     try {
       await submitCostingValidation(rfqId, { is_approved: true });
-      await syncRfq(rfqId);
+      await hydrateRfqAfterMutation(rfqId);
       if (isRfiDocument) {
         setSelectedStage("In costing");
         setSelectedSubPhase("Pricing");
@@ -4174,7 +4302,7 @@ export default function NewRfq() {
         is_approved: false,
         rejection_reason: rejectionReason
       });
-      await syncRfq(rfqId);
+      await hydrateRfqAfterMutation(rfqId);
       setSelectedStage("In costing");
       setSelectedSubPhase("Pricing");
       setPricingFileRejectModalOpen(false);
@@ -4215,7 +4343,7 @@ export default function NewRfq() {
       });
 
       setPersistCostingReviewView(false);
-      await syncRfq(rfqId);
+      await hydrateRfqAfterMutation(rfqId);
       setSelectedStage("In costing");
       setSelectedSubPhase("Pricing");
       setValidationSuccess("Costing moved to pricing successfully.");
@@ -5361,7 +5489,31 @@ export default function NewRfq() {
                                 </div>
                               )}
 
-                              {!hasSavedCostingFeasability ? (
+                              {hasSavedCostingFeasability ? (
+                                <div className="mt-5 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 shadow-sm">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        Feasibility handoff
+                                      </p>
+                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                        Feasibility saved on {formatStandardTimestamp(
+                                          feasibilitySavedAtDisplayValue
+                                        )}
+                                      </p>
+                                    </div>
+                                    <span className="inline-flex items-center gap-2 rounded-full border border-tide/20 bg-tide/10 px-3 py-2 text-sm font-semibold text-tide">
+                                      <Check className="h-4 w-4" />
+                                      Saved to pricing
+                                    </span>
+                                  </div>
+                                  <p className="mt-3 text-sm text-slate-500">
+                                    {feasibilitySaveAudit.completedBy
+                                      ? `Recorded by ${feasibilitySaveAudit.completedBy}`
+                                      : "Recorded in the pricing transition audit."}
+                                  </p>
+                                </div>
+                              ) : (
                                 <div className="mt-5 flex justify-end">
                                   <button
                                     type="button"
@@ -5378,7 +5530,7 @@ export default function NewRfq() {
                                     {costingSavePending ? "Saving..." : "Save"}
                                   </button>
                                 </div>
-                              ) : null}
+                              )}
                             </div>
                           ) : null}
                         </>
@@ -5628,84 +5780,73 @@ export default function NewRfq() {
 
                                       {hasRecordedPricingFileDecision ? (
                                         <section
-                                          className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isPricingFileRejected
-                                            ? "border-red-200/80 bg-gradient-to-br from-red-50 via-white to-white"
-                                            : "border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-white"
+                                          className={`mt-5 rounded-[24px] border p-5 shadow-soft ${isPricingFileRejected
+                                            ? "border-red-200/80 bg-red-50/70"
+                                            : "border-emerald-200/80 bg-emerald-50/70"
                                             }`}
                                         >
-                                          <div
-                                            className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isPricingFileRejected ? "border-red-100/80" : "border-emerald-100/80"
-                                              }`}
-                                          >
+                                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                             <div className="space-y-2">
-                                              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                                                Pricing audit
+                                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                Costing validation audit
                                               </p>
-                                              <div>
-                                                <h4 className="text-lg font-semibold text-ink">
-                                                  Decision recorded
-                                                </h4>
+                                              <div className="flex flex-wrap items-center gap-3">
+                                                <span
+                                                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isPricingFileRejected
+                                                    ? "border-red-200 bg-red-50 text-red-700"
+                                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                    }`}
+                                                >
+                                                  {isPricingFileRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                                                  {isPricingFileRejected ? "Costing Rejected" : "Costing Approved"}
+                                                </span>
                                               </div>
                                             </div>
-                                            <span
-                                              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isPricingFileRejected
-                                                ? "border-red-200 bg-red-50 text-red-700"
-                                                : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                }`}
-                                            >
-                                              {isPricingFileRejected ? <X className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                                              {isPricingFileRejected ? "Rejected" : "Approved"}
-                                            </span>
                                           </div>
 
-                                          <div className="mt-5 grid gap-4 md:grid-cols-2">
+                                          <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                            <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
+                                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                Action
+                                              </p>
+                                              <p className="mt-2 text-base font-semibold text-ink">
+                                                {isPricingFileRejected ? "Costing Rejected" : "Costing Approved"}
+                                              </p>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
+                                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                By whom
+                                              </p>
+                                              <p className="mt-2 text-base font-semibold text-ink">
+                                                {formatValidationAuditValue(
+                                                  isPricingFileRejected
+                                                    ? pricingFileDecisionAudit.rejectedBy || currentUserEmail
+                                                    : pricingFileDecisionAudit.approvedBy || currentUserEmail
+                                                )}
+                                              </p>
+                                            </div>
+                                            <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
+                                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                When
+                                              </p>
+                                              <p className="mt-2 text-base font-semibold text-ink">
+                                                {formatStandardTimestamp(
+                                                  isPricingFileRejected
+                                                    ? pricingFileDecisionAudit.rejectedAt
+                                                    : pricingFileDecisionAudit.approvedAt
+                                                )}
+                                              </p>
+                                            </div>
                                             {isPricingFileRejected ? (
-                                              <>
-                                                <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                    Rejected at
-                                                  </p>
-                                                  <p className="mt-2 text-base font-semibold text-ink">
-                                                    {formatValidationAuditDate(pricingFileDecisionAudit.rejectedAt)}
-                                                  </p>
-                                                </div>
-                                                <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                    Rejected by
-                                                  </p>
-                                                  <p className="mt-2 text-base font-semibold text-ink">
-                                                    {formatValidationAuditValue(pricingFileDecisionAudit.rejectedBy)}
-                                                  </p>
-                                                </div>
-                                                <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
-                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                    Rejection reason
-                                                  </p>
-                                                  <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
-                                                    {formatValidationAuditValue(pricingFileDecisionAudit.rejectionReason)}
-                                                  </p>
-                                                </div>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                    Approved at
-                                                  </p>
-                                                  <p className="mt-2 text-base font-semibold text-ink">
-                                                    {formatValidationAuditDate(pricingFileDecisionAudit.approvedAt)}
-                                                  </p>
-                                                </div>
-                                                <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                    Approved by
-                                                  </p>
-                                                  <p className="mt-2 text-base font-semibold text-ink">
-                                                    {formatValidationAuditValue(pricingFileDecisionAudit.approvedBy)}
-                                                  </p>
-                                                </div>
-                                              </>
-                                            )}
+                                              <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-3">
+                                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                                  Rejection reason
+                                                </p>
+                                                <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
+                                                  {formatValidationAuditValue(pricingFileDecisionAudit.rejectionReason)}
+                                                </p>
+                                              </div>
+                                            ) : null}
                                           </div>
                                         </section>
                                       ) : (
@@ -6637,15 +6778,16 @@ export default function NewRfq() {
                                         Products
                                       </p>
                                     </div>
-                                    <button
-                                      type="button"
-                                      className="outline-button inline-flex items-center gap-2 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
-                                      onClick={handleAddProduct}
-                                      disabled={rfqFormFieldReadOnly}
-                                    >
-                                      <Plus className="h-4 w-4" />
-                                      Add Product
-                                    </button>
+                                    {!rfqFormFieldReadOnly && (
+                                      <button
+                                        type="button"
+                                        className="outline-button inline-flex items-center gap-2 px-3 py-2 text-xs"
+                                        onClick={handleAddProduct}
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                        Add Product
+                                      </button>
+                                    )}
                                   </div>
                                   <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200/70">
                                     <table className="w-full min-w-[980px] text-left text-xs">
