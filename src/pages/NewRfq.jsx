@@ -1139,7 +1139,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const PRODUCT_ROW_READONLY_VALUE_CLASSES =
   "min-h-[44px] rounded-2xl bg-slate-50/80 px-4 py-3 text-sm font-medium text-ink";
 const PRODUCT_PRICE_SOURCE_OPTIONS = [
@@ -1806,26 +1806,73 @@ export default function NewRfq() {
   );
   const minChatWidth = 320;
   const maxChatWidth = 620;
+  const isRfiWorkflowDocument = normalizeDocumentType(documentType) === "RFI";
+  const pipelineStages = useMemo(
+    () => (
+      isRfiWorkflowDocument
+        ? PIPELINE_STAGES.filter((stage) => ["RFQ", "In costing"].includes(stage.key))
+        : PIPELINE_STAGES
+    ),
+    [isRfiWorkflowDocument]
+  );
+  const pipelineStageKeys = useMemo(
+    () => new Set(pipelineStages.map((stage) => stage.key)),
+    [pipelineStages]
+  );
+  const firstPipelineStageKey = pipelineStages[0]?.key || "RFQ";
+  const lastPipelineStageKey =
+    pipelineStages[pipelineStages.length - 1]?.key || firstPipelineStageKey;
+  const resolveVisiblePipelineStageKey = (stageKey) => {
+    const normalizedStageKey = String(stageKey || "").trim();
+    if (pipelineStageKeys.has(normalizedStageKey)) return normalizedStageKey;
+    if (
+      isRfiWorkflowDocument &&
+      normalizedStageKey &&
+      normalizedStageKey !== firstPipelineStageKey
+    ) {
+      return lastPipelineStageKey;
+    }
+    return firstPipelineStageKey;
+  };
   const stepIds = STEPS.map((step) => step.id);
   const lastStepIndex = Math.max(stepIds.length - 1, 0);
   const stepIndex = stepIds.indexOf(activeStep);
   const isFirstStep = stepIndex <= 0;
   const isLastStep = stepIndex === stepIds.length - 1;
   const activeStepData = STEPS[stepIndex] || STEPS[0];
-  const groupedActiveStage = normalizePipelineStageKey(activeStage) || selectedStage || "RFQ";
+  const groupedActiveStage = resolveVisiblePipelineStageKey(
+    normalizePipelineStageKey(activeStage) || selectedStage || firstPipelineStageKey
+  );
   const stageIndex = Math.max(
-    PIPELINE_STAGES.findIndex((stage) => stage.key === groupedActiveStage),
+    pipelineStages.findIndex((stage) => stage.key === groupedActiveStage),
     0
   );
   const isRfqStage = selectedStage === "RFQ";
-  const isTerminalStage =
+  const isFailureTerminalStage =
     form.status === "Lost" ||
-    form.status === "Cancelled" ||
-    form.status === "RFI completed";
+    form.status === "Cancelled";
+  const rfqPhaseValue =
+    typeof rfqSnapshot?.phase === "string" ? rfqSnapshot.phase : rfqSnapshot?.phase?.value;
+  const rfqSubStatusValue =
+    typeof rfqSnapshot?.sub_status === "string"
+      ? rfqSnapshot.sub_status
+      : rfqSnapshot?.sub_status?.value;
+  const isCompletedRfiWorkflow = Boolean(
+    isRfiWorkflowDocument &&
+    (
+      (
+        String(rfqPhaseValue || "").trim().toUpperCase() === "CLOSED" &&
+        String(rfqSubStatusValue || "").trim().toUpperCase() === "RFI_COMPLETED"
+      ) ||
+      String(costingFileState?.workflowState || "").trim().toUpperCase() ===
+      PRICING_WORKFLOW_STATE_APPROVED
+    )
+  );
+  const isTerminalStage = isFailureTerminalStage || isCompletedRfiWorkflow;
   const activeSubPhase = SUBPHASE_ALIASES[form.status] || form.status;
   const showNextPreview =
-    !isTerminalStage && stageIndex < PIPELINE_STAGES.length - 1;
-  const visibleStages = PIPELINE_STAGES.slice(
+    !isTerminalStage && stageIndex < pipelineStages.length - 1;
+  const visibleStages = pipelineStages.slice(
     0,
     stageIndex + 1 + (showNextPreview ? 1 : 0)
   );
@@ -2324,25 +2371,57 @@ export default function NewRfq() {
   };
 
   useEffect(() => {
-    const nextSelectedStage = normalizePipelineStageKey(activeStage);
+    const nextSelectedStage = resolveVisiblePipelineStageKey(
+      normalizePipelineStageKey(activeStage) || firstPipelineStageKey
+    );
     if (nextSelectedStage) {
       if (persistValidationView || persistCostingReviewView) {
         return;
       }
+      const nextStage = pipelineStages.find((entry) => entry.key === nextSelectedStage);
       setSelectedStage(nextSelectedStage);
-      setSelectedSubPhase(getActiveDisplaySubPhase(nextSelectedStage));
+      setSelectedSubPhase(
+        getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || ""
+      );
     }
   }, [
     activeStage,
+    firstPipelineStageKey,
     hasRecordedValidationDecision,
     holdSelfValidationPrompt,
     isRevisionModeActive,
+    pipelineStages,
     persistValidationView,
     persistCostingReviewView
   ]);
 
   useEffect(() => {
-    const nextSelectedStage = normalizePipelineStageKey(activeStage);
+    if (!selectedStage || pipelineStageKeys.has(selectedStage)) {
+      return;
+    }
+    const nextSelectedStage = resolveVisiblePipelineStageKey(
+      normalizePipelineStageKey(activeStage) || firstPipelineStageKey
+    );
+    const nextStage = pipelineStages.find((entry) => entry.key === nextSelectedStage);
+    setSelectedStage(nextSelectedStage);
+    setSelectedSubPhase(
+      nextSelectedStage === groupedActiveStage
+        ? getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || ""
+        : nextStage?.subPhases?.[0] || ""
+    );
+  }, [
+    activeStage,
+    firstPipelineStageKey,
+    groupedActiveStage,
+    pipelineStageKeys,
+    pipelineStages,
+    selectedStage
+  ]);
+
+  useEffect(() => {
+    const nextSelectedStage = resolveVisiblePipelineStageKey(
+      normalizePipelineStageKey(activeStage) || firstPipelineStageKey
+    );
     if (nextSelectedStage && selectedStage === nextSelectedStage) {
       if (persistValidationView && selectedStage === "RFQ") {
         return;
@@ -2350,14 +2429,19 @@ export default function NewRfq() {
       if (persistCostingReviewView && selectedStage === "In costing") {
         return;
       }
-      setSelectedSubPhase(getActiveDisplaySubPhase(nextSelectedStage));
+      const nextStage = pipelineStages.find((entry) => entry.key === nextSelectedStage);
+      setSelectedSubPhase(
+        getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || ""
+      );
     }
   }, [
     activeSubPhase,
     allStepsComplete,
     activeStage,
+    firstPipelineStageKey,
     holdSelfValidationPrompt,
     isRevisionModeActive,
+    pipelineStages,
     selectedStage,
     persistValidationView,
     persistCostingReviewView
@@ -3364,10 +3448,13 @@ export default function NewRfq() {
   };
 
   const handleStageChange = (stageKey) => {
+    if (!pipelineStageKeys.has(stageKey)) {
+      return;
+    }
     setPersistValidationView(false);
     setPersistCostingReviewView(false);
     setSelectedStage(stageKey);
-    const stage = PIPELINE_STAGES.find((entry) => entry.key === stageKey);
+    const stage = pipelineStages.find((entry) => entry.key === stageKey);
     setSelectedSubPhase(
       stageKey === groupedActiveStage
         ? getActiveDisplaySubPhase(stageKey)
@@ -3393,6 +3480,9 @@ export default function NewRfq() {
   };
 
   const handleSubPhaseChange = (stageKey, subPhase) => {
+    if (!pipelineStageKeys.has(stageKey)) {
+      return;
+    }
     setPersistValidationView(false);
     setPersistCostingReviewView(false);
     if (
@@ -4537,7 +4627,10 @@ export default function NewRfq() {
                         {visibleStages.map((stage, index) => {
                           const isActive = groupedActiveStage === stage.key;
                           const isSelected = selectedStage === stage.key;
-                          const isCompleted = index < stageIndex;
+                          const isCompletedRfiCostingStep =
+                            isCompletedRfiWorkflow && stage.key === "In costing";
+                          const isCompleted =
+                            index < stageIndex || isCompletedRfiCostingStep;
                           const isNextPreview =
                             showNextPreview && index === stageIndex + 1;
                           const isExpanded = isSelected;
@@ -4548,13 +4641,13 @@ export default function NewRfq() {
                           const selectedSubPhaseForStage = isSelected
                             ? selectedSubPhase || effectiveSubPhase || stage.subPhases?.[0] || ""
                             : effectiveSubPhase;
-                          const stepState = isTerminalStage && (isActive || isCompleted)
+                          const stepState = isFailureTerminalStage && (isActive || isCompleted)
                             ? "pipeline-step-terminal"
-                            : isActive
+                            : isCompleted
+                              ? "pipeline-step-complete"
+                              : isActive
                               ? "pipeline-step-active"
-                              : isCompleted
-                                ? "pipeline-step-complete"
-                                : "pipeline-step-idle";
+                              : "pipeline-step-idle";
 
                           return (
                             <div
@@ -4610,7 +4703,7 @@ export default function NewRfq() {
                                               isSubComplete
                                                 ? isNeutralCompletedRfqForm
                                                   ? "bg-white/25"
-                                                  : isTerminalStage
+                                                  : isFailureTerminalStage
                                                     ? "bg-red-400"
                                                     : "bg-emerald-400"
                                                 : "bg-white/25"
@@ -4653,14 +4746,14 @@ export default function NewRfq() {
                                           : isSubComplete
                                             ? isNeutralCompletedRfqForm
                                               ? "h-1.5 w-1.5 rounded-full bg-white/70"
-                                              : (isTerminalStage ? "h-2 w-2 rounded-full bg-red-300" : "h-2 w-2 rounded-full bg-emerald-300")
+                                              : (isFailureTerminalStage ? "h-2 w-2 rounded-full bg-red-300" : "h-2 w-2 rounded-full bg-emerald-300")
                                             : "h-1.5 w-1.5 rounded-full bg-white/70";
                                         const labelClass = isSubActive
                                           ? "mt-0.5 max-w-[120px] text-center font-semibold leading-tight text-white"
                                           : isSubComplete
                                             ? isNeutralCompletedRfqForm
                                               ? "mt-0.5 max-w-[120px] text-center leading-tight text-white/85"
-                                              : (isTerminalStage ? "mt-0.5 max-w-[120px] text-center leading-tight text-red-100" : "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50")
+                                              : (isFailureTerminalStage ? "mt-0.5 max-w-[120px] text-center leading-tight text-red-100" : "mt-0.5 max-w-[120px] text-center leading-tight text-emerald-50")
                                             : "mt-0.5 max-w-[120px] text-center leading-tight text-white/85";
                                         const subPhaseSelectedClass =
                                           isSubSelected && !hideTerminalSelectedBackground
