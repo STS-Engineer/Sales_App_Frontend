@@ -166,50 +166,86 @@ const STEPS = [
   }
 ];
 
-const STEP_FIELDS = {
-  "step-client": [
-    "customer",
-    "productName",
-    "productLine",
-    "projectName",
-    "products",
-    "deliveryZone",
-    "plant",
-    "country",
-    "poDate",
-    "ppapDate",
-    "sop",
-    "rfqReceptionDate",
-    "expectedQuotationDate",
-    "contactName",
-    "contactFunction",
-    "contactPhone",
-    "contactEmail"
-  ],
-  "step-request": [
-    "expectedDeliveryConditions",
-    "expectedPaymentTerms",
-    "typeOfPackaging",
-    "businessTrigger",
-    "customerToolingConditions",
-    "entryBarriers"
-  ],
-  "step-schedule": [
-    "designResponsible",
-    "validationResponsible",
-    "designOwner",
-    "developmentCosts",
-    "technicalCapacity",
-    "scope",
-    "strategicNote",
-    "finalRecommendation"
-  ],
-  "step-notes": ["toTotal", "validatorEmail"]
+const STEP_REQUIREMENT_REQUIRED = "required";
+const STEP_REQUIREMENT_OPTIONAL = "optional";
+
+const RFQ_STEP_REQUIREMENTS = {
+  "step-client": {
+    required: [
+      "customer",
+      "application",
+      "productName",
+      "productLine",
+      "projectName",
+      "rfqFiles",
+      "products",
+      "deliveryZone",
+      "plant",
+      "country",
+      "poDate",
+      "sop",
+      "rfqReceptionDate",
+      "expectedQuotationDate",
+      "contactName",
+      "contactFunction",
+      "contactPhone",
+      "contactEmail"
+    ],
+    optional: ["costingData", "ppapDate"]
+  },
+  "step-request": {
+    required: ["expectedDeliveryConditions", "expectedPaymentTerms"],
+    optional: [
+      "typeOfPackaging",
+      "businessTrigger",
+      "customerToolingConditions",
+      "entryBarriers"
+    ]
+  },
+  "step-schedule": {
+    required: [
+      "designResponsible",
+      "validationResponsible",
+      "designOwner",
+      "developmentCosts",
+      "technicalCapacity",
+      "scope",
+      "strategicNote",
+      "finalRecommendation"
+    ],
+    optional: []
+  },
+  "step-notes": {
+    required: ["toTotal", "validatorEmail"],
+    optional: []
+  }
 };
 
-const RFQ_FORM_FIELD_NAMES = [...new Set(Object.values(STEP_FIELDS).flat())];
+const RFQ_PRODUCT_FIELD_REQUIREMENTS = {
+  partNumber: STEP_REQUIREMENT_REQUIRED,
+  revisionLevel: STEP_REQUIREMENT_OPTIONAL,
+  quantity: STEP_REQUIREMENT_REQUIRED,
+  targetPrice: STEP_REQUIREMENT_REQUIRED,
+  currency: STEP_REQUIREMENT_REQUIRED,
+  targetPriceIsEstimated: STEP_REQUIREMENT_REQUIRED
+};
+
+const RFQ_STEP_FORM_FIELDS = Object.fromEntries(
+  Object.entries(RFQ_STEP_REQUIREMENTS).map(([stepId, fields]) => [
+    stepId,
+    [...fields.required, ...fields.optional].filter((fieldName) => fieldName !== "rfqFiles")
+  ])
+);
+
+const RFQ_REQUIRED_FIELD_NAMES = new Set(
+  Object.values(RFQ_STEP_REQUIREMENTS).flatMap((fields) => fields.required)
+);
+const RFQ_OPTIONAL_FIELD_NAMES = new Set(
+  Object.values(RFQ_STEP_REQUIREMENTS).flatMap((fields) => fields.optional)
+);
+const RFQ_FORM_FIELD_NAMES = [...new Set(Object.values(RFQ_STEP_FORM_FIELDS).flat())];
 const RFQ_FIELD_TO_STEP_MAP = Object.fromEntries(
-  Object.entries(STEP_FIELDS).flatMap(([stepId, fields]) =>
+  Object.entries(RFQ_STEP_FORM_FIELDS).flatMap(([stepId, fields]) =>
     fields.map((fieldName) => [fieldName, stepId])
   )
 );
@@ -245,6 +281,32 @@ const STEP_STYLES = {
     bg: "bg-ink/5"
   }
 };
+
+const getRfqFieldRequirementProps = (fieldName) => ({
+  required: RFQ_REQUIRED_FIELD_NAMES.has(fieldName),
+  optional: RFQ_OPTIONAL_FIELD_NAMES.has(fieldName)
+});
+
+const getProductFieldRequirementProps = (fieldName) => ({
+  required: getProductRequirement(fieldName) === STEP_REQUIREMENT_REQUIRED,
+  optional: getProductRequirement(fieldName) === STEP_REQUIREMENT_OPTIONAL
+});
+
+const renderRequirementLabel = (label, { required = false, optional = false } = {}) => (
+  <span className="flex flex-wrap items-center gap-1">
+    <span>{label}</span>
+    {required ? (
+      <span className="text-red-500" aria-hidden="true">
+        *
+      </span>
+    ) : null}
+    {optional ? (
+      <span className="normal-case tracking-normal text-slate-400">
+        (Optional)
+      </span>
+    ) : null}
+  </span>
+);
 
 const PIPELINE_STAGES = [
   {
@@ -494,21 +556,60 @@ const getFeasibilityStatusBadgeClasses = (value) => {
   return "border-slate-200 bg-slate-50 text-slate-700";
 };
 
+const getProductRequirement = (fieldName) =>
+  RFQ_PRODUCT_FIELD_REQUIREMENTS[fieldName] || STEP_REQUIREMENT_REQUIRED;
+
+const isProductFieldFilled = (product = {}, fieldName, { includeOptional = false } = {}) => {
+  const requirement = getProductRequirement(fieldName);
+  if (!includeOptional && requirement === STEP_REQUIREMENT_OPTIONAL) {
+    return true;
+  }
+  const value = product?.[fieldName];
+  if (fieldName === "targetPriceIsEstimated") {
+    return value !== null && value !== undefined;
+  }
+  if (value === 0) return true;
+  if (value === null || value === undefined) return false;
+  return String(value).trim().length > 0;
+};
+
+const isProductCollection = (value) =>
+  Array.isArray(value) &&
+  value.every(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      ["partNumber", "revisionLevel", "quantity", "targetPrice", "currency", "targetPriceIsEstimated"].some(
+        (fieldName) => Object.prototype.hasOwnProperty.call(item, fieldName)
+      )
+  );
+
+const hasCompleteProductCollection = (products = [], { includeOptional = false } = {}) =>
+  Array.isArray(products) &&
+  products.length > 0 &&
+  products.every((product) =>
+    Object.keys(RFQ_PRODUCT_FIELD_REQUIREMENTS).every((fieldName) =>
+      isProductFieldFilled(product, fieldName, { includeOptional })
+    )
+  );
+
 const hasMeaningfulValue = (value) => {
   if (value === 0) return true;
   if (value === null || value === undefined) return false;
   if (Array.isArray(value)) {
-    return value.length > 0 && value.every((item) =>
-      hasMeaningfulValue(item?.partNumber) &&
-      hasMeaningfulValue(item?.revisionLevel) &&
-      hasMeaningfulValue(item?.quantity) &&
-      hasMeaningfulValue(item?.targetPrice) &&
-      hasMeaningfulValue(item?.currency) &&
-      item?.targetPriceIsEstimated !== null &&
-      item?.targetPriceIsEstimated !== undefined
-    );
+    if (isProductCollection(value)) {
+      return hasCompleteProductCollection(value);
+    }
+    return value.length > 0;
   }
   return String(value).trim().length > 0;
+};
+
+const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => {
+  if (fieldName === "rfqFiles") {
+    return Array.isArray(mergedFiles) && mergedFiles.length > 0;
+  }
+  return hasMeaningfulValue(form?.[fieldName]);
 };
 
 const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
@@ -534,41 +635,71 @@ const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   return filledFields.length ? filledFields : changedFields;
 };
 
-const getRfqStepCompletionMap = (form = {}) =>
+const getRfqStepCompletionMap = (form = {}, mergedFiles = []) =>
   Object.fromEntries(
     STEPS.map((step) => [
       step.id,
-      (STEP_FIELDS[step.id] || []).every((fieldName) => hasMeaningfulValue(form?.[fieldName]))
+      (RFQ_STEP_REQUIREMENTS[step.id]?.required || []).every((fieldName) =>
+        isRfqFieldComplete(form, fieldName, { mergedFiles })
+      )
     ])
   );
 
-/**
- * Auto-reveal guard: returns the 0-based index of the highest step the UI
- * should auto-navigate to after background chatbot updates. Manual step clicks
- * remain unlocked elsewhere.
- */
-const getHighestAllowedStepIndex = (form = {}) => {
-  const completion = getRfqStepCompletionMap(form);
+const getHighestUnlockedStepIndexFromCompletion = (completion = {}) => {
   for (let i = 0; i < STEPS.length; i += 1) {
     if (!completion[STEPS[i].id]) {
-      return i;           // first incomplete step is the ceiling
+      return i;
     }
   }
-  return STEPS.length - 1; // all complete
+  return STEPS.length - 1;
 };
 
-const buildStepRevealTarget = (stepId) =>
-  stepId
-    ? {
+const getFirstIncompleteRequiredField = (stepId, form = {}, mergedFiles = []) => {
+  const requiredFields = RFQ_STEP_REQUIREMENTS[stepId]?.required || [];
+  for (const fieldName of requiredFields) {
+    if (!isRfqFieldComplete(form, fieldName, { mergedFiles })) {
+      return fieldName;
+    }
+  }
+  return "";
+};
+
+const getLeadingEdgeStepIdFromCompletion = (completion = {}) =>
+  STEPS[getHighestUnlockedStepIndexFromCompletion(completion)]?.id || "step-client";
+
+const buildStepFocusRevealTarget = (
+  stepId,
+  form = {},
+  mergedFiles = [],
+  { highlight = false, updatedFields = [] } = {}
+) => {
+  if (!stepId) {
+    return null;
+  }
+  const fieldName = getFirstIncompleteRequiredField(stepId, form, mergedFiles);
+  if (!fieldName || fieldName === "products" || fieldName === "rfqFiles") {
+    return {
       stepId,
       mode: "step",
       fieldName: "",
-      updatedFields: [],
-      highlight: false
-    }
-    : null;
+      updatedFields,
+      highlight
+    };
+  }
+  return {
+    stepId,
+    mode: "field",
+    fieldName,
+    updatedFields,
+    highlight
+  };
+};
 
-const buildRfqAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
+const buildRfqAutofillRevealTarget = (
+  previousForm = {},
+  nextForm = {},
+  mergedFiles = []
+) => {
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
   if (!changedFields.length) {
     return null;
@@ -581,7 +712,10 @@ const buildRfqAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
     "step-client";
 
   // --- Stepper guard: clamp target step to the highest allowed step -----
-  const highestAllowed = getHighestAllowedStepIndex(nextForm);
+  const nextStepCompletion = getRfqStepCompletionMap(nextForm, mergedFiles);
+  const highestAllowed = getHighestUnlockedStepIndexFromCompletion(
+    nextStepCompletion
+  );
   const rawTargetIndex = STEP_ORDER_INDEX[rawTargetStepId] ?? 0;
   const clampedIndex = Math.min(rawTargetIndex, highestAllowed);
   const targetStepId = STEPS[clampedIndex]?.id || "step-client";
@@ -596,6 +730,19 @@ const buildRfqAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
     updatedFields: changedFields,
     highlight: false
   };
+};
+
+const buildRfqChatFocusRevealTarget = (
+  previousForm = {},
+  nextForm = {},
+  mergedFiles = []
+) => {
+  const nextStepCompletion = getRfqStepCompletionMap(nextForm, mergedFiles);
+  const targetStepId = getLeadingEdgeStepIdFromCompletion(nextStepCompletion);
+  const focusTarget = buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, {
+    highlight: false
+  });
+  return focusTarget || buildRfqAutofillRevealTarget(previousForm, nextForm, mergedFiles);
 };
 
 const getMissingPotentialSharedFields = (form = {}) =>
@@ -1139,7 +1286,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const PRODUCT_ROW_READONLY_VALUE_CLASSES =
   "min-h-[44px] rounded-2xl bg-slate-50/80 px-4 py-3 text-sm font-medium text-ink";
 const PRODUCT_PRICE_SOURCE_OPTIONS = [
@@ -1699,7 +1846,6 @@ export default function NewRfq() {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [chatWidth, setChatWidth] = useState(420);
-  const [fulfilledSteps, setFulfilledSteps] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
   const [costingFiles, setCostingFiles] = useState([]);
@@ -1783,7 +1929,7 @@ export default function NewRfq() {
   const rfqAuditLogsRef = useRef([]);
   const rfqCreatePromiseRef = useRef(null);
   const resizeState = useRef({ startX: 0, startWidth: 420 });
-  const previousStepCompletionRef = useRef({});
+  const rfqStepAutoFollowPausedRef = useRef(false);
   const feasibilitySaveAudit = useMemo(
     () => (
       rfqSnapshot
@@ -2063,36 +2209,13 @@ export default function NewRfq() {
     () => withInitialChatMessage(activeChatMessagesWithMeta, activeChatGreeting),
     [activeChatGreeting, activeChatMessagesWithMeta]
   );
-  const stepCompletion = useMemo(() => {
-    return Object.fromEntries(
-      STEPS.map((step) => {
-        const fields = STEP_FIELDS[step.id] || [];
-        const complete = fields.every((field) => hasMeaningfulValue(form[field]));
-        return [step.id, complete];
-      })
-    );
-  }, [form]);
+  const stepCompletion = useMemo(
+    () => getRfqStepCompletionMap(form, mergedFiles),
+    [form, mergedFiles]
+  );
 
   useEffect(() => {
-    setFulfilledSteps((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      STEPS.forEach((step) => {
-        if (stepCompletion[step.id] && !next[step.id]) {
-          next[step.id] = true;
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [stepCompletion]);
-
-  useEffect(() => {
-    setFulfilledSteps({});
-  }, [rfqId]);
-
-  useEffect(() => {
-    previousStepCompletionRef.current = {};
+    rfqStepAutoFollowPausedRef.current = false;
   }, [rfqId]);
 
   useEffect(() => {
@@ -2146,17 +2269,20 @@ export default function NewRfq() {
   const isRfqFormView = isRfqStage && rfqDisplaySubPhase === "RFQ form";
   const isRfqValidationView =
     isRfqStage && !isRevisionModeActive && rfqDisplaySubPhase === "Validation";
-  const highestUnlockedStepIndex = useMemo(() => lastStepIndex, [lastStepIndex]);
+  const highestUnlockedStepIndex = useMemo(
+    () => getHighestUnlockedStepIndexFromCompletion(stepCompletion),
+    [stepCompletion]
+  );
 
   const stepStates = useMemo(() => {
     const entries = STEPS.map((step, index) => {
-      const isLocked = index > highestUnlockedStepIndex;
-      const isComplete = Boolean(stepCompletion[step.id] || fulfilledSteps[step.id]);
-      const statusType = isLocked ? "locked" : isComplete ? "fulfilled" : "draft";
+      const isLocked = false;
+      const isComplete = Boolean(stepCompletion[step.id]);
+      const statusType = isComplete ? "fulfilled" : "draft";
       return [step.id, { isLocked, isComplete, statusType }];
     });
     return Object.fromEntries(entries);
-  }, [stepCompletion, fulfilledSteps, highestUnlockedStepIndex]);
+  }, [stepCompletion]);
   const allStepsComplete = useMemo(
     () => STEPS.every((step) => stepStates[step.id]?.isComplete),
     [stepStates]
@@ -2343,32 +2469,25 @@ export default function NewRfq() {
   const canParticipateInCostingDiscussion = Boolean(
     canUseCostingActions && (currentUserEmail || currentUserRole)
   );
-  const getNextIncompleteStepId = (stepId, completionMap = stepCompletion) => {
-    const currentIndex = stepIds.indexOf(stepId);
-    if (currentIndex < 0 || currentIndex >= stepIds.length - 1) {
-      return "";
-    }
-
-    for (let index = currentIndex + 1; index < stepIds.length; index += 1) {
-      const candidateStepId = stepIds[index];
-      if (!completionMap[candidateStepId]) {
-        return candidateStepId;
-      }
-    }
-
-    return stepIds[currentIndex + 1] || "";
-  };
+  const leadingEdgeStepId = stepIds[highestUnlockedStepIndex] || stepIds[0] || "step-client";
   const handleStepViewChange = (stepId) => {
     const targetIndex = stepIds.indexOf(stepId);
     if (targetIndex < 0) {
       return;
     }
+    rfqStepAutoFollowPausedRef.current = targetIndex < highestUnlockedStepIndex;
     setActiveStep(stepId);
     if (isRfqValidationView) {
       setSelectedStage("RFQ");
       setSelectedSubPhase("RFQ form");
     }
   };
+
+  useEffect(() => {
+    if (!isRfqFormView) {
+      rfqStepAutoFollowPausedRef.current = false;
+    }
+  }, [isRfqFormView]);
 
   useEffect(() => {
     const nextSelectedStage = resolveVisiblePipelineStageKey(
@@ -2477,24 +2596,22 @@ export default function NewRfq() {
       return;
     }
 
-    if (!isFormalDocumentTab) {
-      setActiveRfqTab(isRfiDocument ? "rfi" : "new");
+    if (
+      !isFormalDocumentTab ||
+      selectedStage !== "RFQ" ||
+      selectedSubPhase !== "RFQ form"
+    ) {
+      setPendingRfqAutofillReveal(null);
       return;
     }
 
-    if (selectedStage !== "RFQ") {
-      setSelectedStage("RFQ");
-      return;
-    }
-
-    if (selectedSubPhase !== "RFQ form") {
-      setSelectedSubPhase("RFQ form");
-      return;
-    }
+    const isAutofillFieldReveal = Boolean(
+      pendingRfqAutofillReveal.updatedFields?.length
+    );
 
     if (activeStep !== pendingRfqAutofillReveal.stepId) {
       // --- Stepper guard: clamp the reveal target to the highest allowed
-      const allowedIdx = getHighestAllowedStepIndex(form);
+      const allowedIdx = highestUnlockedStepIndex;
       const requestedIdx = STEP_ORDER_INDEX[pendingRfqAutofillReveal.stepId] ?? 0;
       const clampedIdx = Math.min(requestedIdx, allowedIdx);
       const clampedStepId = STEPS[clampedIdx]?.id || "step-client";
@@ -2504,6 +2621,10 @@ export default function NewRfq() {
         setPendingRfqAutofillReveal((prev) =>
           prev ? { ...prev, stepId: clampedStepId, mode: "step", fieldName: "" } : null
         );
+        return;
+      }
+      if (isAutofillFieldReveal) {
+        setPendingRfqAutofillReveal(null);
         return;
       }
       setActiveStep(clampedStepId);
@@ -2561,10 +2682,11 @@ export default function NewRfq() {
       window.clearTimeout(highlightTimer);
     };
   }, [
-    activeRfqTab,
     isFormalDocumentTab,
-    isRfiDocument,
     activeStep,
+    form,
+    highestUnlockedStepIndex,
+    mergedFiles,
     pendingRfqAutofillReveal,
     selectedStage,
     selectedSubPhase
@@ -2586,45 +2708,34 @@ export default function NewRfq() {
   }, [selectedStage, selectedSubPhase]);
 
   useEffect(() => {
-    const previousCompletion = previousStepCompletionRef.current;
-    const nextStepCompletion = getRfqStepCompletionMap(form);
-    const hadPreviousValue = Object.prototype.hasOwnProperty.call(
-      previousCompletion,
-      activeStep
-    );
-    const activeStepJustCompleted =
-      hadPreviousValue &&
-      !previousCompletion[activeStep] &&
-      Boolean(stepCompletion[activeStep]);
-
     if (
-      isFormalDocumentTab &&
-      isRfqFormView &&
-      !isRfqFormReadOnly &&
-      activeStepJustCompleted
+      !isFormalDocumentTab ||
+      !isRfqFormView ||
+      rfqStepAutoFollowPausedRef.current ||
+      stepIndex < 0 ||
+      stepIndex >= highestUnlockedStepIndex
     ) {
-      const nextStepId = getNextIncompleteStepId(activeStep, nextStepCompletion);
-      if (nextStepId) {
-        setPendingRfqAutofillReveal(buildStepRevealTarget(nextStepId));
-        setActiveStep(nextStepId);
-      }
+      return;
     }
-
-    previousStepCompletionRef.current = stepCompletion;
+    if (!leadingEdgeStepId || leadingEdgeStepId === activeStep) {
+      return;
+    }
+    setPendingRfqAutofillReveal(
+      buildStepFocusRevealTarget(leadingEdgeStepId, form, mergedFiles, {
+        highlight: false
+      })
+    );
+    setActiveStep(leadingEdgeStepId);
   }, [
-    activeRfqTab,
+    activeStep,
+    form,
+    highestUnlockedStepIndex,
     isFormalDocumentTab,
     isRfqFormView,
-    isRfqFormReadOnly,
-    form,
+    leadingEdgeStepId,
+    mergedFiles,
     stepCompletion,
-    activeStep,
-    stepIndex,
-    highestUnlockedStepIndex,
-    allStepsComplete,
-    selectedStage,
-    rfqDisplaySubPhase,
-    lastStepIndex
+    stepIndex
   ]);
 
   const canGoNext = Boolean(!isLastStep);
@@ -2759,10 +2870,29 @@ export default function NewRfq() {
       shouldOpenSelfValidationPrompt ? nextSelfValidationPromptSignature : ""
     );
     setHoldSelfValidationPrompt(shouldOpenSelfValidationPrompt);
-    setPendingRfqAutofillReveal(
-      revealUpdatedRfqFields ? buildRfqAutofillRevealTarget(form, nextFormState) : null
-    );
+    const normalizedFiles = normalizeRfqFiles(rfq);
+    const filterRemainingLocalFiles = (candidateLocalFiles = []) =>
+      candidateLocalFiles.filter(
+        (local) =>
+          !normalizedFiles.some(
+            (server) =>
+              server.name &&
+              local.name &&
+              server.name.toLowerCase() === local.name.toLowerCase()
+          )
+      );
+    const nextLocalFiles = filterRemainingLocalFiles(localFilesRef.current);
+    const nextMergedFiles = [...normalizedFiles, ...nextLocalFiles];
     setForm(nextFormState);
+    setPendingRfqAutofillReveal(
+      revealUpdatedRfqFields
+        ? (
+          rfqStepAutoFollowPausedRef.current
+            ? null
+            : buildRfqChatFocusRevealTarget(form, nextFormState, nextMergedFiles)
+        )
+        : null
+    );
     setActiveStage(nextPipelineStage);
     if (nextUiStatus === "Cancelled" || nextUiStatus === "Lost") {
       const canceledStageKey = normalizePipelineStageKey(nextPipelineStage) || nextPipelineStage || "RFQ";
@@ -2789,19 +2919,8 @@ export default function NewRfq() {
       setRfqValidationReached(!shouldOpenSelfValidationPrompt);
       setRfqFormEditEnabled(false);
     }
-    const normalizedFiles = normalizeRfqFiles(rfq);
     setServerFiles(normalizedFiles);
-    setLocalFiles((prev) =>
-      prev.filter(
-        (local) =>
-          !normalizedFiles.some(
-            (server) =>
-              server.name &&
-              local.name &&
-              server.name.toLowerCase() === local.name.toLowerCase()
-          )
-      )
-    );
+    setLocalFiles((prev) => filterRemainingLocalFiles(prev));
     if (syncChat) {
       setPotentialChatMessages((prev) =>
         mergeChatWithAttachments(
@@ -6300,7 +6419,6 @@ export default function NewRfq() {
                               key={step.id}
                               type="button"
                               onClick={() => handleStepViewChange(step.id)}
-                              disabled={isLocked}
                               className={`flex h-9 w-9 items-center justify-center rounded-2xl border text-sm font-semibold transition sm:h-10 sm:w-10 ${isActive
                                 ? "border-tide/40 bg-tide/10 text-tide"
                                 : isLocked
@@ -6383,7 +6501,6 @@ export default function NewRfq() {
                               key={step.id}
                               type="button"
                               onClick={() => handleStepViewChange(step.id)}
-                              disabled={isLocked}
                               aria-pressed={isActive}
                               aria-disabled={isLocked || undefined}
                               className={`group flex w-full gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition lg:px-3 lg:py-2 lg:text-[13px] ${isActive
@@ -6777,14 +6894,17 @@ export default function NewRfq() {
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
                               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                                <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                                <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                                <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                                <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                                <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
+                                <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("application")} />
+                                <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productName")} />
+                                <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productLine")} />
+                                <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
+                                <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("costingData")} />
                                 <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
-                                  <span>{formalDocumentLabel} Files</span>
+                                  {renderRequirementLabel(
+                                    `${formalDocumentLabel} Files`,
+                                    getRfqFieldRequirementProps("rfqFiles")
+                                  )}
                                   <div className="flex flex-wrap items-center gap-3">
                                     <button
                                       type="button"
@@ -6886,10 +7006,30 @@ export default function NewRfq() {
                                     <table className="w-full min-w-[980px] text-left text-xs">
                                       <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
                                         <tr>
-                                          <th className="px-3 py-3">Part Number</th>
-                                          <th className="px-3 py-3">Revision Level</th>
-                                          <th className="px-3 py-3">Quantity</th>
-                                          <th className="px-3 py-3">Target Price</th>
+                                          <th className="px-3 py-3">
+                                            {renderRequirementLabel(
+                                              "Part Number",
+                                              getProductFieldRequirementProps("partNumber")
+                                            )}
+                                          </th>
+                                          <th className="px-3 py-3">
+                                            {renderRequirementLabel(
+                                              "Revision Level",
+                                              getProductFieldRequirementProps("revisionLevel")
+                                            )}
+                                          </th>
+                                          <th className="px-3 py-3">
+                                            {renderRequirementLabel(
+                                              "Quantity",
+                                              getProductFieldRequirementProps("quantity")
+                                            )}
+                                          </th>
+                                          <th className="px-3 py-3">
+                                            {renderRequirementLabel(
+                                              "Target Price",
+                                              getProductFieldRequirementProps("targetPrice")
+                                            )}
+                                          </th>
                                           <th className="px-3 py-3">
                                             {sharedProductCurrency
                                               ? `Target TO (k${sharedProductCurrency})`
@@ -6974,6 +7114,16 @@ export default function NewRfq() {
                                               </td>
                                               <td className="px-3 py-3">
                                                 <div className="min-w-[280px] space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
+                                                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                    {renderRequirementLabel(
+                                                      "Target price",
+                                                      getProductFieldRequirementProps("targetPrice")
+                                                    )}
+                                                    {renderRequirementLabel(
+                                                      "Currency",
+                                                      getProductFieldRequirementProps("currency")
+                                                    )}
+                                                  </div>
                                                   {rfqFormFieldReadOnly ? (
                                                     <div className="flex flex-wrap items-center gap-2">
                                                       <div className="text-sm font-semibold text-ink">
@@ -7013,6 +7163,12 @@ export default function NewRfq() {
                                                             : ""}
                                                     </p>
                                                   ) : null}
+                                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                    {renderRequirementLabel(
+                                                      "Price source",
+                                                      getProductFieldRequirementProps("targetPriceIsEstimated")
+                                                    )}
+                                                  </div>
                                                   <div className="flex flex-wrap gap-2">
                                                     {rfqFormFieldReadOnly ? (
                                                       rowPriceSourceLabel ? (
@@ -7128,24 +7284,25 @@ export default function NewRfq() {
                                   onChange={handleChange}
                                   options={deliveryZoneOptions}
                                   readOnly={rfqFormFieldReadOnly}
+                                  {...getRfqFieldRequirementProps("deliveryZone")}
                                 />
-                                <FormField label="Plant" name="plant" value={form.plant} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Country" name="country" value={form.country} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Ppap date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="SOP year" name="sop" type="number" value={form.sop} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label={`${formalDocumentLabel} reception date`} name="rfqReceptionDate" type="date" value={form.rfqReceptionDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                                <FormField label="Plant" name="plant" value={form.plant} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("plant")} />
+                                <FormField label="Country" name="country" value={form.country} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("country")} />
+                                <FormField label="PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("poDate")} />
+                                <FormField label="Ppap date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("ppapDate")} />
+                                <FormField label="SOP year" name="sop" type="number" value={form.sop} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("sop")} />
+                                <FormField label={`${formalDocumentLabel} reception date`} name="rfqReceptionDate" type="date" value={form.rfqReceptionDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("rfqReceptionDate")} />
+                                <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("expectedQuotationDate")} />
                               </div>
                             </div>
 
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Contact details</h3>
                               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                                <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
+                                <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
+                                <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} />
+                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} />
                               </div>
                             </div>
                           </div>
@@ -7158,12 +7315,12 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedDeliveryConditions")} />
+                            <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedPaymentTerms")} />
+                            <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("typeOfPackaging")} />
+                            <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("businessTrigger")} />
+                            <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("customerToolingConditions")} />
+                            <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("entryBarriers")} />
                           </div>
                         </div>
                       ) : null}
@@ -7174,14 +7331,14 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 md:grid-cols-2">
-                            <FormField label="Design responsible" name="designResponsible" value={form.designResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Design owner" name="designOwner" value={form.designOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Development costs" name="developmentCosts" value={form.developmentCosts} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
-                            <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
-                            <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand />
+                            <FormField label="Design responsible" name="designResponsible" value={form.designResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designResponsible")} />
+                            <FormField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validationResponsible")} />
+                            <FormField label="Design owner" name="designOwner" value={form.designOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designOwner")} />
+                            <FormField label="Development costs" name="developmentCosts" value={form.developmentCosts} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("developmentCosts")} />
+                            <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("technicalCapacity")} />
+                            <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("scope")} />
+                            <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("strategicNote")} />
+                            <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("finalRecommendation")} />
                           </div>
                         </div>
                       ) : null}
@@ -7218,7 +7375,7 @@ export default function NewRfq() {
                                 ) : null}
                               </div>
                             </div>
-                            <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} />
+                            <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validatorEmail")} />
                           </div>
                         </div>
                       ) : null}

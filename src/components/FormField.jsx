@@ -10,7 +10,9 @@ export default function FormField({
   options,
   autoExpand = false,
   readOnly = false,
-  disabled = false
+  disabled = false,
+  required = false,
+  optional = false
 }) {
   const isLocked = readOnly || disabled;
   const textareaRef = useRef(null);
@@ -27,7 +29,19 @@ export default function FormField({
 
   return (
     <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-      <span>{label}</span>
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{label}</span>
+        {required ? (
+          <span className="text-red-500" aria-hidden="true">
+            *
+          </span>
+        ) : null}
+        {optional ? (
+          <span className="normal-case tracking-normal text-slate-400">
+            (Optional)
+          </span>
+        ) : null}
+      </span>
       {options ? (
         <select
           className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
