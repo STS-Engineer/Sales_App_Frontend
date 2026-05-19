@@ -5,6 +5,7 @@ import ForgotPassword from "./pages/ForgotPassword.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import KpiDashboard from "./pages/KpiDashboard.jsx";
 import NewRfq from "./pages/NewRfq.jsx";
+import RoutingSettings from "./pages/RoutingSettings.jsx";
 import UserValidation from "./pages/UserValidation.jsx";
 import { ToastProvider } from "./components/ToastProvider.jsx";
  
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/rfq/:id" element={<LegacyRfqRedirect />} />
           <Route path="/rfqs/new" element={<NewRfq />} />
           <Route path="/users/validation" element={<UserValidation />} />
+          <Route path="/settings/routing" element={<RoutingSettings />} />
         </Routes>
       </BrowserRouter>
     </ToastProvider>

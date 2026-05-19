@@ -128,6 +128,27 @@ export default function TopBar({ title, action }) {
                     {isOwner ? (
                       <>
                         <Link
+                          to="/settings/routing"
+                          onClick={() => setMenuOpen(false)}
+                          className="group flex items-center justify-between rounded-2xl px-3 py-3 text-sm font-semibold text-ink transition hover:bg-slate-100"
+                          role="menuitem"
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-mint/15 text-mint">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="3" />
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 8.92 4.6H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .68.4 1.29 1.03 1.56.15.06.31.1.48.1H21a2 2 0 0 1 0 4h-.09c-.17 0-.33.04-.48.1-.63.27-1.03.88-1.03 1.56V15Z" />
+                              </svg>
+                            </span>
+                            <span>
+                              Routing settings
+                              <span className="mt-1 block text-xs font-medium text-slate-500">
+                                Manage PLM, R&amp;D, and Costing emails
+                              </span>
+                            </span>
+                          </span>
+                        </Link>
+                        <Link
                           to="/users/validation"
                           onClick={() => setMenuOpen(false)}
                           className="group flex items-center justify-between rounded-2xl px-3 py-3 text-sm font-semibold text-ink transition hover:bg-slate-100"

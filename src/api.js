@@ -526,6 +526,33 @@ export async function deleteUser(userId) {
   });
 }
 
+export async function listRoutingConfig(productLine = "") {
+  const query = productLine
+    ? `?product_line=${encodeURIComponent(productLine)}`
+    : "";
+  return request(`/api/owner/routing-config${query}`);
+}
+
+export async function createRoutingConfig(payload) {
+  return request("/api/owner/routing-config", {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function updateRoutingConfig(routingId, payload) {
+  return request(`/api/owner/routing-config/${encodeURIComponent(routingId)}`, {
+    method: "PUT",
+    body: payload
+  });
+}
+
+export async function deleteRoutingConfig(routingId) {
+  return request(`/api/owner/routing-config/${encodeURIComponent(routingId)}`, {
+    method: "DELETE"
+  });
+}
+
 export async function listProducts(productName = "") {
   const query = productName
     ? `?productName=${encodeURIComponent(productName)}`
