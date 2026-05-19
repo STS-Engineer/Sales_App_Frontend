@@ -18,6 +18,18 @@ const TYPE_FILTER_OPTIONS = [
   { key: "POTENTIAL", label: "Potential" }
 ];
 
+const getTypeOptionsForPhase = (phaseKey) => {
+  if (phaseKey === "RFQ") {
+    return TYPE_FILTER_OPTIONS;
+  }
+  if (phaseKey === "In costing") {
+    return TYPE_FILTER_OPTIONS.filter((option) =>
+      ["all", "RFQ", "RFI"].includes(option.key)
+    );
+  }
+  return [];
+};
+
 const PHASES = [
   {
     key: "RFQ",
@@ -211,14 +223,6 @@ export default function Dashboard() {
     [rfqsWithPhase]
   );
 
-  const typeFilteredDetailedRfqs = useMemo(
-    () =>
-      detailedRfqs.filter(
-        (rfq) => activeTypeFilter === "all" || rfq.documentType === activeTypeFilter
-      ),
-    [activeTypeFilter, detailedRfqs]
-  );
-
   const typeFilteredGlobalRfqs = useMemo(
     () =>
       rfqsWithPhase.filter(
@@ -231,10 +235,27 @@ export default function Dashboard() {
   const activeStatusIndex = Math.max(phaseKeys.indexOf(activePhase.key), 0);
   const subStatusOptions = activePhase.statuses;
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const detailedTypeFilterOptions = useMemo(
+    () => getTypeOptionsForPhase(activePhase.key),
+    [activePhase.key]
+  );
+  const detailedTypeFilterKeys = useMemo(
+    () => new Set(detailedTypeFilterOptions.map((option) => option.key)),
+    [detailedTypeFilterOptions]
+  );
+  const effectiveDetailedTypeFilter =
+    detailedTypeFilterKeys.has(activeTypeFilter) ? activeTypeFilter : "all";
+  const showDetailedTypeFilter = detailedTypeFilterOptions.length > 0;
 
   const filteredDetailedRfqs = useMemo(
     () =>
-      typeFilteredDetailedRfqs.filter((rfq) => {
+      detailedRfqs.filter((rfq) => {
+        if (
+          effectiveDetailedTypeFilter !== "all" &&
+          rfq.documentType !== effectiveDetailedTypeFilter
+        ) {
+          return false;
+        }
         const isTerminal = rfq.status === "Cancelled" || rfq.status === "Lost";
         if (isTerminal) {
           if (rfq.phaseKey !== activePhase.key) return false;
@@ -246,7 +267,13 @@ export default function Dashboard() {
         if (!normalizedSearchTerm) return true;
         return buildSearchHaystack(rfq).includes(normalizedSearchTerm);
       }),
-    [activePhase, activeSubStatus, normalizedSearchTerm, typeFilteredDetailedRfqs]
+    [
+      activePhase,
+      activeSubStatus,
+      detailedRfqs,
+      effectiveDetailedTypeFilter,
+      normalizedSearchTerm
+    ]
   );
 
   const filteredGlobalRfqs = useMemo(
@@ -281,7 +308,17 @@ export default function Dashboard() {
   useEffect(() => {
     setPage(1);
     setActiveSubStatus("all");
+    setActiveTypeFilter("all");
   }, [activeStatus]);
+
+  useEffect(() => {
+    if (viewMode !== "detailed") {
+      return;
+    }
+    if (activeTypeFilter !== "all" && !detailedTypeFilterKeys.has(activeTypeFilter)) {
+      setActiveTypeFilter("all");
+    }
+  }, [activeTypeFilter, detailedTypeFilterKeys, viewMode]);
 
   useEffect(() => {
     setPage(1);
@@ -524,39 +561,41 @@ export default function Dashboard() {
                           />
                         </div>
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
-                        <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
-                          htmlFor="typeFilter"
-                        >
-                          Type
-                        </label>
-                        <div className="group relative">
-                          <select
-                            id="typeFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={activeTypeFilter}
-                            onChange={(event) => setActiveTypeFilter(event.target.value)}
+                      {showDetailedTypeFilter ? (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label
+                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            htmlFor="typeFilter"
                           >
-                            {TYPE_FILTER_OPTIONS.map((option) => (
-                              <option key={option.key} value={option.key}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
+                            Type
+                          </label>
+                          <div className="group relative">
+                            <select
+                              id="typeFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={effectiveDetailedTypeFilter}
+                              onChange={(event) => setActiveTypeFilter(event.target.value)}
                             >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
+                              {detailedTypeFilterOptions.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <path d="M6 9l6 6 6-6" />
+                              </svg>
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                       <div className="flex flex-col gap-1 sm:self-end">
                         <label
                           className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
