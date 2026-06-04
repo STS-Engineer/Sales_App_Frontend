@@ -699,23 +699,163 @@ const normalizeInitialDocumentGreeting = (content, documentType) => {
   return looksLikeInitialGreeting ? text.replace(/\bRFQ\b/g, "RFI") : text;
 };
 
+const INTERNAL_TOOL_MARKER_KEYS = new Set([
+  "fieldstoupdate",
+  "fields_to_update",
+  "appendproducts",
+  "append_products",
+  "tooluses",
+  "tool_uses",
+  "tool_calls",
+  "recipientname",
+  "recipient_name",
+  "toolcallid",
+  "tool_call_id",
+  "toolname",
+  "tool_name"
+]);
+
+const tryParseExactJsonPayload = (content) => {
+  const text = String(content || "").trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
+const payloadContainsInternalToolMarkers = (payload) => {
+  if (Array.isArray(payload)) {
+    return payload.some(payloadContainsInternalToolMarkers);
+  }
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const keys = Object.keys(payload).map((key) => String(key).toLowerCase());
+  if (keys.some((key) => INTERNAL_TOOL_MARKER_KEYS.has(key))) {
+    return true;
+  }
+
+  return Object.values(payload).some(payloadContainsInternalToolMarkers);
+};
+
+const findJsonBlockEnd = (content, startIndex) => {
+  const opening = content[startIndex];
+  const closing = opening === "{" ? "}" : "]";
+  const stack = [closing];
+  let inString = false;
+  let escapeNext = false;
+
+  for (let index = startIndex + 1; index < content.length; index += 1) {
+    const char = content[index];
+    if (inString) {
+      if (escapeNext) {
+        escapeNext = false;
+      } else if (char === "\\") {
+        escapeNext = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      stack.push("}");
+      continue;
+    }
+    if (char === "[") {
+      stack.push("]");
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      if (!stack.length || char !== stack[stack.length - 1]) {
+        return null;
+      }
+      stack.pop();
+      if (!stack.length) {
+        return index + 1;
+      }
+    }
+  }
+
+  return null;
+};
+
+const stripLeadingInternalToolPayload = (content) => {
+  const text = String(content || "").trim();
+  if (!text || !["{", "["].includes(text[0])) {
+    return text;
+  }
+
+  const blockEnd = findJsonBlockEnd(text, 0);
+  if (!blockEnd) {
+    return text;
+  }
+
+  const leadingPayload = tryParseExactJsonPayload(text.slice(0, blockEnd));
+  if (!payloadContainsInternalToolMarkers(leadingPayload)) {
+    return text;
+  }
+
+  return text.slice(blockEnd).trim();
+};
+
+const sanitizeAssistantChatContent = (content) => {
+  let text = String(content || "").trim();
+  if (!text) return "";
+
+  text = text.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, payloadText) => {
+    const payload = tryParseExactJsonPayload(payloadText);
+    return payloadContainsInternalToolMarkers(payload) ? "" : match;
+  }).trim();
+
+  const payload = tryParseExactJsonPayload(text);
+  if (payloadContainsInternalToolMarkers(payload)) {
+    return "";
+  }
+
+  return stripLeadingInternalToolPayload(text);
+};
+
 export const mapChatHistory = (history = [], documentType = "RFQ") => {
   let firstAssistantChecked = false;
 
-  return history
-    .filter(
-      (entry) =>
-        (entry?.role === "assistant" || entry?.role === "user") &&
-        !(entry?.role === "assistant" && Array.isArray(entry?.tool_calls) && entry.tool_calls.length > 0) &&
-        typeof entry?.content === "string" &&
-        entry.content.trim() !== ""
-    )
-    .map((entry) => {
-      let content = entry.content;
-      if (!firstAssistantChecked && entry.role === "assistant") {
+  return history.reduce((messages, entry) => {
+    if (
+      (entry?.role !== "assistant" && entry?.role !== "user") ||
+      (entry?.role === "assistant" && Array.isArray(entry?.tool_calls) && entry.tool_calls.length > 0) ||
+      typeof entry?.content !== "string"
+    ) {
+      return messages;
+    }
+
+    let content = entry.content.trim();
+    if (!content) {
+      return messages;
+    }
+
+    if (entry.role === "assistant") {
+      content = sanitizeAssistantChatContent(content);
+      if (!content) {
+        return messages;
+      }
+      if (!firstAssistantChecked) {
         content = normalizeInitialDocumentGreeting(content, documentType);
         firstAssistantChecked = true;
       }
-      return { role: entry.role, content };
-    });
+    }
+
+    if (!content.trim()) {
+      return messages;
+    }
+
+    messages.push({ role: entry.role, content });
+    return messages;
+  }, []);
 };

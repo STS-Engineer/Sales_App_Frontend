@@ -790,12 +790,21 @@ const buildRfqChatFocusRevealTarget = (
   nextForm = {},
   mergedFiles = []
 ) => {
+  const autofillRevealTarget = buildRfqAutofillRevealTarget(
+    previousForm,
+    nextForm,
+    mergedFiles
+  );
+  if (autofillRevealTarget) {
+    return autofillRevealTarget;
+  }
+
   const nextStepCompletion = getRfqStepCompletionMap(nextForm, mergedFiles);
   const targetStepId = getLeadingEdgeStepIdFromCompletion(nextStepCompletion);
   const focusTarget = buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, {
     highlight: false
   });
-  return focusTarget || buildRfqAutofillRevealTarget(previousForm, nextForm, mergedFiles);
+  return focusTarget;
 };
 
 const getMissingPotentialSharedFields = (form = {}) =>
@@ -2695,10 +2704,6 @@ export default function NewRfq() {
       return;
     }
 
-    const isAutofillFieldReveal = Boolean(
-      pendingRfqAutofillReveal.updatedFields?.length
-    );
-
     if (activeStep !== pendingRfqAutofillReveal.stepId) {
       // --- Stepper guard: clamp the reveal target to the highest allowed
       const allowedIdx = highestUnlockedStepIndex;
@@ -2711,10 +2716,6 @@ export default function NewRfq() {
         setPendingRfqAutofillReveal((prev) =>
           prev ? { ...prev, stepId: clampedStepId, mode: "step", fieldName: "" } : null
         );
-        return;
-      }
-      if (isAutofillFieldReveal) {
-        setPendingRfqAutofillReveal(null);
         return;
       }
       setActiveStep(clampedStepId);
