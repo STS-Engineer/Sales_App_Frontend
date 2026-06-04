@@ -720,6 +720,17 @@ const getFirstIncompleteRequiredField = (stepId, form = {}, mergedFiles = []) =>
 const getLeadingEdgeStepIdFromCompletion = (completion = {}) =>
   STEPS[getHighestUnlockedStepIndexFromCompletion(completion)]?.id || "step-client";
 
+const getNextIncompleteStepIdAfterStep = (stepId, completion = {}) => {
+  const startIndex = STEP_ORDER_INDEX[stepId] ?? -1;
+  for (let index = startIndex + 1; index < STEPS.length; index += 1) {
+    const candidateStepId = STEPS[index]?.id;
+    if (candidateStepId && !completion[candidateStepId]) {
+      return candidateStepId;
+    }
+  }
+  return "";
+};
+
 const buildStepFocusRevealTarget = (
   stepId,
   form = {},
@@ -770,6 +781,20 @@ const buildRfqAutofillRevealTarget = (
     nextStepCompletion
   );
   const rawTargetIndex = STEP_ORDER_INDEX[rawTargetStepId] ?? 0;
+  const nextIncompleteStepId = nextStepCompletion[rawTargetStepId]
+    ? getNextIncompleteStepIdAfterStep(rawTargetStepId, nextStepCompletion)
+    : "";
+
+  if (nextIncompleteStepId) {
+    const requestedNextIndex = STEP_ORDER_INDEX[nextIncompleteStepId] ?? rawTargetIndex;
+    const clampedNextIndex = Math.min(requestedNextIndex, highestAllowed);
+    const targetNextStepId = STEPS[clampedNextIndex]?.id || nextIncompleteStepId;
+    return buildStepFocusRevealTarget(targetNextStepId, nextForm, mergedFiles, {
+      highlight: false,
+      updatedFields: changedFields
+    });
+  }
+
   const clampedIndex = Math.min(rawTargetIndex, highestAllowed);
   const targetStepId = STEPS[clampedIndex]?.id || "step-client";
   // If clamped, switch to "step" mode so we don't try to scroll to a field
@@ -3042,9 +3067,7 @@ export default function NewRfq() {
     setPendingRfqAutofillReveal(
       revealUpdatedRfqFields && !isPotentialRecord
         ? (
-          rfqStepAutoFollowPausedRef.current
-            ? null
-            : buildRfqChatFocusRevealTarget(form, nextFormState, nextMergedFiles)
+          buildRfqChatFocusRevealTarget(form, nextFormState, nextMergedFiles)
         )
         : null
     );
