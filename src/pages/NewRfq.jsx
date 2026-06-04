@@ -17,6 +17,7 @@ import {
   downloadOfferTemplate,
   deleteRfqFile,
   editOfferChatMessage,
+  editPotentialChatMessage,
   editRfqChatMessage,
   getCostingMessages,
   getRfqAuditLogs,
@@ -515,6 +516,58 @@ const SHARED_POTENTIAL_FIELDS = [
   { key: "potentialContactPhone", label: "contact phone" },
   { key: "potentialContactFunction", label: "contact function" }
 ];
+const POTENTIAL_FORM_FIELD_NAMES = [
+  "potentialCustomer",
+  "potentialCustomerLocation",
+  "potentialApplication",
+  "potentialIndustry",
+  "potentialProductType",
+  "potentialEngagementReason",
+  "potentialIdeaOwner",
+  "potentialCurrentSupplier",
+  "potentialWinReason",
+  "potentialWinDetails",
+  "potentialTechnicalCapability",
+  "potentialStrategyFit",
+  "potentialStrategyFitDetails",
+  "potentialBusinessSalesKeur",
+  "potentialBusinessMarginPercent",
+  "potentialStartOfProduction",
+  "potentialDevelopmentEffort",
+  "potentialSideEffects",
+  "potentialRiskDoAssessment",
+  "potentialRiskNotDoAssessment",
+  "potentialContactName",
+  "potentialContactFunction",
+  "potentialContactPhone",
+  "potentialContactEmail"
+];
+const POTENTIAL_FIELD_SECTION_MAP = {
+  potentialCustomer: "potential-section-overview",
+  potentialCustomerLocation: "potential-section-overview",
+  potentialApplication: "potential-section-overview",
+  potentialIndustry: "potential-section-overview",
+  potentialProductType: "potential-section-overview",
+  potentialEngagementReason: "potential-section-strategy",
+  potentialIdeaOwner: "potential-section-strategy",
+  potentialCurrentSupplier: "potential-section-strategy",
+  potentialWinReason: "potential-section-strategy",
+  potentialWinDetails: "potential-section-strategy",
+  potentialTechnicalCapability: "potential-section-strategy",
+  potentialStrategyFit: "potential-section-strategy",
+  potentialStrategyFitDetails: "potential-section-strategy",
+  potentialBusinessSalesKeur: "potential-section-business",
+  potentialBusinessMarginPercent: "potential-section-business",
+  potentialStartOfProduction: "potential-section-business",
+  potentialDevelopmentEffort: "potential-section-business",
+  potentialSideEffects: "potential-section-business",
+  potentialRiskDoAssessment: "potential-section-risks-do",
+  potentialRiskNotDoAssessment: "potential-section-risks-not-do",
+  potentialContactName: "potential-section-contact",
+  potentialContactFunction: "potential-section-contact",
+  potentialContactPhone: "potential-section-contact",
+  potentialContactEmail: "potential-section-contact"
+};
 const PRICING_WORKFLOW_STATE_WAITING_BOM = "WAITING_BOM";
 const PRICING_WORKFLOW_STATE_BOM_UPLOADED = "BOM_UPLOADED";
 const PRICING_WORKFLOW_STATE_PRICING_UPLOADED = "PRICING_UPLOADED";
@@ -749,6 +802,38 @@ const getMissingPotentialSharedFields = (form = {}) =>
   SHARED_POTENTIAL_FIELDS
     .filter(({ key }) => !hasMeaningfulValue(form?.[key]))
     .map(({ label }) => label);
+
+const getChangedPotentialFormFields = (previousForm = {}, nextForm = {}) => {
+  const changedFields = POTENTIAL_FORM_FIELD_NAMES.filter((fieldName) => {
+    const previousValue = previousForm?.[fieldName];
+    const nextValue = nextForm?.[fieldName];
+    return String(previousValue ?? "").trim() !== String(nextValue ?? "").trim();
+  });
+
+  if (!changedFields.length) {
+    return [];
+  }
+
+  const filledFields = changedFields.filter((fieldName) =>
+    hasMeaningfulValue(nextForm?.[fieldName])
+  );
+  return filledFields.length ? filledFields : changedFields;
+};
+
+const buildPotentialAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
+  const changedFields = getChangedPotentialFormFields(previousForm, nextForm);
+  if (!changedFields.length) {
+    return null;
+  }
+
+  const lastChangedField = changedFields[changedFields.length - 1];
+  return {
+    fieldName: lastChangedField,
+    sectionId: POTENTIAL_FIELD_SECTION_MAP[lastChangedField] || "",
+    updatedFields: changedFields,
+    highlight: false
+  };
+};
 
 const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   if (!prevMessages.length) return serverMessages;
@@ -1833,6 +1918,7 @@ export default function NewRfq() {
   const [rfqAuditLogs, setRfqAuditLogs] = useState([]);
   const [rfqCreatorEmail, setRfqCreatorEmail] = useState("");
   const [potentialChatMessages, setPotentialChatMessages] = useState([]);
+  const [potentialChatCompleted, setPotentialChatCompleted] = useState(false);
   const [rfqChatMessages, setRfqChatMessages] = useState([]);
   const [offerChatMessages, setOfferChatMessages] = useState([]);
   const [loadingRfq, setLoadingRfq] = useState(false);
@@ -1923,6 +2009,7 @@ export default function NewRfq() {
   const [costingSavePending, setCostingSavePending] = useState(false);
   const [costingFeasabilitySaved, setCostingFeasabilitySaved] = useState(false);
   const [pendingRfqAutofillReveal, setPendingRfqAutofillReveal] = useState(null);
+  const [pendingPotentialAutofillReveal, setPendingPotentialAutofillReveal] = useState(null);
   const rfqFileInputRef = useRef(null);
   const offerTemplateViewerRef = useRef(null);
   const localFilesRef = useRef([]);
@@ -2438,7 +2525,8 @@ export default function NewRfq() {
         !canUseRfqActions ||
         hasValidationLock ||
         proceedingToFormalRfq ||
-        isPotentialAssistantLocked
+        isPotentialAssistantLocked ||
+        (activeRfqTab === "potential" && potentialChatCompleted)
       );
   const chatReadOnlyMessage =
     isOfferStage
@@ -2449,7 +2537,9 @@ export default function NewRfq() {
         ? "This phase is read-only for your role"
         : isPotentialAssistantLocked && activeRfqTab === "potential"
           ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
-          : "Chat is locked once the RFQ enters validation";
+          : potentialChatCompleted && activeRfqTab === "potential"
+            ? "Potential assessment complete. Use Proceed as RFQ or Proceed as RFI to continue."
+            : "Chat is locked once the RFQ enters validation";
   const rfqFormFieldReadOnly =
     !canUseRfqActions || lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = !saving && !rfqFormFieldReadOnly;
@@ -2693,6 +2783,65 @@ export default function NewRfq() {
   ]);
 
   useEffect(() => {
+    if (!pendingPotentialAutofillReveal) {
+      return;
+    }
+
+    if (activeRfqTab !== "potential") {
+      setPendingPotentialAutofillReveal(null);
+      return;
+    }
+
+    let canceled = false;
+    let retryTimer = 0;
+    let highlightTimer = 0;
+
+    const revealTarget = (attempt = 0) => {
+      if (canceled) {
+        return;
+      }
+
+      const fieldElement = pendingPotentialAutofillReveal.fieldName
+        ? document.getElementsByName(pendingPotentialAutofillReveal.fieldName)?.[0]
+        : null;
+      const sectionElement = pendingPotentialAutofillReveal.sectionId
+        ? document.getElementById(pendingPotentialAutofillReveal.sectionId)
+        : null;
+      const targetElement = fieldElement?.closest("label") || fieldElement || sectionElement;
+
+      if (!targetElement) {
+        if (attempt >= 6) {
+          setPendingPotentialAutofillReveal(null);
+          return;
+        }
+        retryTimer = window.setTimeout(() => revealTarget(attempt + 1), 90);
+        return;
+      }
+
+      targetElement.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+
+      if (pendingPotentialAutofillReveal.highlight !== false) {
+        targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
+        highlightTimer = window.setTimeout(() => {
+          targetElement.classList.remove(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
+        }, 1800);
+      }
+      setPendingPotentialAutofillReveal(null);
+    };
+
+    retryTimer = window.setTimeout(() => revealTarget(0), 40);
+
+    return () => {
+      canceled = true;
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(highlightTimer);
+    };
+  }, [activeRfqTab, form, pendingPotentialAutofillReveal]);
+
+  useEffect(() => {
     if (!isCostingStage || canOpenCostingPricing) {
       return;
     }
@@ -2884,8 +3033,13 @@ export default function NewRfq() {
     const nextLocalFiles = filterRemainingLocalFiles(localFilesRef.current);
     const nextMergedFiles = [...normalizedFiles, ...nextLocalFiles];
     setForm(nextFormState);
+    setPendingPotentialAutofillReveal(
+      revealUpdatedRfqFields && isPotentialRecord
+        ? buildPotentialAutofillRevealTarget(form, nextFormState)
+        : null
+    );
     setPendingRfqAutofillReveal(
-      revealUpdatedRfqFields
+      revealUpdatedRfqFields && !isPotentialRecord
         ? (
           rfqStepAutoFollowPausedRef.current
             ? null
@@ -3019,6 +3173,8 @@ export default function NewRfq() {
           setRfqId("");
           setDocumentType(documentTypeParam);
           setForm({ ...initialForm });
+          setPendingPotentialAutofillReveal(null);
+          setPendingRfqAutofillReveal(null);
           setPotentialChatMessages([]);
           setRfqChatMessages([]);
           setRfqSubStatus("");
@@ -3707,6 +3863,58 @@ export default function NewRfq() {
     return true;
   };
 
+  const handlePotentialChatEdit = async (visibleMessageIndex, message) => {
+    if (!canUseRfqActions) return false;
+    const trimmedMessage = String(message || "").trim();
+    if (!trimmedMessage) return false;
+
+    let currentRfqId = rfqId;
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      setRfqError("Unable to update this potential chat message right now.");
+      return false;
+    }
+
+    const previousMessages = potentialChatMessages;
+    const nextMessages = potentialChatMessages.slice(0, visibleMessageIndex);
+    setRfqError("");
+    setPotentialChatMessages([
+      ...nextMessages,
+      { role: "user", content: trimmedMessage }
+    ]);
+
+    let finalAssistantResponse = "";
+    try {
+      const reply = await editPotentialChatMessage(currentRfqId, {
+        visibleMessageIndex,
+        message: trimmedMessage
+      });
+      finalAssistantResponse = String(reply?.response || "");
+      if (reply?.lock_chat) {
+        setPotentialChatCompleted(true);
+      }
+      if (reply?.rfq) {
+        applyRfq(reply.rfq, { revealUpdatedRfqFields: true });
+      }
+    } catch (error) {
+      setPotentialChatMessages(previousMessages);
+      setRfqError(error?.message || "Unable to update this potential chat message.");
+      return false;
+    }
+
+    const synced = await syncRfq(currentRfqId, {
+      revealUpdatedRfqFields: true
+    });
+    if (!synced && finalAssistantResponse) {
+      setPotentialChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: finalAssistantResponse }
+      ]);
+    }
+    return true;
+  };
+
   const handleOfferChatEdit = async (visibleMessageIndex, message) => {
     if (!canUseOfferActions) return false;
     const trimmedMessage = String(message || "").trim();
@@ -3859,9 +4067,12 @@ export default function NewRfq() {
       shouldAutoRedirect = Boolean(reply?.auto_redirect);
       finalAssistantResponse = String(reply?.response || "");
       replyRfq = reply?.rfq || null;
+      if (reply?.lock_chat && activeChatMode === "potential") {
+        setPotentialChatCompleted(true);
+      }
       if (replyRfq) {
         applyRfq(replyRfq, {
-          revealUpdatedRfqFields: activeChatMode !== "potential"
+          revealUpdatedRfqFields: activeChatMode !== "offer"
         });
       }
     } catch {
@@ -3874,7 +4085,7 @@ export default function NewRfq() {
       ]);
     } finally {
       const synced = await syncRfq(currentRfqId, {
-        revealUpdatedRfqFields: activeChatMode !== "potential" && !replyRfq
+        revealUpdatedRfqFields: activeChatMode !== "offer" && !replyRfq
       });
       if (activeChatMode === "offer" && currentRfqId) {
         await loadOfferTemplatePreview();
@@ -3891,7 +4102,7 @@ export default function NewRfq() {
     }
   };
 
-  const handleProceedToFormalRfq = async () => {
+  const handleProceedToFormalRfq = async (documentType = "RFQ") => {
     if (!canUseRfqActions) return;
     let currentRfqId = rfqId;
     setRfqError("");
@@ -3899,20 +4110,21 @@ export default function NewRfq() {
     try {
       currentRfqId = await ensureRfqExists();
     } catch {
-      setRfqError("Unable to create the draft before proceeding to the formal RFQ.");
+      setRfqError("Unable to create the draft before proceeding.");
       return;
     }
 
     setProceedingToFormalRfq(true);
     try {
-      const updatedRfq = await proceedToFormalRfq(currentRfqId);
+      const updatedRfq = await proceedToFormalRfq(currentRfqId, documentType);
       applyRfq(updatedRfq);
       setActiveRfqTab("new");
       setSelectedStage("RFQ");
       setSelectedSubPhase("RFQ form");
-      setValidationSuccess("Potential saved and promoted to the formal RFQ.");
+      const label = documentType === "RFI" ? "RFI" : "RFQ";
+      setValidationSuccess(`Potential saved and promoted to the formal ${label}.`);
     } catch (error) {
-      setRfqError(error?.message || "Unable to proceed to the formal RFQ.");
+      setRfqError(error?.message || "Unable to proceed.");
     } finally {
       setProceedingToFormalRfq(false);
     }
@@ -4991,6 +5203,29 @@ export default function NewRfq() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (!isRfiTabLocked) {
+                          setDocumentType("RFI");
+                          setActiveRfqTab("rfi");
+                        }
+                      }}
+                      disabled={isRfiTabLocked}
+                      className={`pb-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${activeRfqTab === "rfi"
+                        ? "border-b-2 border-tide text-ink"
+                        : "hover:text-ink"
+                        }`}
+                      title={
+                        isRfiTabLocked
+                          ? isPotentialDraft
+                            ? "Use Proceed as RFI to unlock this tab after starting a Potential request."
+                            : "The document type is locked after a draft has been created."
+                          : "RFI"
+                      }
+                    >
+                      RFI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         if (!isNewRfqTabLocked) {
                           setDocumentType("RFQ");
                           setActiveRfqTab("new");
@@ -5004,33 +5239,12 @@ export default function NewRfq() {
                       title={
                         isNewRfqTabLocked
                           ? isPotentialDraft
-                            ? "Use Proceed to Formal RFQ to unlock this tab after starting a Potential request."
+                            ? "Use Proceed as RFQ to unlock this tab after starting a Potential request."
                             : "The document type is locked after a draft has been created."
                           : "New RFQ"
                       }
                     >
                       New RFQ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isRfiTabLocked) {
-                          setDocumentType("RFI");
-                          setActiveRfqTab("rfi");
-                        }
-                      }}
-                      disabled={isRfiTabLocked}
-                      className={`pb-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${activeRfqTab === "rfi"
-                        ? "border-b-2 border-tide text-ink"
-                        : "hover:text-ink"
-                        }`}
-                      title={
-                        isRfiTabLocked
-                          ? "The document type is locked after a draft has been created."
-                          : "RFI"
-                      }
-                    >
-                      RFI
                     </button>
                     <button
                       type="button"
@@ -6191,13 +6405,16 @@ export default function NewRfq() {
                           Opportunity: {form.potentialSystematicId || "Draft"}
                         </p>
                         <p className="mt-2 text-sm text-slate-500">
-                          This tab mirrors the Potential chatbot. You can start here for a pre-sales assessment, or switch straight to New RFQ before any draft is created.
+                          This tab mirrors the Potential chatbot. You can start here for a pre-sales assessment, or switch straight to RFI or New RFQ before any draft is created.
                         </p>
                       </div>
                     </div>
 
                     <div className="relative grid gap-6">
-                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                      <section
+                        id="potential-section-overview"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                      >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-tide/10 text-sm font-semibold text-tide">
                             01
@@ -6219,7 +6436,10 @@ export default function NewRfq() {
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                      <section
+                        id="potential-section-strategy"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                      >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sun/10 text-sm font-semibold text-sun">
                             02
@@ -6250,7 +6470,10 @@ export default function NewRfq() {
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                      <section
+                        id="potential-section-business"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                      >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-mint/10 text-sm font-semibold text-mint">
                             03
@@ -6275,7 +6498,10 @@ export default function NewRfq() {
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                      <section
+                        id="potential-section-risks-do"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                      >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-coral/10 text-sm font-semibold text-coral">
                             04
@@ -6302,7 +6528,10 @@ export default function NewRfq() {
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                      <section
+                        id="potential-section-risks-not-do"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                      >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/5 text-sm font-semibold text-ink">
                             05
@@ -6329,7 +6558,10 @@ export default function NewRfq() {
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                      <section
+                        id="potential-section-contact"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                      >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-sm font-semibold text-slate-600">
                             06
@@ -6351,26 +6583,41 @@ export default function NewRfq() {
                       </section>
 
                       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <h3 className="font-display text-xl text-ink">Proceed to formal RFQ</h3>
+                            <h3 className="font-display text-xl text-ink">Proceed to formal request</h3>
                             <p className="mt-2 text-sm text-slate-500">
-                              When the shared Potential fields are complete, promote this opportunity to New RFQ while keeping the Potential tab available as reference.
+                              When the shared Potential fields are complete, promote this opportunity to a formal RFQ or RFI.
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleProceedToFormalRfq}
-                            disabled={!canProceedToFormalRfq}
-                            className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
-                            title={
-                              canProceedToFormalRfq
-                                ? "Proceed to Formal RFQ"
-                                : "Complete the shared Potential fields in the chatbot before proceeding."
-                            }
-                          >
-                            {proceedingToFormalRfq ? "Proceeding..." : "Proceed to Formal RFQ"}
-                          </button>
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleProceedToFormalRfq("RFQ")}
+                              disabled={!canProceedToFormalRfq || proceedingToFormalRfq}
+                              className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
+                              title={
+                                canProceedToFormalRfq
+                                  ? "Proceed as formal RFQ"
+                                  : "Complete the shared Potential fields in the chatbot before proceeding."
+                              }
+                            >
+                              {proceedingToFormalRfq ? "Proceeding..." : "Proceed as RFQ"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleProceedToFormalRfq("RFI")}
+                              disabled={!canProceedToFormalRfq || proceedingToFormalRfq}
+                              className="outline-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
+                              title={
+                                canProceedToFormalRfq
+                                  ? "Proceed as formal RFI"
+                                  : "Complete the shared Potential fields in the chatbot before proceeding."
+                              }
+                            >
+                              {proceedingToFormalRfq ? "Proceeding..." : "Proceed as RFI"}
+                            </button>
+                          </div>
                         </div>
                       </section>
                     </div>
@@ -7584,7 +7831,9 @@ export default function NewRfq() {
                           messages={chatFeed}
                           onSend={handleChatSend}
                           onEditMessage={
-                            isOfferStage
+                            activeRfqTab === "potential"
+                              ? handlePotentialChatEdit
+                              : isOfferStage
                               ? handleOfferChatEdit
                               : isFormalDocumentTab
                                 ? handleRfqChatEdit

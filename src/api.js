@@ -422,6 +422,17 @@ export async function editRfqChatMessage(rfqId, payload) {
   });
 }
 
+export async function editPotentialChatMessage(rfqId, payload) {
+  return request("/api/chat/potential/edit", {
+    method: "POST",
+    body: {
+      rfq_id: rfqId,
+      visible_message_index: payload.visibleMessageIndex,
+      message: payload.message
+    }
+  });
+}
+
 export async function sendPotentialChat(rfqId, message) {
   return request("/api/chat/potential", {
     method: "POST",
@@ -429,9 +440,10 @@ export async function sendPotentialChat(rfqId, message) {
   });
 }
 
-export async function proceedToFormalRfq(rfqId) {
+export async function proceedToFormalRfq(rfqId, documentType = "RFQ") {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/proceed-to-rfq`, {
-    method: "POST"
+    method: "POST",
+    body: { document_type: documentType }
   });
 }
 

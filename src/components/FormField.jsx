@@ -44,7 +44,7 @@ export default function FormField({
       </span>
       {options ? (
         <select
-          className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
+          className={`input-field appearance-none ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
           value={normalizedValue}
           onChange={onChange}

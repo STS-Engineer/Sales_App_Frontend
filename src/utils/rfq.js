@@ -165,7 +165,7 @@ const DELIVERY_ZONE_OPTION_VALUES = new Set(
 
 export const getDeliveryZoneOptions = (currentValue = "") => {
   const baseOptions = [
-    { value: "", label: "Not selected yet" },
+    { value: "", label: "" },
     ...DELIVERY_ZONE_OPTIONS
   ];
   const normalizedCurrentValue =
