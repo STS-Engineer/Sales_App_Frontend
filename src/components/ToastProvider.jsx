@@ -9,7 +9,7 @@ import {
 } from "react";
 
 const ToastContext = createContext(null);
-const DEFAULT_DURATION_MS = 4500;
+const DEFAULT_DURATION_MS = 9000;
 const DEFAULT_TITLES = {
   success: "Success",
   error: "Error",
