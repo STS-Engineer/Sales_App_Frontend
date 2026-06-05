@@ -6,7 +6,7 @@ import {
   setToken
 } from "./utils/session.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-management.azurewebsites.net";
 const REQUEST_TIMEOUT_MS = 300000;
 let refreshPromise = null;
 
@@ -251,6 +251,32 @@ export async function login(payload) {
 
 export async function register(payload) {
   return request("/api/auth/register", {
+    method: "POST",
+    body: payload,
+    auth: false
+  });
+}
+
+export async function requestPasswordReset(payload) {
+  return request("/api/auth/forgot-password", {
+    method: "POST",
+    body: payload,
+    auth: false
+  });
+}
+
+export async function validatePasswordResetToken(token) {
+  return request(
+    `/api/auth/reset-password/validate?token=${encodeURIComponent(String(token || ""))}`,
+    {
+      method: "GET",
+      auth: false
+    }
+  );
+}
+
+export async function resetPassword(payload) {
+  return request("/api/auth/reset-password", {
     method: "POST",
     body: payload,
     auth: false

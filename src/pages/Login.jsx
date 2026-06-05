@@ -31,13 +31,26 @@ export default function Login() {
   const registrationToastRef = useRef("");
 
   useEffect(() => {
+    const flashToast = location.state?.flashToast;
     const registrationMessage = location.state?.registrationMessage;
-    if (!registrationMessage) return;
-    if (registrationToastRef.current === registrationMessage) return;
-    registrationToastRef.current = registrationMessage;
-    showToast(registrationMessage, {
-      type: "success",
-      title: "Account created"
+    const toastPayload = flashToast || (
+      registrationMessage
+        ? {
+          message: registrationMessage,
+          type: "success",
+          title: "Account created"
+        }
+        : null
+    );
+    const toastSignature = toastPayload
+      ? `${toastPayload.type || "info"}|${toastPayload.title || ""}|${toastPayload.message || ""}`
+      : "";
+    if (!toastPayload?.message) return;
+    if (registrationToastRef.current === toastSignature) return;
+    registrationToastRef.current = toastSignature;
+    showToast(toastPayload.message, {
+      type: toastPayload.type || "info",
+      title: toastPayload.title
     });
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.pathname, location.state, navigate, showToast]);

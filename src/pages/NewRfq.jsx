@@ -1405,7 +1405,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-management.azurewebsites.net";
 const PRODUCT_ROW_READONLY_VALUE_CLASSES =
   "min-h-[44px] rounded-2xl bg-slate-50/80 px-4 py-3 text-sm font-medium text-ink";
 const PRODUCT_PRICE_SOURCE_OPTIONS = [
@@ -2576,7 +2576,18 @@ export default function NewRfq() {
             : "Chat is locked once the RFQ enters validation";
   const rfqFormFieldReadOnly =
     !canUseRfqActions || lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
-  const allowFileUpload = !saving && !rfqFormFieldReadOnly;
+  const allowFileUpload = Boolean(
+    !saving &&
+    isRfqStage &&
+    canUseRfqActions &&
+    !isChatOnly
+  );
+  const allowFileDeletion = Boolean(
+    !saving &&
+    isRfqStage &&
+    canUseRfqActions &&
+    !isChatOnly
+  );
   const showRfqStepNavigation =
     isFormalDocumentTab && isRfqStage && isRfqFormView;
   const showChatPanel =
@@ -3680,7 +3691,7 @@ export default function NewRfq() {
 
   const handleDeleteFile = async (file) => {
     if (!file) return;
-    if (!canUseRfqActions) return;
+    if (!allowFileDeletion) return;
     if (file.source === "local") {
       handleRemoveLocalFile(file.id);
       return;
@@ -5379,14 +5390,14 @@ export default function NewRfq() {
                                   >
                                     {isPreviewing ? "Loading..." : "Preview"}
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={() => setFileDeleteTarget(file)}
-                                    disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
-                                  >
-                                    {isDeleting ? "Removing..." : "Delete"}
-                                  </button>
+                                              <button
+                                                type="button"
+                                                className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                onClick={() => setFileDeleteTarget(file)}
+                                                disabled={isDeleting || !allowFileDeletion}
+                                              >
+                                                {isDeleting ? "Removing..." : "Delete"}
+                                              </button>
                                 </div>
                               </div>
                             );
@@ -6938,7 +6949,7 @@ export default function NewRfq() {
                                             type="button"
                                             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                             onClick={() => setFileDeleteTarget(file)}
-                                            disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
+                                            disabled={isDeleting || !allowFileDeletion}
                                             aria-label="Delete file"
                                             title={isDeleting ? "Removing..." : "Delete"}
                                           >
@@ -7235,15 +7246,9 @@ export default function NewRfq() {
                                                 type="button"
                                                 className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                                 onClick={() => setFileDeleteTarget(file)}
-                                                disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
+                                                disabled={isDeleting || !allowFileDeletion}
                                                 aria-label="Delete file"
-                                                title={
-                                                  isRfqFormReadOnly
-                                                    ? "Read only in validation"
-                                                    : isDeleting
-                                                      ? "Removing..."
-                                                      : "Delete"
-                                                }
+                                                title={isDeleting ? "Removing..." : "Delete"}
                                               >
                                                 <Trash2 className="h-4 w-4" />
                                               </button>
@@ -8352,7 +8357,7 @@ export default function NewRfq() {
                                     setFilesPanelOpen(false);
                                     setFileDeleteTarget(file);
                                   }}
-                                  disabled={isDeleting || !canUseRfqActions || isRfqFormReadOnly}
+                                  disabled={isDeleting || !allowFileDeletion}
                                   aria-label="Delete file"
                                   title={isDeleting ? "Removing..." : "Delete"}
                                 >
