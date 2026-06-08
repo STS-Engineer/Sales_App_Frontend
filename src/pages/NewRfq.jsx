@@ -244,6 +244,13 @@ const RFQ_REQUIRED_FIELD_NAMES = new Set(
 const RFQ_OPTIONAL_FIELD_NAMES = new Set(
   Object.values(RFQ_STEP_REQUIREMENTS).flatMap((fields) => fields.optional)
 );
+const RFQ_WORKFLOW_OPTIONAL_FIELD_NAMES = new Set([
+  "ppapDate",
+  "typeOfPackaging",
+  "businessTrigger",
+  "customerToolingConditions",
+  "entryBarriers"
+]);
 const RFQ_FORM_FIELD_NAMES = [...new Set(Object.values(RFQ_STEP_FORM_FIELDS).flat())];
 const RFQ_FIELD_TO_STEP_MAP = Object.fromEntries(
   Object.entries(RFQ_STEP_FORM_FIELDS).flatMap(([stepId, fields]) =>
@@ -665,6 +672,16 @@ const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => 
   return hasMeaningfulValue(form?.[fieldName]);
 };
 
+const getRfqWorkflowStepFields = (stepId) => {
+  const stepRequirements = RFQ_STEP_REQUIREMENTS[stepId] || { required: [], optional: [] };
+  return [
+    ...(stepRequirements.required || []),
+    ...(stepRequirements.optional || []).filter((fieldName) =>
+      RFQ_WORKFLOW_OPTIONAL_FIELD_NAMES.has(fieldName)
+    )
+  ];
+};
+
 const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   const changedFields = RFQ_FORM_FIELD_NAMES.filter((fieldName) => {
     const previousValue = previousForm?.[fieldName];
@@ -692,7 +709,7 @@ const getRfqStepCompletionMap = (form = {}, mergedFiles = []) =>
   Object.fromEntries(
     STEPS.map((step) => [
       step.id,
-      (RFQ_STEP_REQUIREMENTS[step.id]?.required || []).every((fieldName) =>
+      getRfqWorkflowStepFields(step.id).every((fieldName) =>
         isRfqFieldComplete(form, fieldName, { mergedFiles })
       )
     ])
@@ -707,9 +724,9 @@ const getHighestUnlockedStepIndexFromCompletion = (completion = {}) => {
   return STEPS.length - 1;
 };
 
-const getFirstIncompleteRequiredField = (stepId, form = {}, mergedFiles = []) => {
-  const requiredFields = RFQ_STEP_REQUIREMENTS[stepId]?.required || [];
-  for (const fieldName of requiredFields) {
+const getFirstIncompleteWorkflowField = (stepId, form = {}, mergedFiles = []) => {
+  const workflowFields = getRfqWorkflowStepFields(stepId);
+  for (const fieldName of workflowFields) {
     if (!isRfqFieldComplete(form, fieldName, { mergedFiles })) {
       return fieldName;
     }
@@ -740,7 +757,7 @@ const buildStepFocusRevealTarget = (
   if (!stepId) {
     return null;
   }
-  const fieldName = getFirstIncompleteRequiredField(stepId, form, mergedFiles);
+  const fieldName = getFirstIncompleteWorkflowField(stepId, form, mergedFiles);
   if (!fieldName || fieldName === "products" || fieldName === "rfqFiles") {
     return {
       stepId,
