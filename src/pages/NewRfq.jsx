@@ -245,12 +245,24 @@ const RFQ_OPTIONAL_FIELD_NAMES = new Set(
   Object.values(RFQ_STEP_REQUIREMENTS).flatMap((fields) => fields.optional)
 );
 const RFQ_WORKFLOW_OPTIONAL_FIELD_NAMES = new Set([
+  "costingData",
   "ppapDate",
   "typeOfPackaging",
   "businessTrigger",
   "customerToolingConditions",
   "entryBarriers"
 ]);
+const RFQ_FRONTEND_TO_BACKEND_FIELD_KEYS = {
+  costingData: ["costing_data", "costingData"],
+  ppapDate: ["ppap_date", "ppapDate"],
+  typeOfPackaging: ["type_of_packaging", "typeOfPackaging"],
+  businessTrigger: ["business_trigger", "businessTrigger"],
+  customerToolingConditions: [
+    "customer_tooling_conditions",
+    "customerToolingConditions"
+  ],
+  entryBarriers: ["entry_barriers", "entryBarriers"]
+};
 const RFQ_FORM_FIELD_NAMES = [...new Set(Object.values(RFQ_STEP_FORM_FIELDS).flat())];
 const RFQ_FIELD_TO_STEP_MAP = Object.fromEntries(
   Object.entries(RFQ_STEP_FORM_FIELDS).flatMap(([stepId, fields]) =>
@@ -672,6 +684,14 @@ const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => 
   return hasMeaningfulValue(form?.[fieldName]);
 };
 
+const isRawRfqFieldSkipped = (rawRfqData = {}, fieldName) => {
+  const backendKeys = RFQ_FRONTEND_TO_BACKEND_FIELD_KEYS[fieldName] || [];
+  return backendKeys.some((key) => {
+    const value = rawRfqData?.[key];
+    return typeof value === "string" && value.trim() === "_";
+  });
+};
+
 const getRfqWorkflowStepFields = (stepId) => {
   const stepRequirements = RFQ_STEP_REQUIREMENTS[stepId] || { required: [], optional: [] };
   return [
@@ -681,6 +701,9 @@ const getRfqWorkflowStepFields = (stepId) => {
     )
   ];
 };
+
+const getRfqRequiredStepFields = (stepId) =>
+  RFQ_STEP_REQUIREMENTS[stepId]?.required || [];
 
 const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   const changedFields = RFQ_FORM_FIELD_NAMES.filter((fieldName) => {
@@ -705,14 +728,54 @@ const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   return filledFields.length ? filledFields : changedFields;
 };
 
-const getRfqStepCompletionMap = (form = {}, mergedFiles = []) =>
+const getRfqStepCompletionMap = (form = {}, mergedFiles = [], rawRfqData = {}) =>
   Object.fromEntries(
     STEPS.map((step) => [
       step.id,
       getRfqWorkflowStepFields(step.id).every((fieldName) =>
-        isRfqFieldComplete(form, fieldName, { mergedFiles })
+        isRfqFieldComplete(form, fieldName, { mergedFiles }) ||
+        (
+          RFQ_OPTIONAL_FIELD_NAMES.has(fieldName) &&
+          isRawRfqFieldSkipped(rawRfqData, fieldName)
+        )
       )
     ])
+  );
+
+const getRfqDisplayStepCompletionMap = (
+  form = {},
+  mergedFiles = [],
+  rawRfqData = {},
+  strictCompletion = {}
+) =>
+  Object.fromEntries(
+    STEPS.map((step, index) => {
+      const strictComplete = Boolean(strictCompletion[step.id]);
+      if (strictComplete) {
+        return [step.id, true];
+      }
+
+      const requiredComplete = getRfqRequiredStepFields(step.id).every((fieldName) =>
+        isRfqFieldComplete(form, fieldName, { mergedFiles })
+      );
+      if (!requiredComplete) {
+        return [step.id, false];
+      }
+
+      const nextStep = STEPS[index + 1];
+      const nextStepHasAnyActivity = nextStep
+        ? getRfqWorkflowStepFields(nextStep.id).some(
+            (fieldName) =>
+              isRfqFieldComplete(form, fieldName, { mergedFiles }) ||
+              (
+                RFQ_OPTIONAL_FIELD_NAMES.has(fieldName) &&
+                isRawRfqFieldSkipped(rawRfqData, fieldName)
+              )
+          )
+        : false;
+
+      return [step.id, nextStepHasAnyActivity];
+    })
   );
 
 const getHighestUnlockedStepIndexFromCompletion = (completion = {}) => {
@@ -724,10 +787,21 @@ const getHighestUnlockedStepIndexFromCompletion = (completion = {}) => {
   return STEPS.length - 1;
 };
 
-const getFirstIncompleteWorkflowField = (stepId, form = {}, mergedFiles = []) => {
+const getFirstIncompleteWorkflowField = (
+  stepId,
+  form = {},
+  mergedFiles = [],
+  rawRfqData = {}
+) => {
   const workflowFields = getRfqWorkflowStepFields(stepId);
   for (const fieldName of workflowFields) {
-    if (!isRfqFieldComplete(form, fieldName, { mergedFiles })) {
+    const isComplete =
+      isRfqFieldComplete(form, fieldName, { mergedFiles }) ||
+      (
+        RFQ_OPTIONAL_FIELD_NAMES.has(fieldName) &&
+        isRawRfqFieldSkipped(rawRfqData, fieldName)
+      );
+    if (!isComplete) {
       return fieldName;
     }
   }
@@ -752,12 +826,18 @@ const buildStepFocusRevealTarget = (
   stepId,
   form = {},
   mergedFiles = [],
+  rawRfqData = {},
   { highlight = false, updatedFields = [] } = {}
 ) => {
   if (!stepId) {
     return null;
   }
-  const fieldName = getFirstIncompleteWorkflowField(stepId, form, mergedFiles);
+  const fieldName = getFirstIncompleteWorkflowField(
+    stepId,
+    form,
+    mergedFiles,
+    rawRfqData
+  );
   if (!fieldName || fieldName === "products" || fieldName === "rfqFiles") {
     return {
       stepId,
@@ -779,7 +859,8 @@ const buildStepFocusRevealTarget = (
 const buildRfqAutofillRevealTarget = (
   previousForm = {},
   nextForm = {},
-  mergedFiles = []
+  mergedFiles = [],
+  rawRfqData = {}
 ) => {
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
   if (!changedFields.length) {
@@ -793,7 +874,11 @@ const buildRfqAutofillRevealTarget = (
     "step-client";
 
   // --- Stepper guard: clamp target step to the highest allowed step -----
-  const nextStepCompletion = getRfqStepCompletionMap(nextForm, mergedFiles);
+  const nextStepCompletion = getRfqStepCompletionMap(
+    nextForm,
+    mergedFiles,
+    rawRfqData
+  );
   const highestAllowed = getHighestUnlockedStepIndexFromCompletion(
     nextStepCompletion
   );
@@ -806,7 +891,7 @@ const buildRfqAutofillRevealTarget = (
     const requestedNextIndex = STEP_ORDER_INDEX[nextIncompleteStepId] ?? rawTargetIndex;
     const clampedNextIndex = Math.min(requestedNextIndex, highestAllowed);
     const targetNextStepId = STEPS[clampedNextIndex]?.id || nextIncompleteStepId;
-    return buildStepFocusRevealTarget(targetNextStepId, nextForm, mergedFiles, {
+    return buildStepFocusRevealTarget(targetNextStepId, nextForm, mergedFiles, rawRfqData, {
       highlight: false,
       updatedFields: changedFields
     });
@@ -830,20 +915,26 @@ const buildRfqAutofillRevealTarget = (
 const buildRfqChatFocusRevealTarget = (
   previousForm = {},
   nextForm = {},
-  mergedFiles = []
+  mergedFiles = [],
+  rawRfqData = {}
 ) => {
   const autofillRevealTarget = buildRfqAutofillRevealTarget(
     previousForm,
     nextForm,
-    mergedFiles
+    mergedFiles,
+    rawRfqData
   );
   if (autofillRevealTarget) {
     return autofillRevealTarget;
   }
 
-  const nextStepCompletion = getRfqStepCompletionMap(nextForm, mergedFiles);
+  const nextStepCompletion = getRfqStepCompletionMap(
+    nextForm,
+    mergedFiles,
+    rawRfqData
+  );
   const targetStepId = getLeadingEdgeStepIdFromCompletion(nextStepCompletion);
-  const focusTarget = buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, {
+  const focusTarget = buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, rawRfqData, {
     highlight: false
   });
   return focusTarget;
@@ -1319,7 +1410,7 @@ const parseServerTimestamp = (value) => {
 const formatFileDate = (value, { withTime = false } = {}) => {
   if (value === null || value === undefined || value === "") return "Date unavailable";
   const parsed = parseServerTimestamp(value);
-  if (!parsed) return String(value);
+  if (!parsed) return String(value);https://sales-app-backend.azurewebsites.net
   return parsed.toLocaleString("en-GB", withTime
     ? {
       day: "2-digit",
@@ -1422,7 +1513,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const PRODUCT_ROW_READONLY_VALUE_CLASSES =
   "min-h-[44px] rounded-2xl bg-slate-50/80 px-4 py-3 text-sm font-medium text-ink";
 const PRODUCT_PRICE_SOURCE_OPTIONS = [
@@ -2348,8 +2439,18 @@ export default function NewRfq() {
     [activeChatGreeting, activeChatMessagesWithMeta]
   );
   const stepCompletion = useMemo(
-    () => getRfqStepCompletionMap(form, mergedFiles),
-    [form, mergedFiles]
+    () => getRfqStepCompletionMap(form, mergedFiles, rfqSnapshot?.rfq_data || {}),
+    [form, mergedFiles, rfqSnapshot]
+  );
+  const displayStepCompletion = useMemo(
+    () =>
+      getRfqDisplayStepCompletionMap(
+        form,
+        mergedFiles,
+        rfqSnapshot?.rfq_data || {},
+        stepCompletion
+      ),
+    [form, mergedFiles, rfqSnapshot, stepCompletion]
   );
 
   useEffect(() => {
@@ -2415,15 +2516,15 @@ export default function NewRfq() {
   const stepStates = useMemo(() => {
     const entries = STEPS.map((step, index) => {
       const isLocked = false;
-      const isComplete = Boolean(stepCompletion[step.id]);
+      const isComplete = Boolean(displayStepCompletion[step.id]);
       const statusType = isComplete ? "fulfilled" : "draft";
       return [step.id, { isLocked, isComplete, statusType }];
     });
     return Object.fromEntries(entries);
-  }, [stepCompletion]);
+  }, [displayStepCompletion]);
   const allStepsComplete = useMemo(
-    () => STEPS.every((step) => stepStates[step.id]?.isComplete),
-    [stepStates]
+    () => STEPS.every((step) => stepCompletion[step.id]),
+    [stepCompletion]
   );
   const canOpenRfqValidation =
     hasValidationLock && !holdSelfValidationPrompt;
@@ -2924,9 +3025,15 @@ export default function NewRfq() {
       return;
     }
     setPendingRfqAutofillReveal(
-      buildStepFocusRevealTarget(leadingEdgeStepId, form, mergedFiles, {
+      buildStepFocusRevealTarget(
+        leadingEdgeStepId,
+        form,
+        mergedFiles,
+        rfqSnapshot?.rfq_data || {},
+        {
         highlight: false
-      })
+        }
+      )
     );
     setActiveStep(leadingEdgeStepId);
   }, [
@@ -2937,6 +3044,7 @@ export default function NewRfq() {
     isRfqFormView,
     leadingEdgeStepId,
     mergedFiles,
+    rfqSnapshot,
     stepCompletion,
     stepIndex
   ]);
@@ -3095,7 +3203,12 @@ export default function NewRfq() {
     setPendingRfqAutofillReveal(
       revealUpdatedRfqFields && !isPotentialRecord
         ? (
-          buildRfqChatFocusRevealTarget(form, nextFormState, nextMergedFiles)
+          buildRfqChatFocusRevealTarget(
+            form,
+            nextFormState,
+            nextMergedFiles,
+            rfq?.rfq_data || {}
+          )
         )
         : null
     );
