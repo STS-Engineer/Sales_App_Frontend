@@ -7180,8 +7180,8 @@ export default function NewRfq() {
                                 <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("application")} />
                                 <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productName")} />
                                 <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productLine")} />
-                                <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                                 <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("costingData")} />
+                                <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                                 <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
                                   {renderRequirementLabel(
                                     `${formalDocumentLabel} Files`,
