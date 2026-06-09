@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-import { Check, Eye, Files, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react";
+import { Check, ClipboardList, Eye, Files, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react";
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
@@ -1513,7 +1513,7 @@ const DRAFT_PROMISE_TTL_MS = 20000;
 const PRICING_FINAL_PRICE_SAVE_KEY_PREFIX = "rfq_pricing_final_price_saved";
 const PRICING_FILE_DECISION_KEY_PREFIX = "rfq_pricing_file_decision";
 const SELF_VALIDATION_PROMPT_KEY_PREFIX = "rfq_self_validation_prompt_seen";
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const PRODUCT_ROW_READONLY_VALUE_CLASSES =
   "min-h-[44px] rounded-2xl bg-slate-50/80 px-4 py-3 text-sm font-medium text-ink";
 const PRODUCT_PRICE_SOURCE_OPTIONS = [
@@ -2105,6 +2105,10 @@ export default function NewRfq() {
   const [discussionLoading, setDiscussionLoading] = useState(false);
   const [discussionError, setDiscussionError] = useState("");
   const [discussionModalOpen, setDiscussionModalOpen] = useState(false);
+  const [actionPlanOpen, setActionPlanOpen] = useState(false);
+  const [actionItems, setActionItems] = useState([]);
+  const [actionFormOpen, setActionFormOpen] = useState(false);
+  const [actionDraft, setActionDraft] = useState({ action: "", description: "", responsible: "", dueDate: "", status: "Open" });
   const [costingDiscussionMessages, setCostingDiscussionMessages] = useState([]);
   const [costingDiscussionDraft, setCostingDiscussionDraft] = useState("");
   const [costingDiscussionRecipient, setCostingDiscussionRecipient] = useState("");
@@ -2665,7 +2669,7 @@ export default function NewRfq() {
   ]);
   const isRfqFormReadOnly =
     hasValidationLock && !rfqFormEditEnabled;
-  const lockNewRfqFields = !isRevisionModeActive;
+  const lockNewRfqFields = true;
   const potentialFieldReadOnly = true;
   const isOfferChatReadOnly =
     !canUseOfferActions || isOfferValidationLocked;
@@ -4344,7 +4348,6 @@ export default function NewRfq() {
     setRevisionActionId("submit");
     setRfqError("");
     try {
-      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
       const updatedRfq = await submitRevision(rfqId);
       const auditLogs = await getRfqAuditLogs(rfqId).catch(() => []);
       applyRfq(updatedRfq, { auditLogs });
@@ -5099,9 +5102,230 @@ export default function NewRfq() {
     ? `k${sharedProductCurrency}`
     : "k";
 
+  const ACTION_STATUSES = ["Open", "In Progress", "Done", "Cancelled"];
+
+  const handleActionDraftChange = (field, value) => {
+    setActionDraft((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddAction = () => {
+    if (!actionDraft.action.trim()) return;
+    setActionItems((prev) => [...prev, { ...actionDraft, id: Date.now() }]);
+    setActionDraft({ action: "", description: "", responsible: "", dueDate: "", status: "Open" });
+    setActionFormOpen(false);
+  };
+
+  const handleDeleteAction = (id) => {
+    setActionItems((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const handleStatusChange = (id, status) => {
+    setActionItems((prev) => prev.map((a) => a.id === id ? { ...a, status } : a));
+  };
+
+  const STATUS_COLORS = {
+    "Open":        "bg-violet-50 text-violet-700 border-violet-200",
+    "In Progress": "bg-amber-50 text-amber-700 border-amber-200",
+    "Done":        "bg-emerald-50 text-emerald-700 border-emerald-200",
+    "Cancelled":   "bg-slate-100 text-slate-500 border-slate-200",
+  };
+  const STATUS_DOT = {
+    "Open":        "bg-violet-400",
+    "In Progress": "bg-amber-400",
+    "Done":        "bg-emerald-400",
+    "Cancelled":   "bg-slate-400",
+  };
+
   return (
     <div className="min-h-screen overflow-y-auto bg-slate-100/70 flex flex-col lg:h-screen lg:overflow-hidden">
       <TopBar />
+
+      {/* ── Action Plan Modal ─────────────────────────────────────── */}
+      {actionPlanOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setActionPlanOpen(false); }}
+        >
+          <div className="relative w-full max-w-[82vw] flex flex-col max-h-[90vh] rounded-3xl overflow-hidden shadow-[0_32px_80px_rgba(15,23,42,0.22)]"
+            style={{ background: "linear-gradient(160deg,#f8faff 0%,#ffffff 100%)" }}
+          >
+            {/* Decorative blobs */}
+            <div className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-tide/10 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-violet-400/10 blur-3xl" />
+
+            {/* Header */}
+            <div className="relative flex items-center justify-between border-b border-slate-100/80 bg-white/60 px-8 py-5 backdrop-blur-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-tide to-tide/70 text-white shadow-md">
+                  <ClipboardList className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 tracking-tight">Action Plan</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {actionItems.length === 0 ? "No actions yet" : `${actionItems.length} corrective action${actionItems.length > 1 ? "s" : ""}`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActionFormOpen(true)}
+                  disabled={actionFormOpen}
+                  className="inline-flex items-center gap-2 rounded-xl bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add new corrective action
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActionPlanOpen(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50 hover:text-slate-700 hover:border-slate-300"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="relative flex-1 overflow-y-auto px-8 py-6">
+              <table className="w-full text-sm border-separate border-spacing-y-1">
+                <colgroup>
+                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "25%" }} />
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "11%" }} />
+                  <col style={{ width: "12%" }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {[
+                      { label: "Action",      required: true  },
+                      { label: "Description", required: true  },
+                      { label: "Responsible", required: true  },
+                      { label: "Due Date",    required: true  },
+                      { label: "Status",      required: false },
+                      { label: "Actions",     required: false },
+                    ].map(({ label, required }) => (
+                      <th key={label} className="pb-3 pr-4 text-left text-xs font-extrabold uppercase tracking-[0.18em] text-slate-700 last:pr-0">
+                        {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {actionItems.length === 0 && !actionFormOpen ? (
+                    <tr>
+                      <td colSpan={6} className="py-16 text-center">
+                        <div className="flex flex-col items-center gap-3 text-slate-400">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                            <ClipboardList className="h-7 w-7 opacity-40" />
+                          </div>
+                          <p className="text-sm font-medium">No corrective actions yet</p>
+                          <p className="text-xs">Click <span className="font-semibold text-tide">Add new corrective action</span> to get started</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : actionItems.map((item, idx) => (
+                    <tr key={item.id} className="group">
+                      <td className="rounded-l-xl bg-white px-4 py-3 pr-3 font-semibold text-slate-800 max-w-[150px] truncate shadow-sm border border-r-0 border-slate-100">{item.action}</td>
+                      <td className="bg-white px-3 py-3 text-slate-500 max-w-[190px] truncate border-y border-slate-100">{item.description || <span className="text-slate-300">—</span>}</td>
+                      <td className="bg-white px-3 py-3 text-slate-600 border-y border-slate-100">{item.responsible || <span className="text-slate-300">—</span>}</td>
+                      <td className="bg-white px-3 py-3 text-slate-500 whitespace-nowrap border-y border-slate-100">{item.dueDate || <span className="text-slate-300">—</span>}</td>
+                      <td className="bg-white px-3 py-3 border-y border-slate-100">
+                        <select
+                          value={item.status}
+                          onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                          className={`rounded-full border px-4 py-2 text-sm font-semibold appearance-none cursor-pointer focus:outline-none ${STATUS_COLORS[item.status] || STATUS_COLORS["Open"]}`}
+                        >
+                          {ACTION_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                      <td className="rounded-r-xl bg-white px-3 py-3 border border-l-0 border-slate-100 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAction(item.id)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 transition"
+                        >
+                          <Trash2 className="h-4.5 w-4.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Inline new-row form */}
+                  {actionFormOpen && (
+                    <tr>
+                      <td className="rounded-l-xl bg-tide/5 border border-r-0 border-tide/20 px-3 py-3">
+                        <textarea
+                          autoFocus
+                          rows={3}
+                          value={actionDraft.action}
+                          onChange={(e) => handleActionDraftChange("action", e.target.value)}
+                          placeholder="Action *"
+                          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-tide/50 focus:outline-none focus:ring-2 focus:ring-tide/20"
+                        />
+                      </td>
+                      <td className="bg-tide/5 border-y border-tide/20 px-3 py-3">
+                        <textarea
+                          rows={3}
+                          value={actionDraft.description}
+                          onChange={(e) => handleActionDraftChange("description", e.target.value)}
+                          placeholder="Description"
+                          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-tide/50 focus:outline-none focus:ring-2 focus:ring-tide/20"
+                        />
+                      </td>
+                      <td className="bg-tide/5 border-y border-tide/20 px-3 py-3">
+                        <textarea
+                          rows={3}
+                          value={actionDraft.responsible}
+                          onChange={(e) => handleActionDraftChange("responsible", e.target.value)}
+                          placeholder="Responsible"
+                          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-tide/50 focus:outline-none focus:ring-2 focus:ring-tide/20"
+                        />
+                      </td>
+                      <td className="bg-tide/5 border-y border-tide/20 px-3 py-3">
+                        <input
+                          type="date"
+                          value={actionDraft.dueDate}
+                          onChange={(e) => handleActionDraftChange("dueDate", e.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-tide/50 focus:outline-none focus:ring-2 focus:ring-tide/20"
+                        />
+                      </td>
+                      <td className="bg-tide/5 border-y border-tide/20 px-3 py-3">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 shadow-sm">
+                          <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
+                          Open
+                        </span>
+                      </td>
+                      <td className="rounded-r-xl bg-tide/5 border border-l-0 border-tide/20 px-3 py-3">
+                        <div className="flex flex-row items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleAddAction}
+                            disabled={!actionDraft.action.trim()}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-tide px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-tide/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Check className="h-3 w-3" /> Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setActionFormOpen(false); setActionDraft({ action: "", description: "", responsible: "", dueDate: "", status: "Open" }); }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            <X className="h-3 w-3" /> Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 flex-col pt-4 pb-0 sm:pt-6 lg:pt-1 overflow-visible lg:overflow-hidden">
         <div className="w-full flex flex-1 min-h-0 flex-col overflow-visible lg:overflow-hidden">
@@ -5293,7 +5517,25 @@ export default function NewRfq() {
                       </div>
                     </div>
                   </div>
-                  {isRfqStage && isRfqFormView ? (
+                  <button
+                    type="button"
+                    onClick={() => setActionPlanOpen(true)}
+                    className={`relative inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:h-14 sm:w-14 ${actionPlanOpen
+                      ? "border-tide/30 bg-tide text-white"
+                      : "border-slate-200/80 bg-white/90 text-slate-600 hover:-translate-y-0.5 hover:border-tide/35 hover:text-tide"
+                      }`}
+                    aria-label="Action plan"
+                    title="Action plan"
+                  >
+                    <ClipboardList className="h-5 w-5" />
+                    {actionItems.length > 0 && (
+                      <span className={`absolute -right-1.5 -top-1.5 inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${actionPlanOpen ? "bg-white text-tide" : "bg-tide text-white"}`}>
+                        {actionItems.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {isRfqStage && (isRfqFormView || isRfqValidationView) ? (
                     <button
                       type="button"
                       onClick={() => setDiscussionModalOpen(true)}

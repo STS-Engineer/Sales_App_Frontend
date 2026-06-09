@@ -85,33 +85,28 @@ function FilterSelect({ label, value, onChange, options, icon: Icon }) {
 
 /* ─── MetricCard ──────────────────────────────────────────────────── */
 const TONE_COLORS = {
-  blue:    "#046eaf",
-  mint:    "#0e4e78",
-  sun:     "#ef7807",
-  success: "#1f9d6b",
-  violet:  "#7c3aed",
+  blue:    { color: "#046eaf", bg: "rgba(4,110,175,0.07)",   border: "rgba(4,110,175,0.18)"   },
+  mint:    { color: "#0891b2", bg: "rgba(8,145,178,0.07)",   border: "rgba(8,145,178,0.18)"   },
+  sun:     { color: "#d97706", bg: "rgba(217,119,6,0.07)",   border: "rgba(217,119,6,0.18)"   },
+  success: { color: "#059669", bg: "rgba(5,150,105,0.07)",   border: "rgba(5,150,105,0.18)"   },
+  violet:  { color: "#7c3aed", bg: "rgba(124,58,237,0.07)",  border: "rgba(124,58,237,0.18)"  },
 };
 
-function MetricCard({ icon: Icon, tone = "blue", label, value, note }) {
-  const color = TONE_COLORS[tone] || TONE_COLORS.blue;
+function MetricCard({ tone = "blue", label, value, note }) {
+  const { color, bg, border } = TONE_COLORS[tone] || TONE_COLORS.blue;
   return (
-    <div className="kpi-metric-card group relative overflow-hidden">
-      {/* subtle corner accent */}
-      <div
-        className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-[0.07] transition-opacity duration-300 group-hover:opacity-[0.12]"
-        style={{ background: color }}
-      />
-      <div
-        className="kpi-metric-icon shrink-0"
-        style={{ background: hexRgba(color, 0.1), color }}
-      >
-        <Icon className="h-4.5 w-4.5" />
-      </div>
-      <div className="min-w-0 relative">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
-        <p className="mt-1.5 text-[2rem] font-semibold leading-none tracking-tight text-ink">{value}</p>
-        <p className="mt-2 text-xs text-slate-500 leading-relaxed">{note}</p>
-      </div>
+    <div
+      className="kpi-metric-card group"
+      style={{
+        "--card-color": color,
+        "--card-bg-from": bg,
+        backgroundColor: "#ffffff",
+        borderColor: border,
+      }}
+    >
+      <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-500">{label}</p>
+      <p className="mt-2 text-[2rem] font-bold leading-none tracking-tight" style={{ color }}>{value}</p>
+      <p className="mt-2 text-[13px] leading-relaxed text-slate-500">{note}</p>
     </div>
   );
 }
@@ -121,10 +116,7 @@ function Panel({ eyebrow, title, subtitle, children, className = "" }) {
   return (
     <section className={`kpi-panel ${className}`.trim()}>
       <div className="mb-5">
-        {eyebrow && (
-          <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-slate-400">{eyebrow}</p>
-        )}
-        <h3 className="mt-1 font-display text-xl font-semibold text-ink">{title}</h3>
+        <h3 className="font-display text-xl font-semibold text-ink">{title}</h3>
         {subtitle && <p className="mt-1.5 max-w-2xl text-xs text-slate-500 leading-relaxed">{subtitle}</p>}
       </div>
       {children}
@@ -1051,11 +1043,11 @@ export default function KpiDashboard() {
               </section>
 
               {/* Filters */}
-              <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl md:p-7">
+              <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 px-6 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl md:px-7 md:py-5">
                 <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-[#046eaf]/10 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-[#ef7807]/10 blur-3xl" />
 
-                <div className="relative z-[1] mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="relative z-[1] mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.32em] text-slate-400">
                       Filters
@@ -1137,7 +1129,7 @@ export default function KpiDashboard() {
                     onSelectSegment={label => toggle("phase", label)}
                   />
                 </Panel>
-                <Panel eyebrow="Phase share" title="Distribution"
+                <Panel eyebrow="Phase share" title="Phase distribution"
                   subtitle="Phase mix in the filtered pipeline.">
                   <PhasePieChart
                     segments={summary.phaseDistribution} total={summary.totalRequests}
