@@ -903,6 +903,12 @@ const buildRfqAutofillRevealTarget = (
   // that lives on a later (unreachable) step.
   const wasClamped = clampedIndex < rawTargetIndex;
 
+  // Products table updates: don't trigger any scroll — the table is already
+  // visible when the user is on step-client, so scrolling would disrupt them.
+  if (!wasClamped && lastChangedField === "products") {
+    return null;
+  }
+
   return {
     stepId: targetStepId,
     mode: wasClamped ? "step" : "field",
@@ -918,6 +924,15 @@ const buildRfqChatFocusRevealTarget = (
   mergedFiles = [],
   rawRfqData = {}
 ) => {
+  // When `products` is the only changed field, scroll directly to the products
+  // table — bypassing both buildRfqAutofillRevealTarget (which returns null for
+  // products) and the step-fallback (which would incorrectly scroll to the top
+  // of step-client).
+  const changedFields = getChangedRfqFormFields(previousForm, nextForm);
+  if (changedFields.length > 0 && changedFields.every((f) => f === "products")) {
+    return { stepId: "step-client", elementId: "rfq-products", mode: "step", fieldName: "", highlight: false };
+  }
+
   const autofillRevealTarget = buildRfqAutofillRevealTarget(
     previousForm,
     nextForm,
@@ -1637,7 +1652,7 @@ const buildRevisionGreeting = (revisionNotes = "") => {
   }
   return `The validator requested the following updates: ${note}. What would you like to change?`;
 };
-const withInitialChatMessage = (messages = [], greeting) => {
+const withInitialChatMessage = (messages = [], greeting, { append = false } = {}) => {
   const initialMessage = {
     role: "assistant",
     content: greeting
@@ -1657,9 +1672,8 @@ const withInitialChatMessage = (messages = [], greeting) => {
     return isOfferGreeting && normalizedMessage.startsWith(OFFER_CHATBOT_GREETING_PREFIX);
   });
 
-  return hasInitialGreeting
-    ? messages
-    : [{ ...initialMessage }, ...messages];
+  if (hasInitialGreeting) return messages;
+  return append ? [...messages, { ...initialMessage }] : [{ ...initialMessage }, ...messages];
 };
 
 const canUseStorage = () => typeof window !== "undefined";
@@ -2130,6 +2144,8 @@ export default function NewRfq() {
   const [revisionComment, setRevisionComment] = useState("");
   const [revisionActionId, setRevisionActionId] = useState("");
   const [optimisticRevisionMode, setOptimisticRevisionMode] = useState(false);
+  const [revisionGreetingIndex, setRevisionGreetingIndex] = useState(null);
+  const revisionModeActiveRef = useRef(false);
   const [templateDownloadPending, setTemplateDownloadPending] = useState(false);
   const [templatePreviewPending, setTemplatePreviewPending] = useState(false);
   const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
@@ -2157,6 +2173,7 @@ export default function NewRfq() {
   const [pendingRfqAutofillReveal, setPendingRfqAutofillReveal] = useState(null);
   const [pendingPotentialAutofillReveal, setPendingPotentialAutofillReveal] = useState(null);
   const rfqFileInputRef = useRef(null);
+  const rfqFormScrollRef = useRef(null);
   const offerTemplateViewerRef = useRef(null);
   const localFilesRef = useRef([]);
   const rfqAuditLogsRef = useRef([]);
@@ -2311,6 +2328,10 @@ export default function NewRfq() {
   const isRfqCreatorUser =
     Boolean(normalizedRfqCreatorEmail) &&
     normalizedRfqCreatorEmail === normalizedCurrentUserEmail;
+  const validatorIsCreator =
+    Boolean(assignedValidatorEmail) &&
+    Boolean(normalizedRfqCreatorEmail) &&
+    assignedValidatorEmail === normalizedRfqCreatorEmail;
   const isCostingReadOnlyRole = COSTING_READ_ONLY_ROLES.includes(currentUserRole);
   const canCreateRfqDraft = RFQ_CREATOR_ROLES.includes(currentUserRole);
   const canEditRfqPhase = Boolean(
@@ -2438,10 +2459,24 @@ export default function NewRfq() {
     () => activeChatMessages.map((message, index) => ({ ...message, chatEditIndex: index })),
     [activeChatMessages]
   );
-  const chatFeed = useMemo(
-    () => withInitialChatMessage(activeChatMessagesWithMeta, activeChatGreeting),
-    [activeChatGreeting, activeChatMessagesWithMeta]
-  );
+  const chatFeed = useMemo(() => {
+    if (isRevisionModeActive && isFormalDocumentTab) {
+      const greetingText = activeChatGreeting;
+      const hasRealGreeting = activeChatMessagesWithMeta.some(
+        (m) => m.role === "assistant" && m.content === greetingText
+      );
+      if (hasRealGreeting) {
+        return activeChatMessagesWithMeta;
+      }
+      if (revisionGreetingIndex !== null) {
+        const greetingMsg = { role: "assistant", content: greetingText };
+        const before = activeChatMessagesWithMeta.slice(0, revisionGreetingIndex);
+        const after  = activeChatMessagesWithMeta.slice(revisionGreetingIndex);
+        return [...before, greetingMsg, ...after];
+      }
+    }
+    return withInitialChatMessage(activeChatMessagesWithMeta, activeChatGreeting);
+  }, [activeChatGreeting, activeChatMessagesWithMeta, isRevisionModeActive, isFormalDocumentTab, revisionGreetingIndex]);
   const stepCompletion = useMemo(
     () => getRfqStepCompletionMap(form, mergedFiles, rfqSnapshot?.rfq_data || {}),
     [form, mergedFiles, rfqSnapshot]
@@ -2848,6 +2883,18 @@ export default function NewRfq() {
     }
   }, [activeSubPhase, isRevisionModeActive]);
 
+  // Track the message index at which revision mode starts so the greeting
+  // is inserted at that fixed position and not re-appended after each new message.
+  useEffect(() => {
+    const isRevision = isRevisionModeActive && isFormalDocumentTab;
+    if (isRevision && !revisionModeActiveRef.current) {
+      setRevisionGreetingIndex(activeChatMessages.length);
+    } else if (!isRevision && revisionModeActiveRef.current) {
+      setRevisionGreetingIndex(null);
+    }
+    revisionModeActiveRef.current = isRevision;
+  }, [isRevisionModeActive, isFormalDocumentTab]); // activeChatMessages intentionally omitted
+
   useEffect(() => {
     if (!pendingRfqAutofillReveal) {
       return;
@@ -2894,11 +2941,25 @@ export default function NewRfq() {
           pendingRfqAutofillReveal.fieldName
           ? document.getElementsByName(pendingRfqAutofillReveal.fieldName)?.[0]
           : null;
+      const specificElement = pendingRfqAutofillReveal.elementId
+        ? document.getElementById(pendingRfqAutofillReveal.elementId)
+        : null;
       const sectionElement = document.getElementById(pendingRfqAutofillReveal.stepId);
+
+      // When elementId is set but the element isn't in the DOM yet, retry.
+      if (pendingRfqAutofillReveal.elementId && !specificElement) {
+        if (attempt >= 6) {
+          setPendingRfqAutofillReveal(null);
+          return;
+        }
+        retryTimer = window.setTimeout(() => revealTarget(attempt + 1), 90);
+        return;
+      }
+
       const targetElement =
         pendingRfqAutofillReveal.mode === "field"
           ? fieldElement?.closest("label") || fieldElement || sectionElement
-          : sectionElement;
+          : specificElement || sectionElement;
 
       if (!targetElement) {
         if (attempt >= 6) {
@@ -2909,10 +2970,20 @@ export default function NewRfq() {
         return;
       }
 
-      targetElement.scrollIntoView({
-        behavior: "smooth",
-        block: pendingRfqAutofillReveal.mode === "field" ? "center" : "start"
-      });
+      // Scroll to specificElement using the form's own scroll container so the
+      // window/outer page is not affected.
+      const scrollContainer = rfqFormScrollRef.current;
+      if (specificElement && scrollContainer) {
+        const containerTop = scrollContainer.getBoundingClientRect().top;
+        const elementTop = specificElement.getBoundingClientRect().top;
+        const offset = elementTop - containerTop + scrollContainer.scrollTop - 16;
+        scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: "smooth" });
+      } else {
+        targetElement.scrollIntoView({
+          behavior: "smooth",
+          block: pendingRfqAutofillReveal.mode === "field" ? "center" : "start"
+        });
+      }
 
       if (pendingRfqAutofillReveal.highlight !== false) {
         targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
@@ -4374,7 +4445,9 @@ export default function NewRfq() {
       return;
     }
 
-    if (!isAssignedValidatorUser) {
+    // When the validator and the creator are different people, the validator
+    // specifies which fields the creator must update via the revision modal.
+    if (!validatorIsCreator) {
       setRevisionComment("");
       setRevisionRequestModalOpen(true);
       return;
@@ -7538,7 +7611,7 @@ export default function NewRfq() {
                       </div>
                     </div>
 
-                    <div className="flex-1 min-h-0 overflow-y-visible px-5 pb-5 sm:px-7 sm:pb-7 md:px-8 md:pb-8 sm:pr-2 lg:overflow-y-auto">
+                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-visible px-5 pb-5 sm:px-7 sm:pb-7 md:px-8 md:pb-8 sm:pr-2 lg:overflow-y-auto">
                       {activeStep === "step-client" ? (
                         <div
                           id="step-client"
@@ -7632,7 +7705,7 @@ export default function NewRfq() {
                                   ) : null}
                                 </label>
 
-                                <div className="md:col-span-2">
+                                <div className="md:col-span-2 scroll-mt-28" id="rfq-products">
                                   <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
                                       <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -9279,7 +9352,7 @@ export default function NewRfq() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="chat-modal-header">
-              <p className="chat-modal-title">Request Revision</p>
+              <p className="chat-modal-title">Request Update from Creator</p>
               <button
                 type="button"
                 className="chat-modal-close"
@@ -9296,15 +9369,15 @@ export default function NewRfq() {
             <div className="chat-modal-body">
               <div className="chat-modal-fallback w-full">
                 <p className="text-slate-600">
-                  Tell the sales representative exactly what needs to be updated.
+                  Specify which fields the creator must update. Your note will be sent by email to the creator and displayed in the chatbot.
                 </p>
                 <label className="mt-2 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
-                  <span>Instructions</span>
+                  <span>Fields to update &amp; instructions</span>
                   <textarea
                     className="textarea-field min-h-[140px]"
                     value={revisionComment}
                     onChange={(event) => setRevisionComment(event.target.value)}
-                    placeholder="Describe the required changes..."
+                    placeholder="e.g. Please update the Target Price, Quantity, and Delivery Zone fields. The target price should reflect the latest customer quote."
                     disabled={revisionActionId === "request"}
                   />
                 </label>
