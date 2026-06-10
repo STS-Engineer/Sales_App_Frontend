@@ -2332,6 +2332,12 @@ export default function NewRfq() {
     Boolean(assignedValidatorEmail) &&
     Boolean(normalizedRfqCreatorEmail) &&
     assignedValidatorEmail === normalizedRfqCreatorEmail;
+  // When the validator (≠ creator) has requested a revision, only the creator can edit.
+  const isRevisionLockedForNonCreator =
+    isRevisionModeActive &&
+    !validatorIsCreator &&
+    !isRfqCreatorUser &&
+    currentUserRole !== "OWNER";
   const isCostingReadOnlyRole = COSTING_READ_ONLY_ROLES.includes(currentUserRole);
   const canCreateRfqDraft = RFQ_CREATOR_ROLES.includes(currentUserRole);
   const canEditRfqPhase = Boolean(
@@ -2703,7 +2709,7 @@ export default function NewRfq() {
     rfqCreatorEmail
   ]);
   const isRfqFormReadOnly =
-    hasValidationLock && !rfqFormEditEnabled;
+    (hasValidationLock && !rfqFormEditEnabled) || isRevisionLockedForNonCreator;
   const lockNewRfqFields = true;
   const potentialFieldReadOnly = true;
   const isOfferChatReadOnly =
@@ -2715,6 +2721,7 @@ export default function NewRfq() {
         isChatOnly ||
         !canUseRfqActions ||
         hasValidationLock ||
+        isRevisionLockedForNonCreator ||
         proceedingToFormalRfq ||
         isPotentialAssistantLocked ||
         (activeRfqTab === "potential" && potentialChatCompleted)
@@ -2726,11 +2733,13 @@ export default function NewRfq() {
         : "Offer preparation is read-only while the RFQ is in offer validation"
       : !canUseRfqActions
         ? "This phase is read-only for your role"
-        : isPotentialAssistantLocked && activeRfqTab === "potential"
-          ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
-          : potentialChatCompleted && activeRfqTab === "potential"
-            ? "Potential assessment complete. Use Proceed as RFQ or Proceed as RFI to continue."
-            : "Chat is locked once the RFQ enters validation";
+        : isRevisionLockedForNonCreator
+          ? "Awaiting updates from the RFQ creator. The chat is locked until the creator submits their changes."
+          : isPotentialAssistantLocked && activeRfqTab === "potential"
+            ? "Potential assistant is locked because this RFQ has already been promoted to New RFQ."
+            : potentialChatCompleted && activeRfqTab === "potential"
+              ? "Potential assessment complete. Use Proceed as RFQ or Proceed as RFI to continue."
+              : "Chat is locked once the RFQ enters validation";
   const rfqFormFieldReadOnly =
     !canUseRfqActions || lockNewRfqFields || isChatOnly || isRfqFormReadOnly;
   const allowFileUpload = Boolean(
@@ -8153,7 +8162,14 @@ export default function NewRfq() {
                       </div>
                     </section>
 
-                    {!hideValidationActionButtons ? (
+                    {isRevisionLockedForNonCreator ? (
+                      <div className="shrink-0 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                        <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        </svg>
+                        <span>Awaiting updates from the RFQ creator. Actions are locked until the creator submits their changes.</span>
+                      </div>
+                    ) : !hideValidationActionButtons ? (
                       <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-2">
                         <button
                           type="button"
