@@ -842,9 +842,19 @@ const buildStepFocusRevealTarget = (
     mergedFiles,
     rawRfqData
   );
-  if (!fieldName || fieldName === "products" || fieldName === "rfqFiles") {
+  if (!fieldName || fieldName === "rfqFiles") {
     return {
       stepId,
+      mode: "step",
+      fieldName: "",
+      updatedFields,
+      highlight
+    };
+  }
+  if (fieldName === "products") {
+    return {
+      stepId,
+      elementId: "rfq-products",
       mode: "step",
       fieldName: "",
       updatedFields,
@@ -909,6 +919,22 @@ const buildRfqAutofillRevealTarget = (
 
   // Products table updates: don't trigger any scroll — the table is already
   // visible when the user is on step-client, so scrolling would disrupt them.
+  const nextIncompleteFieldOnTargetStep = !wasClamped
+    ? getFirstIncompleteWorkflowField(
+      targetStepId,
+      nextForm,
+      mergedFiles,
+      rawRfqData
+    )
+    : "";
+
+  if (nextIncompleteFieldOnTargetStep === "products") {
+    return buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, rawRfqData, {
+      highlight: false,
+      updatedFields: changedFields
+    });
+  }
+
   if (!wasClamped && lastChangedField === "products") {
     return null;
   }
@@ -922,19 +948,59 @@ const buildRfqAutofillRevealTarget = (
   };
 };
 
+const isProductsCollectionPrompt = (content = "") => {
+  const normalized = String(content || "").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes("would you like to add another part number to this request")) {
+    return true;
+  }
+  if (
+    normalized.includes("please provide the first part number details") ||
+    normalized.includes("please provide the next part number details")
+  ) {
+    return true;
+  }
+  return (
+    normalized.includes("part number details") &&
+    normalized.includes("target price") &&
+    normalized.includes("currency") &&
+    normalized.includes("price source")
+  );
+};
+
+const getLatestAssistantMessageContent = (messages = []) => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "assistant" && typeof message?.content === "string") {
+      return message.content;
+    }
+  }
+  return "";
+};
+
 const buildRfqChatFocusRevealTarget = (
   previousForm = {},
   nextForm = {},
   mergedFiles = [],
-  rawRfqData = {}
+  rawRfqData = {},
+  latestAssistantContent = ""
 ) => {
-  // When `products` is the only changed field, scroll directly to the products
+  // When a chat response updates `products`, keep the viewport anchored on the
   // table — bypassing both buildRfqAutofillRevealTarget (which returns null for
   // products) and the step-fallback (which would incorrectly scroll to the top
   // of step-client).
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
-  if (changedFields.length > 0 && changedFields.every((f) => f === "products")) {
-    return { stepId: "step-client", elementId: "rfq-products", mode: "step", fieldName: "", highlight: false };
+  if (changedFields.includes("products")) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-products",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
   }
 
   const autofillRevealTarget = buildRfqAutofillRevealTarget(
@@ -945,6 +1011,17 @@ const buildRfqChatFocusRevealTarget = (
   );
   if (autofillRevealTarget) {
     return autofillRevealTarget;
+  }
+
+  if (isProductsCollectionPrompt(latestAssistantContent)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-products",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
   }
 
   const nextStepCompletion = getRfqStepCompletionMap(
@@ -2185,6 +2262,7 @@ export default function NewRfq() {
   const rfqCreatePromiseRef = useRef(null);
   const resizeState = useRef({ startX: 0, startWidth: 420 });
   const rfqStepAutoFollowPausedRef = useRef(false);
+  const rfqProductsViewportLockUntilRef = useRef(0);
   const feasibilitySaveAudit = useMemo(
     () => (
       rfqSnapshot
@@ -2944,6 +3022,63 @@ export default function NewRfq() {
     let canceled = false;
     let retryTimer = 0;
     let highlightTimer = 0;
+    let stabilizeTimer = 0;
+
+    const isElementScrollable = (element) => {
+      if (!element) {
+        return false;
+      }
+      const computedStyle = window.getComputedStyle(element);
+      const overflowY = computedStyle?.overflowY || "";
+      return /(auto|scroll|overlay)/i.test(overflowY) && element.scrollHeight > element.clientHeight + 1;
+    };
+
+    const isElementVisibleInContainer = (element, container, padding = 16) => {
+      if (!element || !container) {
+        return false;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      return (
+        elementRect.top >= containerRect.top + padding &&
+        elementRect.bottom <= containerRect.bottom - padding
+      );
+    };
+
+    const isElementVisibleInViewport = (element, padding = 24) => {
+      if (!element) {
+        return false;
+      }
+      const elementRect = element.getBoundingClientRect();
+      return (
+        elementRect.top >= padding &&
+        elementRect.bottom <= window.innerHeight - padding
+      );
+    };
+
+    const revealSpecificElement = (element, { preserveIfVisible = false } = {}) => {
+      if (!element) {
+        return;
+      }
+      const scrollContainer = rfqFormScrollRef.current;
+      if (isElementScrollable(scrollContainer)) {
+        if (preserveIfVisible && isElementVisibleInContainer(element, scrollContainer)) {
+          return;
+        }
+        const containerTop = scrollContainer.getBoundingClientRect().top;
+        const elementTop = element.getBoundingClientRect().top;
+        const offset = elementTop - containerTop + scrollContainer.scrollTop - 16;
+        scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: "smooth" });
+        return;
+      }
+      if (preserveIfVisible && isElementVisibleInViewport(element)) {
+        return;
+      }
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: preserveIfVisible ? "nearest" : "start"
+      });
+    };
 
     const revealTarget = (attempt = 0) => {
       if (canceled) {
@@ -2974,6 +3109,10 @@ export default function NewRfq() {
         pendingRfqAutofillReveal.mode === "field"
           ? fieldElement?.closest("label") || fieldElement || sectionElement
           : specificElement || sectionElement;
+      const shouldPreserveProductsViewport =
+        pendingRfqAutofillReveal.elementId === "rfq-products" &&
+        Array.isArray(pendingRfqAutofillReveal.updatedFields) &&
+        pendingRfqAutofillReveal.updatedFields.includes("products");
 
       if (!targetElement) {
         if (attempt >= 6) {
@@ -2984,14 +3123,23 @@ export default function NewRfq() {
         return;
       }
 
-      // Scroll to specificElement using the form's own scroll container so the
-      // window/outer page is not affected.
-      const scrollContainer = rfqFormScrollRef.current;
-      if (specificElement && scrollContainer) {
-        const containerTop = scrollContainer.getBoundingClientRect().top;
-        const elementTop = specificElement.getBoundingClientRect().top;
-        const offset = elementTop - containerTop + scrollContainer.scrollTop - 16;
-        scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: "smooth" });
+      if (specificElement) {
+        if (shouldPreserveProductsViewport) {
+          rfqProductsViewportLockUntilRef.current = Date.now() + 1200;
+        }
+        revealSpecificElement(specificElement, {
+          preserveIfVisible: shouldPreserveProductsViewport
+        });
+        if (pendingRfqAutofillReveal.elementId === "rfq-products") {
+          stabilizeTimer = window.setTimeout(() => {
+            if (canceled) {
+              return;
+            }
+            revealSpecificElement(document.getElementById("rfq-products"), {
+              preserveIfVisible: true
+            });
+          }, 180);
+        }
       } else {
         targetElement.scrollIntoView({
           behavior: "smooth",
@@ -3014,6 +3162,7 @@ export default function NewRfq() {
       canceled = true;
       window.clearTimeout(retryTimer);
       window.clearTimeout(highlightTimer);
+      window.clearTimeout(stabilizeTimer);
     };
   }, [
     isFormalDocumentTab,
@@ -3101,6 +3250,9 @@ export default function NewRfq() {
   }, [selectedStage, selectedSubPhase]);
 
   useEffect(() => {
+    if (rfqProductsViewportLockUntilRef.current > Date.now()) {
+      return;
+    }
     if (
       !isFormalDocumentTab ||
       !isRfqFormView ||
@@ -3271,6 +3423,8 @@ export default function NewRfq() {
     );
     setHoldSelfValidationPrompt(shouldOpenSelfValidationPrompt);
     const normalizedFiles = normalizeRfqFiles(rfq);
+    const nextRfqChatHistory = mapChatHistory(rfq?.chat_history, nextDocumentType);
+    const latestAssistantRfqMessage = getLatestAssistantMessageContent(nextRfqChatHistory);
     const filterRemainingLocalFiles = (candidateLocalFiles = []) =>
       candidateLocalFiles.filter(
         (local) =>
@@ -3296,7 +3450,8 @@ export default function NewRfq() {
             form,
             nextFormState,
             nextMergedFiles,
-            rfq?.rfq_data || {}
+            rfq?.rfq_data || {},
+            latestAssistantRfqMessage
           )
         )
         : null
@@ -3343,7 +3498,7 @@ export default function NewRfq() {
         )
       );
       setRfqChatMessages((prev) =>
-        mergeChatWithAttachments(mapChatHistory(rfq?.chat_history, nextDocumentType), prev)
+        mergeChatWithAttachments(nextRfqChatHistory, prev)
       );
     }
   };
