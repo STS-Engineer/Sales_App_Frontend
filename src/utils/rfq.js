@@ -214,6 +214,29 @@ const normalizeEstimatedFlag = (value) => {
   return null;
 };
 
+export const normalizeAutomotiveType = (value) => {
+  if (value === null || value === undefined) return "";
+  const text = String(value).trim();
+  if (!text) return "";
+
+  const normalized = text
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized === "1") return "Automotive";
+  if (normalized === "2") return "Non automotive";
+  if (normalized.includes("non") && normalized.includes("auto")) {
+    return "Non automotive";
+  }
+  if (normalized.includes("auto")) {
+    return "Automotive";
+  }
+
+  return text;
+};
+
 export const calculateProductTargetTo = (product = {}) => {
   const quantity = sanitizeNumberForInput(product.quantity);
   const targetPrice = sanitizeNumberForInput(product.targetPrice);
@@ -409,6 +432,9 @@ export const mapRfqDataToForm = (rfq) => {
   return {
     id: rfq?.rfq_id || "",
     status: mapBackendStatusToUi(rfq),
+    automotiveType: normalizeAutomotiveType(
+      pickFirst(data.automotive_type, data.automotiveType)
+    ),
     customer: pickFirst(data.customer_name, data.customer, data.client),
     application: pickFirst(data.application),
     productName: pickFirst(data.product_name, data.product_line_acronym),

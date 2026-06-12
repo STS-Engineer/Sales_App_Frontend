@@ -50,6 +50,7 @@ import {
   calculateTotalTargetTo,
   createEmptyProductItem,
   getDeliveryZoneOptions,
+  normalizeAutomotiveType,
   normalizeProductsForPayload,
   sanitizeNumberForInput
 } from "../utils/rfq.js";
@@ -61,6 +62,7 @@ const RFQ_CREATOR_ROLES = ["OWNER", "COMMERCIAL", "ZONE_MANAGER"];
 
 const initialForm = {
   id: "",
+  automotiveType: "",
   customer: "",
   client: "",
   contact: "",
@@ -173,6 +175,7 @@ const STEP_REQUIREMENT_OPTIONAL = "optional";
 const RFQ_STEP_REQUIREMENTS = {
   "step-client": {
     required: [
+      "automotiveType",
       "customer",
       "application",
       "productName",
@@ -253,6 +256,7 @@ const RFQ_WORKFLOW_OPTIONAL_FIELD_NAMES = new Set([
   "entryBarriers"
 ]);
 const RFQ_FRONTEND_TO_BACKEND_FIELD_KEYS = {
+  automotiveType: ["automotive_type", "automotiveType"],
   costingData: ["costing_data", "costingData"],
   ppapDate: ["ppap_date", "ppapDate"],
   typeOfPackaging: ["type_of_packaging", "typeOfPackaging"],
@@ -1595,6 +1599,7 @@ const buildRfqDataPayloadFromForm = (form = {}) => {
   );
 
   return {
+    automotive_type: normalizeAutomotiveType(form.automotiveType) || "",
     customer_name: form.customer || "",
     application: form.application || "",
     product_name: form.productName || "",
@@ -4500,9 +4505,9 @@ export default function NewRfq() {
     try {
       await validateRfq(rfqId, { approved: true });
       await syncRfq(rfqId);
-      setPersistValidationView(false);
-      setSelectedStage("In costing");
-      setSelectedSubPhase("Feasability");
+      setPersistValidationView(true);
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("Validation");
       setValidationSuccess(`${formalDocumentLabel} approved successfully.`);
     } catch (error) {
       setRfqError(error?.message || `Unable to approve this ${formalDocumentLabel}.`);
@@ -7630,6 +7635,7 @@ export default function NewRfq() {
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
                               <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                <FormField label="Automotive / Non automotive" name="automotiveType" value={form.automotiveType} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("automotiveType")} />
                                 <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("application")} />
                                 <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productName")} />
