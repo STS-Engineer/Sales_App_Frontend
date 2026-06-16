@@ -680,6 +680,7 @@ export const mapRfqToRow = (rfq) => {
   return {
     id: rfq?.rfq_id,
     documentType: normalizeDocumentTypeValue(rfq?.document_type),
+    sector: normalizeAutomotiveType(data.automotive_type || data.automotiveType || ""),
     displayId: data.systematic_rfq_id || "Draft - Pending",
     creator: rfq?.created_by_email || "",
     customer: data.customer_name || potential.customer,

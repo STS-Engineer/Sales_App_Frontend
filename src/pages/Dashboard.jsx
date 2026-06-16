@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
-import { listRfqs } from "../api";
+import { listRfqs, getTeamView, getTeamMembers } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
+import { getUserProfile } from "../utils/session.js";
 
-const VIEW_OPTIONS = [
+const BASE_VIEW_OPTIONS = [
   { key: "detailed", label: "Detailed View" },
   { key: "global", label: "Global View" }
 ];
@@ -158,6 +159,13 @@ const buildSearchHaystack = (rfq) =>
     .join(" ")
     .toLowerCase();
 
+const normalizeSector = (value) => {
+  const s = String(value || "").trim().toLowerCase();
+  if (s.includes("non")) return "non-automotive";
+  if (s.includes("auto")) return "automotive";
+  return "";
+};
+
 const buildPageItems = (currentPage, totalPages) => {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -179,12 +187,26 @@ const buildPageItems = (currentPage, totalPages) => {
 
 export default function Dashboard() {
   const { showToast } = useToast();
+  const { role } = getUserProfile();
+  const canSeeTeamView = role === "ZONE_MANAGER";
+  const viewOptions = canSeeTeamView
+    ? [...BASE_VIEW_OPTIONS, { key: "team", label: "Team View" }]
+    : BASE_VIEW_OPTIONS;
+
   const [rfqs, setRfqs] = useState([]);
   const [viewMode, setViewMode] = useState("detailed");
   const [activeStatus, setActiveStatus] = useState("RFQ");
   const [activeSubStatus, setActiveSubStatus] = useState("all");
   const [activeTypeFilter, setActiveTypeFilter] = useState("all");
   const [globalPhaseFilter, setGlobalPhaseFilter] = useState("all");
+  const [teamKamFilter, setTeamKamFilter] = useState("all");
+  const [teamPersonFilter, setTeamPersonFilter] = useState("all");
+  const [detailedSectorFilter, setDetailedSectorFilter] = useState("all");
+  const [globalSectorFilter, setGlobalSectorFilter] = useState("all");
+  const [teamSectorFilter, setTeamSectorFilter] = useState("all");
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamData, setTeamData] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -209,6 +231,33 @@ export default function Dashboard() {
 
     load();
   }, [showToast]);
+
+  useEffect(() => {
+    if (viewMode !== "team") return;
+    const load = async () => {
+      setTeamLoading(true);
+      try {
+        const data = await getTeamView();
+        setTeamData(Array.isArray(data) ? data.map(mapRfqToRow) : []);
+      } catch {
+        setTeamData([]);
+        showToast("Unable to load team data. Please refresh.", {
+          type: "error",
+          title: "Team data unavailable"
+        });
+      } finally {
+        setTeamLoading(false);
+      }
+    };
+    load();
+  }, [viewMode, showToast]);
+
+  useEffect(() => {
+    if (viewMode !== "team") return;
+    getTeamMembers()
+      .then((data) => setTeamMembers(Array.isArray(data) ? data : []))
+      .catch(() => setTeamMembers([]));
+  }, [viewMode]);
 
   const rfqsWithPhase = useMemo(
     () => rfqs.map((rfq) => ({ ...rfq, phaseKey: resolvePhaseKey(rfq) })),
@@ -256,6 +305,7 @@ export default function Dashboard() {
         ) {
           return false;
         }
+        if (detailedSectorFilter !== "all" && normalizeSector(rfq.sector) !== detailedSectorFilter) return false;
         const isTerminal = rfq.status === "Cancelled" || rfq.status === "Lost";
         if (isTerminal) {
           if (rfq.phaseKey !== activePhase.key) return false;
@@ -271,6 +321,7 @@ export default function Dashboard() {
       activePhase,
       activeSubStatus,
       detailedRfqs,
+      detailedSectorFilter,
       effectiveDetailedTypeFilter,
       normalizedSearchTerm
     ]
@@ -280,13 +331,30 @@ export default function Dashboard() {
     () =>
       typeFilteredGlobalRfqs.filter((rfq) => {
         if (globalPhaseFilter !== "all" && rfq.phaseKey !== globalPhaseFilter) return false;
+        if (globalSectorFilter !== "all" && normalizeSector(rfq.sector) !== globalSectorFilter) return false;
         if (!normalizedSearchTerm) return true;
         return buildSearchHaystack(rfq).includes(normalizedSearchTerm);
       }),
-    [globalPhaseFilter, normalizedSearchTerm, typeFilteredGlobalRfqs]
+    [globalPhaseFilter, globalSectorFilter, normalizedSearchTerm, typeFilteredGlobalRfqs]
   );
 
-  const activeRows = viewMode === "global" ? filteredGlobalRfqs : filteredDetailedRfqs;
+  const filteredTeamData = useMemo(
+    () =>
+      teamData.filter((rfq) => {
+        if (teamPersonFilter !== "all" && rfq.creator !== teamPersonFilter) return false;
+        if (teamSectorFilter !== "all" && normalizeSector(rfq.sector) !== teamSectorFilter) return false;
+        if (!normalizedSearchTerm) return true;
+        return buildSearchHaystack(rfq).includes(normalizedSearchTerm);
+      }),
+    [teamData, teamPersonFilter, teamSectorFilter, normalizedSearchTerm]
+  );
+
+  const activeRows =
+    viewMode === "team"
+      ? filteredTeamData
+      : viewMode === "global"
+        ? filteredGlobalRfqs
+        : filteredDetailedRfqs;
   const totalRows = activeRows.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / rowsPerPage));
   const safePage = Math.min(page, pageCount);
@@ -322,13 +390,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, activeTypeFilter, globalPhaseFilter, rowsPerPage, searchTerm, viewMode]);
+  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, rowsPerPage, searchTerm, viewMode]);
 
   useEffect(() => {
     if (page > pageCount) {
       setPage(pageCount);
     }
   }, [page, pageCount]);
+
+  useEffect(() => {
+    if (!canSeeTeamView && viewMode === "team") {
+      setViewMode("detailed");
+    }
+  }, [canSeeTeamView, viewMode]);
 
   const handleRowsPerPageChange = (event) => {
     setRowsPerPage(Number(event.target.value));
@@ -416,7 +490,7 @@ export default function Dashboard() {
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="inline-flex rounded-2xl border border-slate-200 bg-white/80 p-1 shadow-soft">
-                    {VIEW_OPTIONS.map((view) => {
+                    {viewOptions.map((view) => {
                       const isActive = viewMode === view.key;
                       return (
                         <button
@@ -599,6 +673,37 @@ export default function Dashboard() {
                       <div className="flex flex-col gap-1 sm:self-end">
                         <label
                           className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          htmlFor="detailedSectorFilter"
+                        >
+                          Sector
+                        </label>
+                        <div className="group relative">
+                          <select
+                            id="detailedSectorFilter"
+                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                            value={detailedSectorFilter}
+                            onChange={(event) => setDetailedSectorFilter(event.target.value)}
+                          >
+                            <option value="all">All Sectors</option>
+                            <option value="automotive">Automotive</option>
+                            <option value="non-automotive">Non-Automotive</option>
+                          </select>
+                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end">
+                        <label
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
                           htmlFor="subStatusFilter"
                         >
                           Status
@@ -642,7 +747,7 @@ export default function Dashboard() {
                     footer={tableFooter}
                   />
                 </>
-              ) : (
+              ) : viewMode === "global" ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -745,6 +850,37 @@ export default function Dashboard() {
                           </span>
                         </div>
                       </div>
+                      <div className="flex flex-col gap-1 sm:self-end">
+                        <label
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          htmlFor="globalSectorFilter"
+                        >
+                          Sector
+                        </label>
+                        <div className="group relative">
+                          <select
+                            id="globalSectorFilter"
+                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                            value={globalSectorFilter}
+                            onChange={(event) => setGlobalSectorFilter(event.target.value)}
+                          >
+                            <option value="all">All Sectors</option>
+                            <option value="automotive">Automotive</option>
+                            <option value="non-automotive">Non-Automotive</option>
+                          </select>
+                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
                         {formatRequestCount(filteredGlobalRfqs.length)}
                       </span>
@@ -756,6 +892,125 @@ export default function Dashboard() {
                     showPhaseColumn
                     footer={tableFooter}
                   />
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Team View</p>
+                      <h2 className="font-display text-2xl text-ink">
+                        My team
+                      </h2>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex w-full flex-col gap-1 sm:w-72">
+                        <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+                          Search
+                        </span>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                            >
+                              <circle cx="11" cy="11" r="7" />
+                              <path d="M20 20l-3.5-3.5" />
+                            </svg>
+                          </span>
+                          <input
+                            className="input-field w-full pl-10"
+                            type="search"
+                            placeholder="Search all requests"
+                            value={searchTerm}
+                            onChange={(event) => setSearchTerm(event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end">
+                        <label
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          htmlFor="teamPersonFilter"
+                        >
+                          Person
+                        </label>
+                        <div className="group relative">
+                          <select
+                            id="teamPersonFilter"
+                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                            value={teamPersonFilter}
+                            onChange={(event) => setTeamPersonFilter(event.target.value)}
+                          >
+                            <option value="all">All people</option>
+                            {teamMembers.map((m) => (
+                              <option key={m.email} value={m.email}>{m.person}</option>
+                            ))}
+                          </select>
+                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end">
+                        <label
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          htmlFor="teamSectorFilter"
+                        >
+                          Sector
+                        </label>
+                        <div className="group relative">
+                          <select
+                            id="teamSectorFilter"
+                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                            value={teamSectorFilter}
+                            onChange={(event) => setTeamSectorFilter(event.target.value)}
+                          >
+                            <option value="all">All Sectors</option>
+                            <option value="automotive">Automotive</option>
+                            <option value="non-automotive">Non-Automotive</option>
+                          </select>
+                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                        {formatRequestCount(filteredTeamData.length)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {teamLoading ? (
+                    <div className="card overflow-hidden">
+                      <div className="flex items-center justify-center py-16 text-sm text-slate-400">
+                        Loading team data…
+                      </div>
+                    </div>
+                  ) : (
+                    <RfqTable
+                      rows={paginatedRfqs}
+                      showPhaseColumn
+                      footer={tableFooter}
+                    />
+                  )}
                 </>
               )}
             </div>

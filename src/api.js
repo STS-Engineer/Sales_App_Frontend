@@ -287,6 +287,15 @@ export async function getMe() {
   return request("/api/auth/me");
 }
 
+export async function getTeamView(search = "") {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return request(`/api/team-view${query}`);
+}
+
+export async function getTeamMembers() {
+  return request("/api/team-view/members");
+}
+
 export async function listRfqs(documentType = "") {
   const values = Array.isArray(documentType) ? documentType : [documentType];
   const params = values

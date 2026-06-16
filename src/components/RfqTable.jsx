@@ -81,6 +81,7 @@ export default function RfqTable({
             <tr>
               <th className="px-4 py-4">Document ID</th>
               <th className="px-4 py-4">Type</th>
+              <th className="px-4 py-4">Sector</th>
               <th className="px-4 py-4">Customer</th>
               <th className="px-4 py-4">Creator</th>
               <th className="px-4 py-4">Product name</th>
@@ -116,6 +117,11 @@ export default function RfqTable({
                     }`}
                   >
                     {documentTypeLabels[row.documentType] || row.documentType || "RFQ"}
+                  </span>
+                </td>
+                <td className="px-4 py-4 font-medium text-slate-700">
+                  <span className="block max-w-[140px] truncate">
+                    {row.sector || "-"}
                   </span>
                 </td>
                 <td className="px-4 py-4 font-medium text-slate-700">
