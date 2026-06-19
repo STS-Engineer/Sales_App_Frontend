@@ -75,18 +75,20 @@ export default function TopBar({ title, action }) {
         </div>
         <div className="flex items-center gap-3">
           {action}
-          <Link
-            to="/kpis"
-            className={[
-              "inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition",
-              isKpiRoute
-                ? "border-tide/70 bg-gradient-to-r from-tide to-mint text-white"
-                : "border-slate-200 bg-white/90 text-slate-600 hover:border-tide/40 hover:text-tide hover:shadow-md"
-            ].join(" ")}
-          >
-            <BarChart3 className="h-4 w-4" />
-            Dashboard
-          </Link>
+          {["OWNER", "ZONE_MANAGER", "COMMERCIAL"].includes(storedRole) && (
+            <Link
+              to="/kpis"
+              className={[
+                "inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition",
+                isKpiRoute
+                  ? "border-tide/70 bg-gradient-to-r from-tide to-mint text-white"
+                  : "border-slate-200 bg-white/90 text-slate-600 hover:border-tide/40 hover:text-tide hover:shadow-md"
+              ].join(" ")}
+            >
+              <BarChart3 className="h-4 w-4" />
+              Dashboard
+            </Link>
+          )}
           <div className="relative w-full sm:w-auto">
             <button
               type="button"

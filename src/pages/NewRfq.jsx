@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-import { Check, ClipboardList, Eye, Files, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react";
+import { Check, Eye, Files, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
@@ -2201,10 +2201,11 @@ export default function NewRfq() {
   const [discussionLoading, setDiscussionLoading] = useState(false);
   const [discussionError, setDiscussionError] = useState("");
   const [discussionModalOpen, setDiscussionModalOpen] = useState(false);
-  const [actionPlanOpen, setActionPlanOpen] = useState(false);
-  const [actionItems, setActionItems] = useState([]);
-  const [actionFormOpen, setActionFormOpen] = useState(false);
-  const [actionDraft, setActionDraft] = useState({ action: "", description: "", responsible: "", dueDate: "", status: "Open" });
+  // ACTION PLAN - DISABLED
+  // const [actionPlanOpen, setActionPlanOpen] = useState(false);
+  // const [actionItems, setActionItems] = useState([]);
+  // const [actionFormOpen, setActionFormOpen] = useState(false);
+  // const [actionDraft, setActionDraft] = useState({ action: "", description: "", responsible: "", dueDate: "", status: "Open" });
   const [costingDiscussionMessages, setCostingDiscussionMessages] = useState([]);
   const [costingDiscussionDraft, setCostingDiscussionDraft] = useState("");
   const [costingDiscussionRecipient, setCostingDiscussionRecipient] = useState("");
@@ -5344,6 +5345,7 @@ export default function NewRfq() {
     ? `k${sharedProductCurrency}`
     : "k";
 
+  /* ACTION PLAN - DISABLED
   const ACTION_STATUSES = ["Open", "In Progress", "Done", "Cancelled"];
 
   const handleActionDraftChange = (field, value) => {
@@ -5377,13 +5379,14 @@ export default function NewRfq() {
     "Done":        "bg-emerald-400",
     "Cancelled":   "bg-slate-400",
   };
+  */
 
   return (
     <div className="min-h-screen overflow-y-auto bg-slate-100/70 flex flex-col lg:h-screen lg:overflow-hidden">
       <TopBar />
 
-      {/* ── Action Plan Modal ─────────────────────────────────────── */}
-      {actionPlanOpen && (
+      {/* ── Action Plan Modal - DISABLED ─────────────────────────── */}
+      {false && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(6px)" }}
@@ -5759,6 +5762,7 @@ export default function NewRfq() {
                       </div>
                     </div>
                   </div>
+                  {/* ACTION PLAN BUTTON - DISABLED
                   <button
                     type="button"
                     onClick={() => setActionPlanOpen(true)}
@@ -5776,6 +5780,7 @@ export default function NewRfq() {
                       </span>
                     )}
                   </button>
+                  */}
 
                   {isRfqStage && (isRfqFormView || isRfqValidationView) ? (
                     <button

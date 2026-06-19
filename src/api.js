@@ -292,8 +292,8 @@ export async function getTeamView(search = "") {
   return request(`/api/team-view${query}`);
 }
 
-export async function getTeamMembers() {
-  return request("/api/team-view/members");
+export async function getTeamMembers(includeSelf = false) {
+  return request(`/api/team-view/members${includeSelf ? "?include_self=true" : ""}`);
 }
 
 export async function listRfqs(documentType = "") {
@@ -612,6 +612,83 @@ export async function getProductLine(productLineId) {
     `/api/product-lines?productLineId=${encodeURIComponent(productLineId)}`,
     { auth: false }
   );
+}
+
+// ── KPI Settings ──────────────────────────────────────────────────────
+
+export async function getKpiSettings(year) {
+  return request(`/api/kpi/settings/${encodeURIComponent(year)}`);
+}
+
+export async function upsertKpiSettings(year, payload) {
+  return request(`/api/kpi/settings/${encodeURIComponent(year)}`, {
+    method: "PUT",
+    body: payload
+  });
+}
+
+// ── KPI Opportunities ─────────────────────────────────────────────────
+
+export async function listOpportunities(year) {
+  const query = year != null ? `?year=${encodeURIComponent(year)}` : "";
+  return request(`/api/kpi/opportunities${query}`);
+}
+
+export async function createOpportunity(payload) {
+  return request("/api/kpi/opportunities", { method: "POST", body: payload });
+}
+
+export async function updateOpportunity(id, payload) {
+  return request(`/api/kpi/opportunities/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: payload
+  });
+}
+
+export async function deleteOpportunity(id) {
+  return request(`/api/kpi/opportunities/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+// ── KPI New Business ──────────────────────────────────────────────────
+
+export async function listNewBusiness(year) {
+  const query = year != null ? `?year=${encodeURIComponent(year)}` : "";
+  return request(`/api/kpi/new-business${query}`);
+}
+
+export async function createNewBusiness(payload) {
+  return request("/api/kpi/new-business", { method: "POST", body: payload });
+}
+
+export async function updateNewBusiness(id, payload) {
+  return request(`/api/kpi/new-business/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: payload
+  });
+}
+
+export async function deleteNewBusiness(id) {
+  return request(`/api/kpi/new-business/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+// ── KPI Analytics ─────────────────────────────────────────────────────
+
+export async function getKpiConsolidated(year) {
+  return request(`/api/kpi/consolidated/${encodeURIComponent(year)}`);
+}
+
+export async function getKpiIndividual(email, year) {
+  return request(
+    `/api/kpi/individual/${encodeURIComponent(email)}/${encodeURIComponent(year)}`
+  );
+}
+
+export async function getOwnerUsers() {
+  return request("/api/owner/users");
 }
 
 

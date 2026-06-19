@@ -5,10 +5,16 @@ import {
   ArrowRight,
   BarChart3,
   BriefcaseBusiness,
+  CalendarDays,
   ChevronDown,
+  ChevronLeft,
   ChevronUp,
   Clock3,
+  ExternalLink,
+  Factory,
   Layers3,
+  Save,
+  Settings,
   ShieldCheck,
   TrendingUp,
   Users
@@ -16,9 +22,21 @@ import {
 import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
-import { listRfqs } from "../api";
+import { getUserProfile } from "../utils/session.js";
+import {
+  listRfqs,
+  getTeamView,
+  getKpiConsolidated,
+  getKpiIndividual,
+  getKpiSettings,
+  upsertKpiSettings,
+  getTeamMembers,
+  getOwnerUsers,
+} from "../api";
 import {
   KPI_PHASES,
+  KPI_SECTOR_COLORS,
+  KPI_SECTOR_ORDER,
   KPI_TIMEFRAME_OPTIONS,
   buildKpiRecords,
   buildKpiSummary,
@@ -970,21 +988,675 @@ function KpiLoadingState() {
   );
 }
 
+/* ─── Shared KPI helpers (consolidated / individual / settings) ───── */
+
+const THIS_YEAR = new Date().getFullYear();
+const KPI_YEARS = [THIS_YEAR - 1, THIS_YEAR, THIS_YEAR + 1];
+const inputSt = "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-tide disabled:opacity-60";
+const roSt    = "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-tide";
+
+function pctColor(p) {
+  if (p == null) return "#94a3b8";
+  return p >= 66 ? "#059669" : p >= 33 ? "#d97706" : "#dc2626";
+}
+
+function PBar({ pct, label }) {
+  const c = Math.min(100, Math.max(0, pct || 0));
+  const color = pctColor(pct);
+  return (
+    <div className="w-full">
+      {label && (
+        <div className="mb-1 flex justify-between text-xs">
+          <span className="text-slate-500">{label}</span>
+          <span className="font-bold" style={{ color }}>{Math.round(pct || 0)} %</span>
+        </div>
+      )}
+      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${c}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
+}
+
+function MBar({ monthly = [], target, tint = "#046eaf" }) {
+  const W = 580, H = 210;
+  const pad = { t: 24, b: 52, l: 48, r: 32 };
+  const iW = W - pad.l - pad.r;
+  const iH = H - pad.t - pad.b;
+
+  const n = monthly.length || 12;
+  const maxRaw = Math.max(target || 0, ...monthly.map(d => d.value), 1);
+  const tickStep = Math.ceil(maxRaw / 5 / 5) * 5 || 10;
+  const topVal = Math.ceil(maxRaw / tickStep) * tickStep;
+  const ticks = [];
+  for (let v = 0; v <= topVal; v += tickStep) ticks.push(v);
+
+  const fy = v => pad.t + iH * (1 - v / topVal);
+  const cW = iW / n;
+  const bW = Math.max(cW * 0.6, 8);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 230 }}>
+      {/* Plot background */}
+      <rect x={pad.l} y={pad.t} width={iW} height={iH} fill="#f8fafc" rx={3} />
+
+      {/* Gridlines + Y labels */}
+      {ticks.map(v => (
+        <g key={v}>
+          <line x1={pad.l} x2={pad.l + iW} y1={fy(v)} y2={fy(v)}
+            stroke={v === 0 ? "#cbd5e1" : "#e2e8f0"} strokeWidth={v === 0 ? 1.5 : 1} />
+          <text x={pad.l - 6} y={fy(v) + 4} textAnchor="end"
+            fill="#64748b" fontSize={11} fontFamily="system-ui,sans-serif">{v}</text>
+        </g>
+      ))}
+
+      {/* Y-axis spine */}
+      <line x1={pad.l} x2={pad.l} y1={pad.t} y2={pad.t + iH} stroke="#cbd5e1" strokeWidth={1.5} />
+
+      {/* Target line */}
+      {target > 0 && (
+        <>
+          <line x1={pad.l} x2={pad.l + iW} y1={fy(target)} y2={fy(target)}
+            stroke="#22c55e" strokeWidth={2.5} />
+          <text x={pad.l + iW + 4} y={fy(target) + 4}
+            fill="#22c55e" fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700">{target}</text>
+        </>
+      )}
+
+      {/* Bars + value labels + X labels */}
+      {monthly.map((d, i) => {
+        const bx = pad.l + i * cW + (cW - bW) / 2;
+        const by = fy(d.value);
+        const bh = Math.max(2, pad.t + iH - by);
+        const color = target ? (d.value >= target ? "#059669" : tint) : tint;
+        return (
+          <g key={i}>
+            <rect x={bx} y={by} width={bW} height={bh} rx={3} fill={color} fillOpacity={0.85} />
+            {d.value > 0 && (
+              <text x={bx + bW / 2} y={by - 5} textAnchor="middle"
+                fill={color} fontSize={10} fontFamily="system-ui,sans-serif" fontWeight="700">
+                {d.value}
+              </text>
+            )}
+            <text x={pad.l + i * cW + cW / 2} y={pad.t + iH + 16} textAnchor="middle"
+              fill="#64748b" fontSize={11} fontFamily="system-ui,sans-serif">{d.label}</text>
+          </g>
+        );
+      })}
+
+      {/* Target legend — below X labels */}
+      {target > 0 && (
+        <g transform={`translate(${pad.l},${pad.t + iH + 36})`}>
+          <line x1={0} x2={14} y1={0} y2={0} stroke="#22c55e" strokeWidth={2.5} />
+          <text x={18} y={4} fill="#64748b" fontSize={10} fontFamily="system-ui,sans-serif">
+            Target: {target}
+          </text>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function MTile({ label, value, color = "#046eaf" }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-5 py-4 shadow-sm">
+      <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-400">{label}</p>
+      <p className="mt-2 text-[1.55rem] font-bold leading-none tracking-tight" style={{ color }}>{value}</p>
+    </div>
+  );
+}
+
+function ZTbl({ rows = [], vLabel = "Value", fmt }) {
+  if (!rows.length) return null;
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200/80">
+      <table className="w-full text-sm">
+        <thead><tr className="bg-slate-50">
+          <th className="px-4 py-2 text-left text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Zone / Site</th>
+          <th className="px-4 py-2 text-right text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{vLabel}</th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-t border-slate-100">
+              <td className="px-4 py-2 font-medium text-ink">{r.zone ?? r.site}</td>
+              <td className="px-4 py-2 text-right font-semibold text-ink">{fmt ? fmt(r) : (r.value != null ? r.value.toFixed(1) : "—")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─── IndividualSection ───────────────────────────────────────────── */
+function IndividualSection({ email, year, onBack }) {
+  const { addToast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    if (!email) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await getKpiIndividual(email, year);
+        if (!cancelled) setData(r);
+      } catch {
+        if (!cancelled) addToast({ type: "error", message: "Failed to load salesperson data" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [email, year]);
+
+  const renewalPct = data?.annual_target_keur ? (data.renewal_confirmed_keur / data.annual_target_keur * 100) : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        {onBack && (
+          <button onClick={onBack} className="flex items-center gap-1 text-sm text-slate-500 hover:text-tide">
+            <ChevronLeft className="h-4 w-4" /> Back to consolidated view
+          </button>
+        )}
+        <h2 className="text-xl font-bold text-ink">{data?.label || email}</h2>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-12 text-slate-400">Loading…</div>
+      ) : data && (
+        <>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <MTile label="Confirmed Renewal k€" value={`${Math.round(data.renewal_confirmed_keur || 0).toLocaleString()} k€`} color="#046eaf" />
+            <MTile label="Annual Target k€" value={data.annual_target_keur != null ? `${Math.round(data.annual_target_keur).toLocaleString()} k€` : "—"} color="#94a3b8" />
+            <MTile label="New Business YTD k€" value={`${Math.round(data.new_business_ytd_keur || 0).toLocaleString()} k€`} color="#059669" />
+            <MTile label="# RFQ" value={data.nb_rfq ?? 0} color="#7c3aed" />
+          </div>
+          <section className="kpi-panel">
+            <h3 className="font-display text-lg font-semibold text-ink mb-1">Renewal Portfolio</h3>
+            <p className="text-xs text-slate-500 mb-4">Total pipeline: {Math.round(data.renewal_pipeline_keur || 0).toLocaleString()} k€</p>
+            {renewalPct !== null && <div className="mb-4"><PBar pct={renewalPct} label="Confirmed vs annual target" /></div>}
+            {data.renewal_portfolio?.length > 0 ? (
+              <div className="overflow-x-auto rounded-xl border border-slate-200/80">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-slate-50 text-left">
+                    {["Customer","Description","Product Line","k€/year","Probability","Site","Sector"].map(h => (
+                      <th key={h} className="px-4 py-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {data.renewal_portfolio.map((r, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-4 py-2 font-medium text-ink">{r.customer||"—"}</td>
+                        <td className="px-4 py-2 text-slate-600">{r.description||"—"}</td>
+                        <td className="px-4 py-2 text-slate-600">{r.product_line||"—"}</td>
+                        <td className="px-4 py-2 font-semibold text-ink">{Math.round(r.annual_keur||0).toLocaleString()}</td>
+                        <td className="px-4 py-2"><span className="font-bold" style={{color:pctColor(r.probability)}}>{Math.round(r.probability||0)} %</span></td>
+                        <td className="px-4 py-2 text-slate-600">{r.site||"—"}</td>
+                        <td className="px-4 py-2 text-slate-600">{r.sector||"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm italic text-slate-400">No opportunities recorded</p>}
+          </section>
+          {(data.new_business_categories || []).map(cat => (
+            <section key={cat.category} className="kpi-panel">
+              <h3 className="font-display text-lg font-semibold text-ink mb-1">New Business — {cat.category}</h3>
+              <p className="text-xs text-slate-500 mb-4">YTD: {Math.round(cat.ytd_keur||0).toLocaleString()} k€</p>
+              <MBar monthly={cat.monthly} tint="#046eaf" />
+              {cat.deals?.length > 0 && (
+                <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200/80">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-slate-50 text-left">
+                      {["Customer","Project","Product Line","k€/year","SOP","Site"].map(h => (
+                        <th key={h} className="px-4 py-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {cat.deals.map((r, i) => (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="px-4 py-2 font-medium text-ink">{r.customer||"—"}</td>
+                          <td className="px-4 py-2 text-slate-600">{r.project_name||"—"}</td>
+                          <td className="px-4 py-2 text-slate-600">{r.product_line||"—"}</td>
+                          <td className="px-4 py-2 font-semibold text-ink">{Math.round(r.annual_keur||0).toLocaleString()}</td>
+                          <td className="px-4 py-2 text-slate-600">{r.sop||"—"}</td>
+                          <td className="px-4 py-2 text-slate-600">{r.site||"—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─── ConsolidatedTab ─────────────────────────────────────────────── */
+function ConsolidatedTab() {
+  const { addToast } = useToast();
+  const { email: currentEmail, role: currentRole } = getUserProfile();
+  const [year, setYear] = useState(THIS_YEAR);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [indEmail, setIndEmail] = useState(null);
+
+  // All hooks must be declared before any conditional return
+  useEffect(() => {
+    if (currentRole === "COMMERCIAL") return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await getKpiConsolidated(year);
+        if (!cancelled) setData(r);
+      } catch {
+        if (!cancelled) addToast({ type: "error", message: "Failed to load consolidated KPIs" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [year, currentRole]);
+
+  // COMMERCIAL → show only their own KPIs, no consolidated view
+  if (currentRole === "COMMERCIAL") {
+    return <IndividualSection email={currentEmail} year={year} onBack={null} />;
+  }
+
+  if (indEmail) return <IndividualSection email={indEmail} year={year} onBack={() => setIndEmail(null)} />;
+
+  const ren = data?.renewal, nb = data?.new_business;
+  const rfa = data?.rfq_automotive, rfna = data?.rfq_non_auto;
+  const sps = data?.salespersons || [];
+  const renPct = ren?.annual_target_keur ? (ren.confirmed_keur / ren.annual_target_keur * 100) : null;
+  const nbPct  = nb?.monthly_target_keur  ? (nb.ytd_keur / (nb.monthly_target_keur * 12) * 100)  : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-end gap-4">
+        <select value={year} onChange={e => setYear(Number(e.target.value))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-ink">
+          {KPI_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20 text-slate-400">Loading…</div>
+      ) : !data ? (
+        <div className="flex justify-center py-20 text-slate-400">No data available for {year}</div>
+      ) : (
+        <>
+          {/* Revenue Renewal */}
+          <section className="kpi-panel">
+            <div className="mb-5">
+              <h3 className="font-display text-xl font-semibold text-ink">Renewal Performance</h3>
+              <p className="mt-1 text-sm text-slate-500">Confirmed renewals (probability 100%) vs annual target — monthly breakdown</p>
+            </div>
+            <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+              <MTile label="Confirmed" value={`${Math.round(ren?.confirmed_keur||0).toLocaleString()} k€`} color="#046eaf" />
+              <MTile label="Annual target" value={ren?.annual_target_keur!=null?`${Math.round(ren.annual_target_keur).toLocaleString()} k€`:"—"} color="#94a3b8" />
+              <MTile label="Total pipeline" value={`${Math.round(ren?.pipeline_total_keur||0).toLocaleString()} k€`} color="#7c3aed" />
+              <MTile label="Weighted pipeline" value={`${Math.round(ren?.pipeline_weighted_keur||0).toLocaleString()} k€`} color="#0891b2" />
+            </div>
+            <PBar pct={renPct} label="Progress vs annual target" />
+            <div className="mt-5"><MBar monthly={ren?.monthly} target={ren?.monthly_target_keur} /></div>
+            {ren?.by_site?.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-3 text-sm font-semibold text-ink">Breakdown by site</h4>
+                <ZTbl rows={ren.by_site} vLabel="Confirmed k€" fmt={r=>`${Math.round(r.confirmed_keur||0).toLocaleString()} k€`} />
+              </div>
+            )}
+          </section>
+
+          {/* New Business */}
+          <section className="kpi-panel">
+            <div className="mb-5">
+              <h3 className="font-display text-xl font-semibold text-ink">New Business</h3>
+              <p className="mt-1 text-sm text-slate-500">Year-to-date cumulative vs annual target — monthly target: {(nb?.monthly_target_keur??2000).toLocaleString()} k€/mo</p>
+            </div>
+            <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-3">
+              <MTile label="YTD cumulative" value={`${Math.round(nb?.ytd_keur||0).toLocaleString()} k€`} color="#059669" />
+              <MTile label="Monthly target" value={`${(nb?.monthly_target_keur??2000).toLocaleString()} k€`} color="#94a3b8" />
+              <MTile label="Annual target" value={`${Math.round((nb?.monthly_target_keur??2000)*12).toLocaleString()} k€`} color="#94a3b8" />
+            </div>
+            <PBar pct={nbPct} label="YTD vs annual target" />
+            <div className="mt-5"><MBar monthly={nb?.monthly} target={nb?.monthly_target_keur} tint="#059669" /></div>
+            {nb?.by_zone?.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-3 text-sm font-semibold text-ink">Breakdown by zone</h4>
+                <ZTbl rows={nb.by_zone} vLabel="k€" fmt={r=>`${Math.round(r.value||0).toLocaleString()} k€`} />
+              </div>
+            )}
+          </section>
+
+          {/* RFQ Automotive */}
+          <section className="kpi-panel">
+            <div className="mb-5">
+              <h3 className="font-display text-xl font-semibold text-ink">Automotive RFQ Activity</h3>
+              <p className="mt-1 text-sm text-slate-500">Monthly RFQ count for automotive segment — target: {rfa?.monthly_target??40} / month</p>
+            </div>
+            <MTile label="Total automotive RFQs" value={`${(rfa?.monthly||[]).reduce((s,d)=>s+d.value,0)} RFQs`} color="#ef7807" />
+            <div className="mt-5"><MBar monthly={rfa?.monthly} target={rfa?.monthly_target} tint="#ef7807" /></div>
+            {rfa?.by_zone?.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-3 text-sm font-semibold text-ink">Breakdown by zone</h4>
+                <ZTbl rows={rfa.by_zone} vLabel="# RFQ" fmt={r=>Math.round(r.value)} />
+              </div>
+            )}
+          </section>
+
+          {/* RFQ Non-Automotive */}
+          <section className="kpi-panel">
+            <div className="mb-5">
+              <h3 className="font-display text-xl font-semibold text-ink">Non-Automotive RFQ Activity</h3>
+              <p className="mt-1 text-sm text-slate-500">Monthly RFQ count for non-automotive segment — target: {rfna?.monthly_target??8} / month</p>
+            </div>
+            <MTile label="Total non-automotive RFQs" value={`${(rfna?.monthly||[]).reduce((s,d)=>s+d.value,0)} RFQs`} color="#7c3aed" />
+            <div className="mt-5"><MBar monthly={rfna?.monthly} target={rfna?.monthly_target} tint="#7c3aed" /></div>
+            {rfna?.by_zone?.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-3 text-sm font-semibold text-ink">Breakdown by zone</h4>
+                <ZTbl rows={rfna.by_zone} vLabel="# RFQ" fmt={r=>Math.round(r.value)} />
+              </div>
+            )}
+          </section>
+
+          {/* Sales Team Performance */}
+          {sps.length > 0 && (
+            <section className="kpi-panel">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <h3 className="font-display text-xl font-semibold text-ink">
+                    {currentRole === "ZONE_MANAGER" ? "Team Performance" : "Sales Rep Performance"}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">Individual renewal, new business and RFQ activity per salesperson</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-left">
+                      {["Salesperson", "Renewal k€", "Target k€", "% Renewal", "New Business k€", "% New Biz", "# RFQ"].map(h => (
+                        <th key={h} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sps.map((sp, i) => (
+                      <tr key={i} className="border-t border-slate-100 hover:bg-slate-50/50">
+                        <td className="px-4 py-3">
+                          <button onClick={() => setIndEmail(sp.identifier)} className="flex items-center gap-1 font-semibold text-tide hover:underline">
+                            {sp.label||sp.identifier}<ExternalLink className="h-3 w-3 opacity-50" />
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-ink">{Math.round(sp.renewal_confirmed_keur||0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-slate-500">{sp.renewal_target_keur!=null?Math.round(sp.renewal_target_keur).toLocaleString():"—"}</td>
+                        <td className="px-4 py-3">{sp.pct_renewal!=null?<span className="font-bold" style={{color:pctColor(sp.pct_renewal)}}>{Math.round(sp.pct_renewal)} %</span>:"—"}</td>
+                        <td className="px-4 py-3 font-semibold text-ink">{Math.round(sp.new_business_keur||0).toLocaleString()}</td>
+                        <td className="px-4 py-3"><span className="font-bold" style={{color:pctColor(sp.pct_new_business)}}>{Math.round(sp.pct_new_business||0)} %</span></td>
+                        <td className="px-4 py-3 font-semibold text-ink">{sp.nb_rfq}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FL({lbl, children}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-base font-bold text-[#7c8da2]">{lbl}</span>
+      {children}
+    </label>
+  );
+}
+
+/* ─── SettingsTab ─────────────────────────────────────────────────── */
+function SettingsTab() {
+  const { addToast } = useToast();
+  const [year, setYear] = useState(THIS_YEAR);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [totalCa, setTotalCa] = useState("");
+  const [renPct, setRenPct] = useState("25");
+  const [rfqAutoYear, setRfqAutoYear] = useState("480");
+  const [rfqNonAutoYear, setRfqNonAutoYear] = useState("96");
+  const [nbTargetYear, setNbTargetYear] = useState("24000");
+
+  const outstanding = useMemo(() => {
+    const t = parseFloat(totalCa);
+    return !totalCa || isNaN(t) ? null : t;
+  }, [totalCa]);
+
+  const renAnnual = useMemo(() =>
+    outstanding !== null ? outstanding * 1000 * (parseFloat(renPct)||0) / 100 : null,
+  [outstanding, renPct]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const d = await getKpiSettings(year);
+        if (cancelled) return;
+        setTotalCa(d.total_ca_meur != null ? String(d.total_ca_meur) : "");
+        setRenPct(String(d.renewal_pct ?? 25));
+        setRfqAutoYear(String((d.rfq_automotive_monthly_target ?? 40) * 12));
+        setRfqNonAutoYear(String((d.rfq_non_auto_monthly_target ?? 8) * 12));
+        setNbTargetYear(String((d.new_business_monthly_keur ?? 2000) * 12));
+      } catch {
+        if (!cancelled) addToast({ type: "error", message: "Failed to load settings" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [year]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await upsertKpiSettings(year, {
+        total_ca_meur: totalCa ? parseFloat(totalCa) : null,
+        renewal_pct: parseFloat(renPct)||25,
+        rfq_automotive_monthly_target: Math.round((parseInt(rfqAutoYear)||480) / 12),
+        rfq_non_auto_monthly_target: Math.round((parseInt(rfqNonAutoYear)||96) / 12),
+        new_business_monthly_keur: Math.round((parseFloat(nbTargetYear)||24000) / 12),
+      });
+      addToast({ type: "success", message: "Settings saved" });
+    } catch {
+      addToast({ type: "error", message: "Failed to save settings" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-6">
+
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-tide/10">
+            <Settings className="h-5 w-5 text-tide" />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-slate-400">Configuration</p>
+            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">KPI Settings — {year}</h2>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <select
+            value={year}
+            onChange={e => setYear(Number(e.target.value))}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-sm"
+          >
+            {KPI_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-2 rounded-xl bg-tide px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-tide/90 hover:shadow-md disabled:translate-y-0 disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? "Saving…" : "Save settings"}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16 text-slate-400">Loading…</div>
+      ) : (
+        <>
+          {/* Revenue & Renewal */}
+          <section className="kpi-panel">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#046eaf]/10">
+                <TrendingUp className="h-4 w-4 text-[#046eaf]" />
+              </div>
+              <div>
+                <h3 className="font-display text-xl font-semibold text-ink">Revenue &amp; Renewal</h3>
+                <p className="mt-0.5 text-sm text-slate-400">
+                  Set the total revenue base and renewal rate — the renewal target is computed automatically.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+              <FL lbl="Total revenue M€">
+                <input
+                  type="number" step="0.1" min="0"
+                  value={totalCa} onChange={e => setTotalCa(e.target.value)}
+                  placeholder="e.g. 12.5"
+                  className={inputSt}
+                />
+              </FL>
+              <FL lbl="Renewal rate %">
+                <input
+                  type="number" step="0.5" min="0" max="100"
+                  value={renPct} onChange={e => setRenPct(e.target.value)}
+                  className={inputSt}
+                />
+              </FL>
+              <FL lbl="Renewal target k€">
+                <div className="flex items-center justify-between rounded-xl border border-tide/25 bg-tide/5 px-3 py-2">
+                  <span className="rounded-md bg-tide/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-tide">auto</span>
+                  <span className="text-sm font-bold text-tide">
+                    {renAnnual !== null ? Math.round(renAnnual).toLocaleString() : "—"}
+                  </span>
+                </div>
+              </FL>
+            </div>
+          </section>
+
+          {/* Annual Targets */}
+          <section className="kpi-panel">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#ef7807]/10">
+                <BarChart3 className="h-4 w-4 text-[#ef7807]" />
+              </div>
+              <div>
+                <h3 className="font-display text-xl font-semibold text-ink">Annual Targets</h3>
+                <p className="mt-0.5 text-sm text-slate-400">
+                  Enter yearly targets — monthly values are derived automatically.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+              <FL lbl="RFQ Automotive — per year">
+                <input
+                  type="number" step="1" min="0"
+                  value={rfqAutoYear} onChange={e => setRfqAutoYear(e.target.value)}
+                  className={inputSt}
+                />
+              </FL>
+              <FL lbl="RFQ Non-Automotive — per year">
+                <input
+                  type="number" step="1" min="0"
+                  value={rfqNonAutoYear} onChange={e => setRfqNonAutoYear(e.target.value)}
+                  className={inputSt}
+                />
+              </FL>
+              <FL lbl="New Business k€ — per year">
+                <input
+                  type="number" step="100" min="0"
+                  value={nbTargetYear} onChange={e => setNbTargetYear(e.target.value)}
+                  className={inputSt}
+                />
+              </FL>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/70 px-5 py-4">
+              <p className="mb-3 text-base font-bold text-[#7c8da2]">
+                Monthly breakdown — computed
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  { lbl: "RFQ Automotive / month",  val: Math.round((parseInt(rfqAutoYear)   || 0) / 12).toLocaleString() },
+                  { lbl: "RFQ Non-Automotive / month", val: Math.round((parseInt(rfqNonAutoYear) || 0) / 12).toLocaleString() },
+                  { lbl: "New Business k€ / month", val: Math.round((parseFloat(nbTargetYear) || 0) / 12).toLocaleString() },
+                ].map(({ lbl, val }) => (
+                  <div key={lbl} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <span className="text-sm text-slate-500">{lbl}</span>
+                    <span className="text-base font-bold text-tide">{val}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ─── KpiDashboard (main) ─────────────────────────────────────────── */
 export default function KpiDashboard() {
   const { showToast } = useToast();
+  const { role: currentRole } = getUserProfile();
+  const isOwner = currentRole === "OWNER";
+  const [activeTab, setActiveTab] = useState("consolidated");
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
-    timeframe: "all", phase: "all", productLine: "all", creator: "all"
+    timeframe: "all", phase: "all", productLine: "all", creator: "all", sector: "all"
   });
+  const [rbacCreatorList, setRbacCreatorList] = useState([]);
 
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const data = await listRfqs();
-        setRequests(Array.isArray(data) ? data : []);
+        if (currentRole === "ZONE_MANAGER") {
+          const [ownData, teamData] = await Promise.all([listRfqs(), getTeamView()]);
+          const own = Array.isArray(ownData) ? ownData : [];
+          const team = Array.isArray(teamData) ? teamData : [];
+          const seen = new Set();
+          const combined = [];
+          for (const rfq of [...own, ...team]) {
+            if (!seen.has(rfq.rfq_id)) {
+              seen.add(rfq.rfq_id);
+              combined.push(rfq);
+            }
+          }
+          setRequests(combined);
+        } else {
+          const data = await listRfqs();
+          setRequests(Array.isArray(data) ? data : []);
+        }
       } catch {
         setRequests([]);
         showToast("Unable to load KPI data. Please refresh.", { type: "error", title: "Dashboard unavailable" });
@@ -992,7 +1664,24 @@ export default function KpiDashboard() {
         setLoading(false);
       }
     })();
-  }, [showToast]);
+  }, [showToast, currentRole]);
+
+  useEffect(() => {
+    if (currentRole === "COMMERCIAL") return;
+    (async () => {
+      try {
+        if (currentRole === "OWNER") {
+          const users = await getOwnerUsers();
+          setRbacCreatorList(users.map(u => ({ value: u.email, label: u.full_name || u.email })));
+        } else if (currentRole === "ZONE_MANAGER") {
+          const members = await getTeamMembers(true);
+          setRbacCreatorList(members.map(m => ({ value: m.email, label: m.person })));
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [currentRole]);
 
   const records        = useMemo(() => buildKpiRecords(requests),        [requests]);
   const filterOptions  = useMemo(() => getKpiFilterOptions(records),     [records]);
@@ -1010,9 +1699,16 @@ export default function KpiDashboard() {
     ...arr.map(v => ({ value: v, label: v }))
   ];
 
-  const creatorOptions     = useMemo(() => mkOptions(filterOptions.creators,    "All creators"),    [filterOptions.creators]);
+  const creatorOptions = useMemo(() => {
+    if (currentRole === "COMMERCIAL") return [];
+    if (currentRole === "OWNER" || currentRole === "ZONE_MANAGER") {
+      return [{ value: "all", label: "All creators" }, ...rbacCreatorList];
+    }
+    return mkOptions(filterOptions.creators, "All creators");
+  }, [currentRole, rbacCreatorList, filterOptions.creators]);
   const phaseOptions       = useMemo(() => mkOptions(KPI_PHASES,                "All phases"),      []);
   const productLineOptions = useMemo(() => mkOptions(filterOptions.productLines,"All product lines"),[filterOptions.productLines]);
+  const sectorOptions      = useMemo(() => mkOptions(KPI_SECTOR_ORDER,          "All sectors"),     []);
 
   return (
     <div className="min-h-screen">
@@ -1020,28 +1716,50 @@ export default function KpiDashboard() {
 
       <div className="px-4 py-8 md:px-5 md:py-9 xl:px-6 xl:py-10">
         <div className="mx-auto flex w-full flex-col gap-6">
-          {loading ? <KpiLoadingState /> : (
-            <>
-              {/* Hero */}
-              <section className="kpi-hero">
-                <div className="kpi-orb kpi-orb-one" />
-                <div className="kpi-orb kpi-orb-two" />
-                <div className="kpi-orb kpi-orb-three" />
-                <div className="relative z-[1] flex flex-col gap-4">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <h1 className="flex items-center gap-2 font-display text-[1.6rem] leading-tight text-white md:text-[2rem]">
-                      <BarChart3 className="h-6 w-6 shrink-0" />
-                      KPI Dashboard
-                    </h1>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <Link to="/dashboard" className="kpi-hero-button">
-                        Request dashboard <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
+          <>
+            {/* Hero — always visible */}
+            <section className="kpi-hero">
+              <div className="kpi-orb kpi-orb-one" />
+              <div className="kpi-orb kpi-orb-two" />
+              <div className="kpi-orb kpi-orb-three" />
+              <div className="relative z-[1] flex flex-col gap-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <h1 className="flex items-center gap-2 font-display text-[1.6rem] leading-tight text-white md:text-[2rem]">
+                    <BarChart3 className="h-6 w-6 shrink-0" />
+                    KPI Dashboard
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <Link to="/dashboard" className="kpi-hero-button">
+                      Request dashboard <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
                   </div>
                 </div>
-              </section>
+                {/* Tab nav */}
+                <div className="flex gap-1 w-fit rounded-2xl bg-white/15 p-1 backdrop-blur-sm">
+                  {[
+                    { id: "consolidated", label: "Consolidated KPI" },
+                    { id: "pipeline",     label: "Pipeline RFQ" },
+                    ...(isOwner ? [{ id: "settings", label: "Settings" }] : []),
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTab(t.id)}
+                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                        activeTab === t.id
+                          ? "bg-white text-ink shadow"
+                          : "text-white/80 hover:bg-white/15 hover:text-white"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
 
+            {/* Pipeline tab */}
+            {activeTab === "pipeline" && (loading ? <KpiLoadingState /> : (
+              <>
               {/* Filters */}
               <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 px-6 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl md:px-7 md:py-5">
                 <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-[#046eaf]/10 blur-3xl" />
@@ -1065,7 +1783,8 @@ export default function KpiDashboard() {
                         timeframe: "all",
                         phase: "all",
                         productLine: "all",
-                        creator: "all"
+                        creator: "all",
+                        sector: "all"
                       })
                     }
                     className="flex items-center gap-2 rounded-xl bg-[#ef7807] px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#d96d06] hover:shadow-lg"
@@ -1074,7 +1793,7 @@ export default function KpiDashboard() {
                   </button>
                 </div>
 
-                <div className="relative z-[1] grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="relative z-[1] grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   <FilterSelect
                     label="Timeframe"
                     value={filters.timeframe}
@@ -1099,17 +1818,28 @@ export default function KpiDashboard() {
                     icon={BriefcaseBusiness}
                   />
 
+                  {currentRole !== "COMMERCIAL" && (
+                    <FilterSelect
+                      label="Creator"
+                      value={filters.creator}
+                      onChange={(v) => setFilters((c) => ({ ...c, creator: v }))}
+                      options={creatorOptions}
+                      icon={Users}
+                    />
+                  )}
+
                   <FilterSelect
-                    label="Creator"
-                    value={filters.creator}
-                    onChange={(v) => setFilters((c) => ({ ...c, creator: v }))}
-                    options={creatorOptions}
-                    icon={Users}
+                    label="Sector"
+                    value={filters.sector}
+                    onChange={(v) => setFilters((c) => ({ ...c, sector: v }))}
+                    options={sectorOptions}
+                    icon={Factory}
                   />
+
                 </div>
               </section>
 
-              {/* Metric cards */}
+              {/* Pipeline metric cards */}
               <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
                 <MetricCard icon={BriefcaseBusiness} tone="blue"    label="Total requests"    value={fmtCompact(summary.totalRequests)}   note="All requests visible after filters." />
                 <MetricCard icon={Activity}           tone="mint"    label="Open pipeline"     value={fmtCompact(summary.activeRequests)}  note={`${fmtKeur(summary.openAmount)} active in the commercial flow.`} />
@@ -1213,20 +1943,25 @@ export default function KpiDashboard() {
                     emptyMessage="No customer volume data available."
                   />
                 </Panel>
-                <Panel eyebrow="Ownership lens" title="Top creators by request volume"
-                  subtitle="Sales contributors with the strongest flow.">
-                  <ColumnCategoryChart
-                    data={summary.creatorLoad}
-                    formatter={v => `${intFmt.format(v)}`}
-                    secondaryFormatter={v => fmtKeur(v)}
-                    emptyMessage="No creator activity found."
-                    onSelectItem={label => toggle("creator", label)}
-                    selectedLabel={filters.creator}
-                  />
-                </Panel>
+                {currentRole !== "COMMERCIAL" && (
+                  <Panel eyebrow="Ownership lens" title="Top creators by request volume"
+                    subtitle="Sales contributors with the strongest flow.">
+                    <ColumnCategoryChart
+                      data={summary.creatorLoad}
+                      formatter={v => `${intFmt.format(v)}`}
+                      secondaryFormatter={v => fmtKeur(v)}
+                      emptyMessage="No creator activity found."
+                      onSelectItem={label => toggle("creator", label)}
+                      selectedLabel={filters.creator}
+                    />
+                  </Panel>
+                )}
               </div>
-            </>
-          )}
+            </>))}
+
+            {activeTab === "consolidated" && <ConsolidatedTab />}
+            {activeTab === "settings" && isOwner && <SettingsTab />}
+          </>
         </div>
       </div>
     </div>

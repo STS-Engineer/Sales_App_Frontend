@@ -252,12 +252,14 @@ export default function Dashboard() {
     load();
   }, [viewMode, showToast]);
 
+  // Load team members for Zone Manager's Team View Person filter
   useEffect(() => {
-    if (viewMode !== "team") return;
+    if (role !== "ZONE_MANAGER") return;
     getTeamMembers()
       .then((data) => setTeamMembers(Array.isArray(data) ? data : []))
       .catch(() => setTeamMembers([]));
-  }, [viewMode]);
+  }, [role]);
+
 
   const rfqsWithPhase = useMemo(
     () => rfqs.map((rfq) => ({ ...rfq, phaseKey: resolvePhaseKey(rfq) })),

@@ -100,6 +100,12 @@ const KPI_PRODUCT_LINE_RANK = new Map(
   KPI_PRODUCT_LINE_ORDER.map((productLine, index) => [productLine, index])
 );
 
+export const KPI_SECTOR_ORDER = ["Automotive", "Non automotive"];
+export const KPI_SECTOR_COLORS = {
+  "Automotive": "#046eaf",
+  "Non automotive": "#ef7807"
+};
+
 const TERMINAL_STATUSES = new Set(["Lost", "Cancelled"]);
 const POSITIVE_OUTCOME_STATUSES = new Set([
   "PO accepted",
@@ -310,6 +316,14 @@ const buildRankedSeries = (entries, { limit = 6, colorMap, fallbackColor = "#046
       color: entry.color || resolveSeriesColor(entry.label, index, colorMap, fallbackColor)
     }));
 
+const normalizeSector = (value) => {
+  if (!value) return "";
+  const normalized = String(value).trim().toLowerCase().replace(/[-_\s]+/g, " ");
+  if (normalized.includes("non") && normalized.includes("auto")) return "Non automotive";
+  if (normalized.includes("auto")) return "Automotive";
+  return "";
+};
+
 export const buildKpiRecords = (requests = []) =>
   requests.map((request) => {
     const data = request?.rfq_data || {};
@@ -347,7 +361,8 @@ export const buildKpiRecords = (requests = []) =>
       createdAt,
       createdAtLabel: createdAt ? createdAt.toISOString() : "",
       monthKey: createdAt ? getMonthKey(createdAt) : "",
-      isTerminal: TERMINAL_STATUSES.has(status)
+      isTerminal: TERMINAL_STATUSES.has(status),
+      sector: normalizeSector(data.automotive_type || data.automotiveType)
     };
   });
 
@@ -362,7 +377,10 @@ export const getKpiFilterOptions = (records = []) => {
     new Set(records.map((record) => record.creator).filter((value) => value && value !== "Unknown owner"))
   ).sort((left, right) => left.localeCompare(right));
 
-  return { productLines, creators };
+  const sectors = KPI_SECTOR_ORDER.filter(sector =>
+    records.some(r => r.sector === sector)
+  );
+  return { productLines, creators, sectors };
 };
 
 export const filterKpiRecords = (records = [], filters = {}, now = new Date()) => {
@@ -370,13 +388,15 @@ export const filterKpiRecords = (records = [], filters = {}, now = new Date()) =
     timeframe = "all",
     phase = "all",
     productLine = "all",
-    creator = "all"
+    creator = "all",
+    sector = "all"
   } = filters;
 
   return records.filter((record) => {
     if (phase !== "all" && record.phaseKey !== phase) return false;
     if (productLine !== "all" && record.productLine !== productLine) return false;
-    if (creator !== "all" && record.creator !== creator) return false;
+    if (creator !== "all" && record.creator.toLowerCase() !== creator.toLowerCase()) return false;
+    if (sector !== "all" && record.sector !== sector) return false;
 
     if (timeframe === "all") return true;
     if (!record.createdAt) return false;
@@ -606,6 +626,35 @@ export const buildKpiSummary = (records = [], now = new Date(), productLineUnive
     };
   });
 
+  const sectorDistribution = KPI_SECTOR_ORDER.map(sectorLabel => {
+    const sectorRecords = records.filter(r => r.sector === sectorLabel);
+    const count = sectorRecords.length;
+    const openAmt = sectorRecords
+      .filter(r => !r.isTerminal)
+      .reduce((s, r) => s + r.amount, 0);
+    const won = sectorRecords.filter(r => POSITIVE_OUTCOME_STATUSES.has(r.status)).length;
+    const closed = sectorRecords.filter(r => r.isTerminal).length;
+    const winRate = (won + closed) > 0 ? (won / (won + closed)) * 100 : 0;
+    const ageSamples = sectorRecords.filter(r => r.createdAt);
+    const avgAging = ageSamples.length
+      ? ageSamples.reduce((s, r) => s + diffInDays(now, r.createdAt), 0) / ageSamples.length
+      : 0;
+    const atRisk = sectorRecords.filter(r => {
+      if (r.isTerminal || !r.createdAt) return false;
+      return AT_RISK_STATUSES.has(r.status) && diffInDays(now, r.createdAt) >= 45;
+    }).length;
+    return {
+      label: sectorLabel,
+      value: count,
+      openAmount: openAmt,
+      winRate,
+      avgAging,
+      atRisk,
+      share: totalRequests ? count / totalRequests : 0,
+      color: KPI_SECTOR_COLORS[sectorLabel]
+    };
+  });
+
   const biggestOpportunity =
     [...records].sort((left, right) => right.amount - left.amount)[0] || null;
   const busiestPhase =
@@ -633,6 +682,7 @@ export const buildKpiSummary = (records = [], now = new Date(), productLineUnive
     monthlyVolume,
     monthlyValue,
     biggestOpportunity,
-    busiestPhase
+    busiestPhase,
+    sectorDistribution
   };
 };
