@@ -421,6 +421,10 @@ export const mapRfqDataToForm = (rfq) => {
     }
     return undefined;
   };
+  const pickText = (...values) => {
+    const v = pickFirst(...values);
+    return typeof v === "string" && v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+  };
   const products = normalizeProductsFromRfqData(data);
   const firstProduct = products[0] || createEmptyProductItem();
   const productsHaveValues = products.some(hasProductValue);
@@ -435,18 +439,18 @@ export const mapRfqDataToForm = (rfq) => {
     automotiveType: normalizeAutomotiveType(
       pickFirst(data.automotive_type, data.automotiveType)
     ),
-    customer: pickFirst(data.customer_name, data.customer, data.client),
-    application: pickFirst(data.application),
-    productName: pickFirst(data.product_name, data.product_line_acronym),
-    productLine: pickFirst(data.product_line_acronym) || "",
-    projectName: pickFirst(data.project_name, data.projectName),
-    costingData: pickFirst(data.costing_data, data.costingData),
+    customer: pickText(data.customer_name, data.customer, data.client),
+    application: pickText(data.application),
+    productName: pickText(data.product_name, data.product_line_acronym),
+    productLine: pickText(data.product_line_acronym) || "",
+    projectName: pickText(data.project_name, data.projectName),
+    costingData: pickText(data.costing_data, data.costingData),
     products,
     customerPn: pickFirst(firstProduct.partNumber, data.customer_pn, data.customerPn),
     revisionLevel: pickFirst(firstProduct.revisionLevel, data.revision_level, data.revisionLevel),
-    deliveryZone: pickFirst(data.delivery_zone, data.deliveryZone),
-    plant: pickFirst(data.delivery_plant, data.plant),
-    country: pickFirst(data.country),
+    deliveryZone: pickText(data.delivery_zone, data.deliveryZone),
+    plant: pickText(data.delivery_plant, data.plant),
+    country: pickText(data.country),
     poDate: sanitizeDateForInput(
       pickFirst(data.po_date, data.poDate)
     ),
@@ -465,8 +469,8 @@ export const mapRfqDataToForm = (rfq) => {
     expectedQuotationDate: sanitizeDateForInput(
       pickFirst(data.quotation_expected_date, data.expectedQuotationDate)
     ),
-    contactName: pickFirst(data.contact_name, data.contact_first_name, data.contactName),
-    contactFunction: pickFirst(data.contact_role, data.contactFunction),
+    contactName: pickText(data.contact_name, data.contact_first_name, data.contactName),
+    contactFunction: pickText(data.contact_role, data.contactFunction),
     contactPhone: pickFirst(data.contact_phone, data.contactPhone),
     contactEmail: pickFirst(data.contact_email, data.contactEmail),
     targetPrice: sanitizeNumberForInput(
@@ -491,53 +495,53 @@ export const mapRfqDataToForm = (rfq) => {
       data.target_price_currency,
       data.targetPriceCurrency
     ),
-    targetPriceNote: pickFirst(data.target_price_note, data.targetPriceNote),
-    expectedDeliveryConditions: pickFirst(
+    targetPriceNote: pickText(data.target_price_note, data.targetPriceNote),
+    expectedDeliveryConditions: pickText(
       data.expected_delivery_conditions,
       data.expectedDeliveryConditions
     ),
-    expectedPaymentTerms: pickFirst(
+    expectedPaymentTerms: pickText(
       data.expected_payment_terms,
       data.expectedPaymentTerms
     ),
-    typeOfPackaging: pickFirst(
+    typeOfPackaging: pickText(
       data.type_of_packaging,
       data.typeOfPackaging
     ),
-    businessTrigger: pickFirst(data.business_trigger, data.businessTrigger),
-    customerToolingConditions: pickFirst(
+    businessTrigger: pickText(data.business_trigger, data.businessTrigger),
+    customerToolingConditions: pickText(
       data.customer_tooling_conditions,
       data.customerToolingConditions
     ),
-    entryBarriers: pickFirst(data.entry_barriers, data.entryBarriers),
-    designResponsible: pickFirst(
+    entryBarriers: pickText(data.entry_barriers, data.entryBarriers),
+    designResponsible: pickText(
       data.responsibility_design,
       data.design_responsible,
       data.designResponsible
     ),
-    validationResponsible: pickFirst(
+    validationResponsible: pickText(
       data.responsibility_validation,
       data.validation_responsible,
       data.validationResponsible
     ),
-    designOwner: pickFirst(
+    designOwner: pickText(
       data.product_ownership,
       data.design_owner,
       data.designOwner
     ),
-    developmentCosts: pickFirst(
+    developmentCosts: pickText(
       data.pays_for_development,
       data.development_costs,
       data.developmentCosts
     ),
-    technicalCapacity: pickFirst(
+    technicalCapacity: pickText(
       data.capacity_available,
       data.technical_capacity,
       data.technicalCapacity
     ),
-    scope: pickFirst(data.scope),
-    strategicNote: pickFirst(data.strategic_note, data.strategicNote),
-    finalRecommendation: pickFirst(
+    scope: pickText(data.scope),
+    strategicNote: pickText(data.strategic_note, data.strategicNote),
+    finalRecommendation: pickText(
       data.is_feasible,
       data.final_recommendation,
       data.finalRecommendation
@@ -572,57 +576,61 @@ export const mapPotentialToForm = (potential) => {
     }
     return undefined;
   };
+  const pickText = (...values) => {
+    const v = pickFirst(...values);
+    return typeof v === "string" && v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+  };
 
   return {
     potentialSystematicId: pickFirst(
       data.potential_systematic_id,
       data.potentialSystematicId
     ),
-    potentialCustomer: pickFirst(
+    potentialCustomer: pickText(
       data.customer,
       data.customer_name,
       data.customerName
     ),
-    potentialCustomerLocation: pickFirst(
+    potentialCustomerLocation: pickText(
       data.customer_location,
       data.customerLocation,
       data.potential_customer_location,
       data.potentialCustomerLocation
     ),
-    potentialApplication: pickFirst(data.application),
-    potentialContactName: pickFirst(data.contact_name, data.contactName),
+    potentialApplication: pickText(data.application),
+    potentialContactName: pickText(data.contact_name, data.contactName),
     potentialContactEmail: pickFirst(data.contact_email, data.contactEmail),
     potentialContactPhone: pickFirst(data.contact_phone, data.contactPhone),
-    potentialContactFunction: pickFirst(
+    potentialContactFunction: pickText(
       data.contact_function,
       data.contactFunction,
       data.contact_role
     ),
-    potentialIndustry: pickFirst(data.industry_served, data.potentialIndustry),
-    potentialProductType: pickFirst(
+    potentialIndustry: pickText(data.industry_served, data.potentialIndustry),
+    potentialProductType: pickText(
       data.planned_product_type,
       data.potentialProductType
     ),
-    potentialEngagementReason: pickFirst(
+    potentialEngagementReason: pickText(
       data.engagement_reasons,
       data.potentialEngagementReason
     ),
-    potentialIdeaOwner: pickFirst(data.idea_source, data.potentialIdeaOwner),
-    potentialCurrentSupplier: pickFirst(
+    potentialIdeaOwner: pickText(data.idea_source, data.potentialIdeaOwner),
+    potentialCurrentSupplier: pickText(
       data.current_supplier,
       data.potentialCurrentSupplier
     ),
-    potentialWinReason: pickFirst(data.main_win_reason, data.potentialWinReason),
-    potentialWinDetails: pickFirst(
+    potentialWinReason: pickText(data.main_win_reason, data.potentialWinReason),
+    potentialWinDetails: pickText(
       data.win_rationale_details,
       data.potentialWinDetails
     ),
-    potentialTechnicalCapability: pickFirst(
+    potentialTechnicalCapability: pickText(
       data.technical_capabilities,
       data.potentialTechnicalCapability
     ),
-    potentialStrategyFit: pickFirst(data.strategic_fit, data.potentialStrategyFit),
-    potentialStrategyFitDetails: pickFirst(
+    potentialStrategyFit: pickText(data.strategic_fit, data.potentialStrategyFit),
+    potentialStrategyFitDetails: pickText(
       data.strategic_fit_details,
       data.potentialStrategyFitDetails
     ),
@@ -638,17 +646,17 @@ export const mapPotentialToForm = (potential) => {
       data.start_of_production,
       data.potentialStartOfProduction
     ),
-    potentialDevelopmentEffort: pickFirst(
+    potentialDevelopmentEffort: pickText(
       data.development_effort,
       data.potentialDevelopmentEffort
     ),
-    potentialSideEffects: pickFirst(data.side_effects, data.potentialSideEffects),
-    potentialRiskDoAssessment: pickFirst(
+    potentialSideEffects: pickText(data.side_effects, data.potentialSideEffects),
+    potentialRiskDoAssessment: pickText(
       data.risks_to_do,
       data.potentialRiskDoAssessment,
       data.potential_risk_do_assessment
     ),
-    potentialRiskNotDoAssessment: pickFirst(
+    potentialRiskNotDoAssessment: pickText(
       data.risks_not_to_do,
       data.potentialRiskNotDoAssessment,
       data.potential_risk_not_do_assessment
