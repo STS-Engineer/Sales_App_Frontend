@@ -5572,12 +5572,12 @@ export default function NewRfq() {
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col pt-4 pb-0 sm:pt-6 lg:pt-1 overflow-visible lg:overflow-hidden">
-        <div className="w-full flex flex-1 min-h-0 flex-col overflow-visible lg:overflow-hidden">
-          <div className="app-shell w-full flex flex-1 min-h-0 flex-col rounded-none border border-slate-200/70 shadow-card overflow-visible lg:overflow-hidden">
-            <div className="flex flex-1 min-h-0 flex-col gap-6 lg:gap-2 overflow-visible lg:overflow-hidden">
-              <div className="px-4 pt-4 sm:px-6 sm:pt-6 lg:pt-1">
-                <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-1 min-h-0 flex-col pt-4 pb-0 sm:pt-6 lg:pt-1 overflow-auto lg:overflow-hidden">
+        <div className="w-full flex flex-1 min-h-0 flex-col overflow-auto lg:overflow-hidden">
+          <div className="app-shell w-full flex flex-1 min-h-0 flex-col rounded-none border border-slate-200/70 shadow-card overflow-auto lg:overflow-hidden">
+            <div className="flex flex-1 min-h-0 flex-col gap-6 lg:gap-2 overflow-auto lg:overflow-hidden">
+              <div className="px-3 pt-3 sm:px-6 sm:pt-6 lg:pt-1">
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                   <button
                     type="button"
                     className="back-button"
@@ -5586,7 +5586,7 @@ export default function NewRfq() {
                     <span className="text-base">←</span>
                     Back
                   </button>
-                  <div className="flex-1 min-w-[240px] pt-2">
+                  <div className="flex-1 min-w-0 pt-2">
                     <div className="pipeline-shell newrfq-pipeline">
                       <div className="pipeline-bar">
                         {visibleStages.map((stage, index) => {
@@ -6051,7 +6051,7 @@ export default function NewRfq() {
               ) : null}
 
               <div
-                className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.42fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)_var(--chat-col)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-visible lg:overflow-hidden"
+                className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.42fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)_var(--chat-col)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-auto lg:overflow-hidden"
                 style={{
                   "--nav-col": navCollapsed ? "72px" : "0.45fr",
                   "--chat-col": chatCollapsed ? "72px" : `${chatWidth}px`
@@ -6264,7 +6264,7 @@ export default function NewRfq() {
                               <div className="mt-5 flex flex-wrap items-center gap-3">
                                 <button
                                   type="button"
-                                  className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   onClick={handleRejectCostingReview}
                                   disabled={costingReviewButtonsDisabled}
                                   title={
@@ -6278,7 +6278,7 @@ export default function NewRfq() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
                                   onClick={handleApproveCostingReview}
                                   disabled={costingReviewButtonsDisabled}
                                   title={
@@ -6516,7 +6516,7 @@ export default function NewRfq() {
                                     ) : null}
                                   </div>
 
-                                  <div className="mt-5 grid gap-4 md:grid-cols-4">
+                                  <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                                         Action by
@@ -6597,7 +6597,7 @@ export default function NewRfq() {
                                 <div className="mt-5 flex justify-end">
                                   <button
                                     type="button"
-                                    className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={handleSaveCostingFeasability}
                                     disabled={!canSaveCostingFeasability}
                                     title={
@@ -6684,7 +6684,7 @@ export default function NewRfq() {
                                   </div>
                                 </div>
 
-                                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                                   <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                     <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                                       Uploaded by
@@ -6791,7 +6791,7 @@ export default function NewRfq() {
                                       </div>
                                     </div>
 
-                                    <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                    <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                                       <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                                           Uploaded by
@@ -6823,7 +6823,7 @@ export default function NewRfq() {
                                     <div className="mt-5 flex justify-end">
                                       <button
                                         type="button"
-                                        className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                                        className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
                                         onClick={handleSavePricingFinalPrice}
                                         disabled={!canSavePricingFinalPrice}
                                         title={
@@ -6884,7 +6884,7 @@ export default function NewRfq() {
                                             </div>
                                           </div>
 
-                                          <div className="mt-5 grid gap-4 md:grid-cols-3">
+                                          <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                                             <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
                                               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                                                 Action
@@ -6933,7 +6933,7 @@ export default function NewRfq() {
                                         <div className="mt-5 flex flex-wrap items-center gap-3">
                                           <button
                                             type="button"
-                                            className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                            className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                                             onClick={handleRejectPricingFileValidation}
                                             disabled={pricingFileValidationButtonsDisabled}
                                           >
@@ -6942,7 +6942,7 @@ export default function NewRfq() {
                                           </button>
                                           <button
                                             type="button"
-                                            className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                                            className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
                                             onClick={handleApprovePricingFileValidation}
                                             disabled={pricingFileValidationButtonsDisabled}
                                           >
@@ -6971,7 +6971,7 @@ export default function NewRfq() {
 
                     </section>
                   ) : isOfferStage ? (
-                    <section className="card relative min-h-0 overflow-y-visible overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+                    <section className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
                       <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="max-w-3xl">
@@ -7046,11 +7046,8 @@ export default function NewRfq() {
                 {isRfqFormView && activeRfqTab === "potential" ? (
                   <form
                     onSubmit={handleSubmit}
-                    className="card relative min-h-0 overflow-y-visible overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto"
+                    className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto"
                   >
-                    <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-tide/10 blur-3xl" />
-                    <div className="pointer-events-none absolute -left-24 -bottom-28 h-60 w-60 rounded-full bg-sun/10 blur-3xl" />
-
                     <div className="relative flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Potential</p>
@@ -7081,7 +7078,7 @@ export default function NewRfq() {
                           </div>
                         </div>
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           <FormField label="Customer" name="potentialCustomer" value={form.potentialCustomer} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Customer location" name="potentialCustomerLocation" value={form.potentialCustomerLocation} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Application" name="potentialApplication" value={form.potentialApplication} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
@@ -7106,7 +7103,7 @@ export default function NewRfq() {
                           </div>
                         </div>
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           <div className="md:col-span-2">
                             <FormField label="Engagement reasons" name="potentialEngagementReason" value={form.potentialEngagementReason} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                           </div>
@@ -7140,7 +7137,7 @@ export default function NewRfq() {
                           </div>
                         </div>
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                           <FormField label="Sales (kEUR)" name="potentialBusinessSalesKeur" type="number" value={form.potentialBusinessSalesKeur} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Margin (%)" name="potentialBusinessMarginPercent" type="number" value={form.potentialBusinessMarginPercent} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Margin (kEUR)" name="potentialBusinessMarginKeur" value={potentialMarginKeur} readOnly />
@@ -7228,7 +7225,7 @@ export default function NewRfq() {
                           </div>
                         </div>
 
-                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           <FormField label="Contact name" name="potentialContactName" value={form.potentialContactName} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Contact function" name="potentialContactFunction" value={form.potentialContactFunction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Contact phone" name="potentialContactPhone" value={form.potentialContactPhone} onChange={handleChange} readOnly={potentialFieldReadOnly} />
@@ -7275,6 +7272,8 @@ export default function NewRfq() {
                         </div>
                       </section>
                     </div>
+                    <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-tide/10 blur-3xl" />
+                    <div className="pointer-events-none absolute -left-24 -bottom-28 h-60 w-60 rounded-full bg-sun/10 blur-3xl" />
                   </form>
                 ) : null}
 
@@ -7731,7 +7730,7 @@ export default function NewRfq() {
                 {isRfqFormView && isFormalDocumentTab ? (
                   <form
                     onSubmit={handleSubmit}
-                    className="card flex flex-col min-h-0 overflow-visible lg:overflow-hidden lg:h-full lg:min-h-0"
+                    className="card flex flex-col min-h-0 overflow-auto lg:overflow-hidden lg:h-full lg:min-h-0"
                   >
                     <div className="flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:p-3 md:p-4 pb-5 mb-4">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -7785,7 +7784,7 @@ export default function NewRfq() {
                       </div>
                     </div>
 
-                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-visible px-5 pb-5 sm:px-7 sm:pb-7 md:px-8 md:pb-8 sm:pr-2 lg:overflow-y-auto">
+                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 sm:px-5 sm:pb-5 sm:pr-2 md:px-6 md:pb-6 lg:px-8 lg:pb-8 lg:overflow-y-auto">
                       {activeStep === "step-client" ? (
                         <div
                           id="step-client"
@@ -7794,7 +7793,7 @@ export default function NewRfq() {
                           <div className="flex flex-col gap-5">
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
-                              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                              <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Automotive / Non automotive" name="automotiveType" value={form.automotiveType} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("automotiveType")} />
                                 <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("application")} />
@@ -7802,7 +7801,7 @@ export default function NewRfq() {
                                 <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productLine")} />
                                 <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("costingData")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
-                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 md:col-span-2 lg:col-span-1">
+                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 lg:col-span-1">
                                   {renderRequirementLabel(
                                     `${formalDocumentLabel} Files`,
                                     getRfqFieldRequirementProps("rfqFiles")
@@ -7880,7 +7879,7 @@ export default function NewRfq() {
                                   ) : null}
                                 </label>
 
-                                <div className="md:col-span-2 scroll-mt-28" id="rfq-products">
+                                <div className="lg:col-span-2 scroll-mt-28 min-w-0" id="rfq-products">
                                   <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
                                       <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -8172,7 +8171,7 @@ export default function NewRfq() {
 
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
-                              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                              <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField
                                   label="Delivery zone"
                                   name="deliveryZone"
@@ -8194,7 +8193,7 @@ export default function NewRfq() {
 
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Contact details</h3>
-                              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                              <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
                                 <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} />
@@ -8210,7 +8209,7 @@ export default function NewRfq() {
                           id="step-request"
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
-                          <div className="grid gap-4 md:grid-cols-2">
+                          <div className="grid gap-4 lg:grid-cols-2">
                             <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedDeliveryConditions")} />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedPaymentTerms")} />
                             <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("typeOfPackaging")} />
@@ -8226,7 +8225,7 @@ export default function NewRfq() {
                           id="step-schedule"
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
-                          <div className="grid gap-4 md:grid-cols-2">
+                          <div className="grid gap-4 lg:grid-cols-2">
                             <FormField label="Design responsible" name="designResponsible" value={form.designResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designResponsible")} />
                             <FormField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validationResponsible")} />
                             <FormField label="Design owner" name="designOwner" value={form.designOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designOwner")} />
@@ -8244,7 +8243,7 @@ export default function NewRfq() {
                           id="step-notes"
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
-                          <div className="grid gap-4 md:grid-cols-2">
+                          <div className="grid gap-4 lg:grid-cols-2">
                             <div className="space-y-1">
                               <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
                                 Total Turnover
@@ -8282,7 +8281,7 @@ export default function NewRfq() {
                 {isRfqValidationView ? (
                   <form
                     onSubmit={handleSubmit}
-                    className={`card flex min-h-0 flex-col gap-6 overflow-y-visible p-5 sm:p-7 md:p-8 lg:h-full lg:min-h-0 lg:overflow-y-auto ${showRfqStepNavigation ? "md:col-span-1 lg:col-span-2" : "col-span-full"}`}
+                    className={`card flex min-h-0 flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:p-8 lg:h-full lg:min-h-0 lg:overflow-y-auto ${showRfqStepNavigation ? "md:col-span-1 lg:col-span-2" : "col-span-full"}`}
                   >
                     <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                       <div className="flex items-center justify-between gap-3">
@@ -9096,7 +9095,7 @@ export default function NewRfq() {
       {selfValidationPromptOpen ? (
         <div className="chat-modal-backdrop" role="presentation">
           <div
-            className="chat-modal max-w-[580px] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
+            className="chat-modal w-[calc(100vw-24px)] max-w-[580px] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
             role="dialog"
             aria-modal="true"
             aria-label="Validation required"

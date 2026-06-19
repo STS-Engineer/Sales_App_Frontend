@@ -58,35 +58,35 @@ export default function TopBar({ title, action }) {
 
   return (
     <div className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/85 backdrop-blur">
-      <div className="flex w-full flex-wrap items-center justify-between gap-4 px-10 py-2">
-        <div className="flex items-center gap-4">
+      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 sm:gap-4 sm:px-5 lg:px-10">
+        <div className="flex items-center gap-2 sm:gap-4">
           <Link
             to="/dashboard"
-            className="inline-flex items-center gap-3 transition hover:opacity-90"
+            className="inline-flex items-center gap-2 sm:gap-3 transition hover:opacity-90"
             aria-label="Go to dashboard"
           >
-            <img src={logo} alt="AVO Carbon Group" className="h-9 w-auto" />
-            <span className="mx-2 h-8 w-[3px] rounded-full bg-slate-300" aria-hidden="true" />
-            <span className="font-semibold text-2xl tracking-tight text-ink">
+            <img src={logo} alt="AVO Carbon Group" className="h-7 w-auto sm:h-9" />
+            <span className="mx-1 h-6 w-[3px] rounded-full bg-slate-300 sm:mx-2 sm:h-8" aria-hidden="true" />
+            <span className="font-semibold text-base tracking-tight text-ink sm:text-xl lg:text-2xl">
               Sales Management
             </span>
           </Link>
-          {title ? <h1 className="font-display text-2xl text-ink">{title}</h1> : null}
+          {title ? <h1 className="font-display text-lg text-ink sm:text-2xl">{title}</h1> : null}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {action}
           {["OWNER", "ZONE_MANAGER", "COMMERCIAL"].includes(storedRole) && (
             <Link
               to="/kpis"
               className={[
-                "inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition",
+                "inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm",
                 isKpiRoute
                   ? "border-tide/70 bg-gradient-to-r from-tide to-mint text-white"
                   : "border-slate-200 bg-white/90 text-slate-600 hover:border-tide/40 hover:text-tide hover:shadow-md"
               ].join(" ")}
             >
-              <BarChart3 className="h-4 w-4" />
-              Dashboard
+              <BarChart3 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline sm:inline">Dashboard</span>
             </Link>
           )}
           <div className="relative w-full sm:w-auto">
@@ -96,7 +96,7 @@ export default function TopBar({ title, action }) {
               ref={triggerRef}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[280px] sm:w-auto"
+              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[200px] sm:gap-3 sm:px-3 md:min-w-[280px]"
             >
               <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-tide/10 text-xs font-bold text-tide">
                 {initials || "U"}
@@ -122,7 +122,7 @@ export default function TopBar({ title, action }) {
             {menuOpen ? (
               <div
                 ref={menuRef}
-                className="absolute right-0 mt-3 w-72 overflow-hidden rounded-3xl border border-slate-200/70 bg-white/95 shadow-card"
+                className="absolute right-0 mt-3 w-[min(18rem,calc(100vw-16px))] overflow-hidden rounded-3xl border border-slate-200/70 bg-white/95 shadow-card"
                 role="menu"
               >
                 <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden">

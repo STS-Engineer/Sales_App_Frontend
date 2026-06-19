@@ -485,9 +485,9 @@ export default function Dashboard() {
     <div className="min-h-screen">
       <TopBar />
 
-      <div className="px-4 py-8 md:px-5 md:py-9 xl:px-6 xl:py-10">
+      <div className="px-2 py-4 sm:px-4 sm:py-6 md:px-5 md:py-9 xl:px-6 xl:py-10">
         <div className="w-full">
-          <div className="app-shell rounded-[32px] border border-slate-200/70 p-5 shadow-card md:p-6 xl:p-7">
+          <div className="app-shell rounded-[24px] border border-slate-200/70 p-3 shadow-card sm:rounded-[32px] sm:p-5 md:p-6 xl:p-7">
             <div className="flex flex-col gap-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
@@ -529,7 +529,7 @@ export default function Dashboard() {
 
               {viewMode === "detailed" ? (
                 <>
-                  <div className="card p-6 pt-7 dashboard-pipeline">
+                  <div className="card p-3 pt-4 dashboard-pipeline sm:p-5 sm:pt-6 xl:p-6 xl:pt-7">
                     <div className="pipeline-shell">
                       <div className="pipeline-bar">
                         {PHASES.map((phase, index) => {
@@ -547,7 +547,7 @@ export default function Dashboard() {
                               key={phase.key}
                               type="button"
                               onClick={() => setActiveStatus(phase.key)}
-                              className={`pipeline-step ${stepState} py-3 sm:py-4`}
+                              className={`pipeline-step ${stepState} py-2.5 md:py-3 xl:py-4`}
                               aria-current={isActive ? "step" : undefined}
                               title={
                                 phase.subPhases?.length
@@ -555,17 +555,17 @@ export default function Dashboard() {
                                   : phase.label
                               }
                             >
-                              <span className="block text-[15px] sm:text-[16px] tracking-[0.12em]">
+                              <span className="block text-[11px] tracking-[0.10em] md:text-[13px] md:tracking-[0.12em] lg:text-[14px] xl:text-[16px] xl:tracking-[0.12em]">
                                 {phase.label}
                               </span>
                               {phase.subPhases?.length ? (
-                                <div className="mt-2 w-full px-2">
+                                <div className="mt-1.5 w-full px-1 xl:mt-2 xl:px-2">
                                   <div className="relative">
                                     <span
-                                      className="absolute left-2 right-2 top-1 h-px bg-white/40"
+                                      className="absolute left-1 right-1 top-1 h-px bg-white/40 xl:left-2 xl:right-2"
                                       aria-hidden="true"
                                     />
-                                    <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start justify-between gap-1">
                                       {phase.subPhases.map((subPhase) => {
                                         const progressSubPhase = mapStatusToProgressSubPhase(
                                           phase.key,
@@ -576,16 +576,16 @@ export default function Dashboard() {
                                           activeSubStatus !== "all" &&
                                           subPhase === progressSubPhase;
                                         const dotClass = isSubActive
-                                          ? "h-3 w-3 rounded-full bg-white shadow-[0_0_0_4px_rgba(56,189,248,0.45)]"
-                                          : "h-2 w-2 rounded-full bg-white/70";
+                                          ? "h-2 w-2 rounded-full bg-white shadow-[0_0_0_4px_rgba(56,189,248,0.45)] xl:h-3 xl:w-3"
+                                          : "h-1.5 w-1.5 rounded-full bg-white/70 xl:h-2 xl:w-2";
                                         const labelClass = isSubActive
-                                          ? "mt-1 max-w-[120px] text-center font-semibold leading-tight text-white"
-                                          : "mt-1 max-w-[120px] text-center leading-tight text-white/85";
+                                          ? "mt-0.5 max-w-[80px] text-center font-semibold leading-tight text-white xl:max-w-[120px]"
+                                          : "mt-0.5 max-w-[80px] text-center leading-tight text-white/85 xl:max-w-[120px]";
 
                                         return (
                                           <div
                                             key={subPhase}
-                                            className="relative z-10 flex flex-1 flex-col items-center text-[12px] font-medium normal-case tracking-normal text-white/85 sm:text-[13px]"
+                                            className="relative z-10 flex flex-1 flex-col items-center text-[9px] font-medium normal-case tracking-normal text-white/85 md:text-[10px] xl:text-[12px]"
                                           >
                                             <span className={dotClass} />
                                             <span className={labelClass}>{subPhase}</span>

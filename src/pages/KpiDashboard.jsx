@@ -339,9 +339,9 @@ function PhasePieChart({ segments, total, selectedLabel = "all", onSelectSegment
   });
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[240px_1fr] items-center">
+    <div className="grid gap-4 sm:grid-cols-[200px_1fr] lg:grid-cols-[240px_1fr] items-center">
       <div className="flex justify-center">
-        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="overflow-visible">
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full max-w-[260px] overflow-visible">
           {slices.map(slice => (
             <g key={slice.label}>
               <path
@@ -1167,7 +1167,7 @@ function IndividualSection({ email, year, onBack }) {
         <div className="flex justify-center py-12 text-slate-400">Loading…</div>
       ) : data && (
         <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <MTile label="Confirmed Renewal k€" value={`${Math.round(data.renewal_confirmed_keur || 0).toLocaleString()} k€`} color="#046eaf" />
             <MTile label="Annual Target k€" value={data.annual_target_keur != null ? `${Math.round(data.annual_target_keur).toLocaleString()} k€` : "—"} color="#94a3b8" />
             <MTile label="New Business YTD k€" value={`${Math.round(data.new_business_ytd_keur || 0).toLocaleString()} k€`} color="#059669" />
@@ -1298,7 +1298,7 @@ function ConsolidatedTab() {
               <h3 className="font-display text-xl font-semibold text-ink">Renewal Performance</h3>
               <p className="mt-1 text-sm text-slate-500">Confirmed renewals (probability 100%) vs annual target — monthly breakdown</p>
             </div>
-            <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <MTile label="Confirmed" value={`${Math.round(ren?.confirmed_keur||0).toLocaleString()} k€`} color="#046eaf" />
               <MTile label="Annual target" value={ren?.annual_target_keur!=null?`${Math.round(ren.annual_target_keur).toLocaleString()} k€`:"—"} color="#94a3b8" />
               <MTile label="Total pipeline" value={`${Math.round(ren?.pipeline_total_keur||0).toLocaleString()} k€`} color="#7c3aed" />
@@ -1320,7 +1320,7 @@ function ConsolidatedTab() {
               <h3 className="font-display text-xl font-semibold text-ink">New Business</h3>
               <p className="mt-1 text-sm text-slate-500">Year-to-date cumulative vs annual target — monthly target: {(nb?.monthly_target_keur??2000).toLocaleString()} k€/mo</p>
             </div>
-            <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-3">
+            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <MTile label="YTD cumulative" value={`${Math.round(nb?.ytd_keur||0).toLocaleString()} k€`} color="#059669" />
               <MTile label="Monthly target" value={`${(nb?.monthly_target_keur??2000).toLocaleString()} k€`} color="#94a3b8" />
               <MTile label="Annual target" value={`${Math.round((nb?.monthly_target_keur??2000)*12).toLocaleString()} k€`} color="#94a3b8" />
@@ -1383,24 +1383,24 @@ function ConsolidatedTab() {
                   <thead>
                     <tr className="bg-slate-50 text-left">
                       {["Salesperson", "Renewal k€", "Target k€", "% Renewal", "New Business k€", "% New Biz", "# RFQ"].map(h => (
-                        <th key={h} className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">{h}</th>
+                        <th key={h} className="px-2 py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 sm:px-4 sm:text-[11px] sm:tracking-[0.22em]">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {sps.map((sp, i) => (
                       <tr key={i} className="border-t border-slate-100 hover:bg-slate-50/50">
-                        <td className="px-4 py-3">
+                        <td className="px-2 py-3 sm:px-4">
                           <button onClick={() => setIndEmail(sp.identifier)} className="flex items-center gap-1 font-semibold text-tide hover:underline">
                             {sp.label||sp.identifier}<ExternalLink className="h-3 w-3 opacity-50" />
                           </button>
                         </td>
-                        <td className="px-4 py-3 font-semibold text-ink">{Math.round(sp.renewal_confirmed_keur||0).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-slate-500">{sp.renewal_target_keur!=null?Math.round(sp.renewal_target_keur).toLocaleString():"—"}</td>
-                        <td className="px-4 py-3">{sp.pct_renewal!=null?<span className="font-bold" style={{color:pctColor(sp.pct_renewal)}}>{Math.round(sp.pct_renewal)} %</span>:"—"}</td>
-                        <td className="px-4 py-3 font-semibold text-ink">{Math.round(sp.new_business_keur||0).toLocaleString()}</td>
-                        <td className="px-4 py-3"><span className="font-bold" style={{color:pctColor(sp.pct_new_business)}}>{Math.round(sp.pct_new_business||0)} %</span></td>
-                        <td className="px-4 py-3 font-semibold text-ink">{sp.nb_rfq}</td>
+                        <td className="px-2 py-3 font-semibold text-ink sm:px-4">{Math.round(sp.renewal_confirmed_keur||0).toLocaleString()}</td>
+                        <td className="px-2 py-3 text-slate-500 sm:px-4">{sp.renewal_target_keur!=null?Math.round(sp.renewal_target_keur).toLocaleString():"—"}</td>
+                        <td className="px-2 py-3 sm:px-4">{sp.pct_renewal!=null?<span className="font-bold" style={{color:pctColor(sp.pct_renewal)}}>{Math.round(sp.pct_renewal)} %</span>:"—"}</td>
+                        <td className="px-2 py-3 font-semibold text-ink sm:px-4">{Math.round(sp.new_business_keur||0).toLocaleString()}</td>
+                        <td className="px-2 py-3 sm:px-4"><span className="font-bold" style={{color:pctColor(sp.pct_new_business)}}>{Math.round(sp.pct_new_business||0)} %</span></td>
+                        <td className="px-2 py-3 font-semibold text-ink sm:px-4">{sp.nb_rfq}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1534,7 +1534,7 @@ function SettingsTab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
               <FL lbl="Total revenue M€">
                 <input
                   type="number" step="0.1" min="0"
@@ -1575,7 +1575,7 @@ function SettingsTab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
               <FL lbl="RFQ Automotive — per year">
                 <input
                   type="number" step="1" min="0"
@@ -1603,7 +1603,7 @@ function SettingsTab() {
               <p className="mb-3 text-base font-bold text-[#7c8da2]">
                 Monthly breakdown — computed
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {[
                   { lbl: "RFQ Automotive / month",  val: Math.round((parseInt(rfqAutoYear)   || 0) / 12).toLocaleString() },
                   { lbl: "RFQ Non-Automotive / month", val: Math.round((parseInt(rfqNonAutoYear) || 0) / 12).toLocaleString() },
@@ -1714,7 +1714,7 @@ export default function KpiDashboard() {
     <div className="min-h-screen">
       <TopBar />
 
-      <div className="px-4 py-8 md:px-5 md:py-9 xl:px-6 xl:py-10">
+      <div className="px-3 py-5 sm:px-4 sm:py-7 md:px-5 md:py-9 xl:px-6 xl:py-10">
         <div className="mx-auto flex w-full flex-col gap-6">
           <>
             {/* Hero — always visible */}
@@ -1724,7 +1724,7 @@ export default function KpiDashboard() {
               <div className="kpi-orb kpi-orb-three" />
               <div className="relative z-[1] flex flex-col gap-4">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <h1 className="flex items-center gap-2 font-display text-[1.6rem] leading-tight text-white md:text-[2rem]">
+                  <h1 className="flex items-center gap-2 font-display text-[1.25rem] leading-tight text-white sm:text-[1.6rem] md:text-[2rem]">
                     <BarChart3 className="h-6 w-6 shrink-0" />
                     KPI Dashboard
                   </h1>
@@ -1735,7 +1735,7 @@ export default function KpiDashboard() {
                   </div>
                 </div>
                 {/* Tab nav */}
-                <div className="flex gap-1 w-fit rounded-2xl bg-white/15 p-1 backdrop-blur-sm">
+                <div className="flex gap-1 w-fit rounded-2xl bg-white/15 p-1 backdrop-blur-sm overflow-x-auto">
                   {[
                     { id: "consolidated", label: "Consolidated KPI" },
                     { id: "pipeline",     label: "Pipeline RFQ" },
@@ -1744,7 +1744,7 @@ export default function KpiDashboard() {
                     <button
                       key={t.id}
                       onClick={() => setActiveTab(t.id)}
-                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      className={`rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition sm:px-4 sm:py-2 sm:text-sm ${
                         activeTab === t.id
                           ? "bg-white text-ink shadow"
                           : "text-white/80 hover:bg-white/15 hover:text-white"
@@ -1761,7 +1761,7 @@ export default function KpiDashboard() {
             {activeTab === "pipeline" && (loading ? <KpiLoadingState /> : (
               <>
               {/* Filters */}
-              <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 px-6 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl md:px-7 md:py-5">
+              <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 px-3 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:px-6 md:px-7 md:py-5">
                 <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-[#046eaf]/10 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-[#ef7807]/10 blur-3xl" />
 
@@ -1793,7 +1793,7 @@ export default function KpiDashboard() {
                   </button>
                 </div>
 
-                <div className="relative z-[1] grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                <div className="relative z-[1] grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   <FilterSelect
                     label="Timeframe"
                     value={filters.timeframe}
@@ -1840,7 +1840,7 @@ export default function KpiDashboard() {
               </section>
 
               {/* Pipeline metric cards */}
-              <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
                 <MetricCard icon={BriefcaseBusiness} tone="blue"    label="Total requests"    value={fmtCompact(summary.totalRequests)}   note="All requests visible after filters." />
                 <MetricCard icon={Activity}           tone="mint"    label="Open pipeline"     value={fmtCompact(summary.activeRequests)}  note={`${fmtKeur(summary.openAmount)} active in the commercial flow.`} />
                 <MetricCard icon={Layers3}            tone="sun"     label="Closed pipeline"   value={fmtCompact(summary.closedRequests)}  note="Cancelled and lost requests." />
@@ -1850,7 +1850,7 @@ export default function KpiDashboard() {
               </div>
 
               {/* Phase charts */}
-              <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+              <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <Panel eyebrow="Pipeline anatomy" title="Phase split & commercial weight"
                   subtitle="Request count and value across operating phases.">
                   <PhaseComboChart
@@ -1869,7 +1869,7 @@ export default function KpiDashboard() {
                 </Panel>
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-2">
+              <div className="grid gap-6 lg:grid-cols-2">
                 <Panel eyebrow="Phase x status" title="Status distribution by phase"
                   subtitle="See how each operating phase is split across its underlying statuses.">
                   <StackedDistributionChart
@@ -1887,7 +1887,7 @@ export default function KpiDashboard() {
               </div>
 
               {/* Trend charts */}
-              <div className="grid gap-6 xl:grid-cols-2">
+              <div className="grid gap-6 lg:grid-cols-2">
                 <Panel eyebrow="Volume trend" title="Monthly request creation"
                   subtitle="Spot surges and dips across the last 8 visible months.">
                   <LineAreaChart
@@ -1909,7 +1909,7 @@ export default function KpiDashboard() {
               </div>
 
               {/* Ranking charts */}
-              <div className="grid gap-6 xl:grid-cols-2">
+              <div className="grid gap-6 lg:grid-cols-2">
                 <Panel eyebrow="Status spread" title="Status concentration"
                   subtitle="Heaviest sub-statuses in the current slice.">
                   <StatusConcentrationChart data={summary.statusDistribution} />
