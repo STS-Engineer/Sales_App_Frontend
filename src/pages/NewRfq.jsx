@@ -5576,8 +5576,8 @@ export default function NewRfq() {
         <div className="w-full flex flex-1 min-h-0 flex-col overflow-auto lg:overflow-hidden">
           <div className="app-shell w-full flex flex-1 min-h-0 flex-col rounded-none border border-slate-200/70 shadow-card overflow-auto lg:overflow-hidden">
             <div className="flex flex-1 min-h-0 flex-col gap-6 lg:gap-2 overflow-auto lg:overflow-hidden">
-              <div className="px-3 pt-3 sm:px-6 sm:pt-6 lg:pt-1">
-                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+              <div className="px-4 pt-4">
+                <div className="flex flex-wrap items-center gap-4">
                   <button
                     type="button"
                     className="back-button"
@@ -5586,7 +5586,7 @@ export default function NewRfq() {
                     <span className="text-base">←</span>
                     Back
                   </button>
-                  <div className="flex-1 min-w-0 pt-2">
+                  <div className="flex-1 min-w-[240px] pt-2">
                     <div className="pipeline-shell newrfq-pipeline">
                       <div className="pipeline-bar">
                         {visibleStages.map((stage, index) => {
@@ -7784,7 +7784,7 @@ export default function NewRfq() {
                       </div>
                     </div>
 
-                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 sm:px-5 sm:pb-5 sm:pr-2 md:px-6 md:pb-6 lg:px-8 lg:pb-8 lg:overflow-y-auto">
+                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 sm:px-5 sm:pb-5 sm:pr-2 md:px-8 md:pb-8 lg:overflow-y-auto">
                       {activeStep === "step-client" ? (
                         <div
                           id="step-client"
