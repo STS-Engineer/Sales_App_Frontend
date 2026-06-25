@@ -877,6 +877,26 @@ const buildStepFocusRevealTarget = (
       highlight
     };
   }
+  if (LOGISTICS_SECTION_FIELDS.has(fieldName)) {
+    return {
+      stepId,
+      elementId: "rfq-logistics",
+      mode: "step",
+      fieldName: "",
+      updatedFields,
+      highlight
+    };
+  }
+  if (CONTACT_SECTION_FIELDS.has(fieldName)) {
+    return {
+      stepId,
+      elementId: "rfq-contact",
+      mode: "step",
+      fieldName: "",
+      updatedFields,
+      highlight
+    };
+  }
   return {
     stepId,
     mode: "field",
@@ -971,6 +991,10 @@ const buildRfqAutofillRevealTarget = (
   };
 };
 
+// Shared field sets used by both buildRfqChatFocusRevealTarget and buildStepFocusRevealTarget.
+const LOGISTICS_SECTION_FIELDS = new Set(["poDate", "ppapDate", "rfqReceptionDate", "expectedQuotationDate"]);
+const CONTACT_SECTION_FIELDS = new Set(["contactName", "contactFunction", "contactPhone", "contactEmail"]);
+
 const isProductsCollectionPrompt = (content = "") => {
   const normalized = String(content || "").trim().toLowerCase();
   if (!normalized) {
@@ -1048,6 +1072,12 @@ const isProductsCollectionPrompt = (content = "") => {
 const isVolumesCollectionPrompt = (content = "") => {
   const normalized = String(content || "").trim().toLowerCase();
   if (!normalized) return false;
+  // "For Product N (Part Number: ...), please provide the following in one message" — combined volumes question
+  if (
+    normalized.includes("for product") &&
+    normalized.includes("part number") &&
+    normalized.includes("please provide the following")
+  ) return true;
   // quantity / volumes
   if (
     normalized.includes("qty/year") ||
@@ -1123,7 +1153,12 @@ const buildRfqChatFocusRevealTarget = (
 
   // Volumes changes take priority over products changes — the LLM updates both
   // when saving qty/target price, but we want to show the Volumes table.
-  if (changedFields.includes("volumes")) {
+  // Exception: if the assistant is asking a products-collection question (e.g. "What is
+  // the Application for Product 2?"), a coincidental volumes touch must not hijack the scroll.
+  if (
+    changedFields.includes("volumes") &&
+    !(changedFields.includes("products") && isProductsCollectionPrompt(latestAssistantContent))
+  ) {
     return {
       stepId: "step-client",
       elementId: "rfq-volumes",
@@ -1133,8 +1168,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  const LOGISTICS_FIELDS = new Set(["poDate", "ppapDate", "rfqReceptionDate", "expectedQuotationDate"]);
-  const CONTACT_FIELDS = new Set(["contactName", "contactFunction", "contactPhone", "contactEmail"]);
   // Logistics/contact fields take priority over a coincident products update (e.g. when the LLM
   // saves dates while also touching the products array), so evaluate the products check only when
   // no logistics/contact fields changed.
@@ -1143,8 +1176,8 @@ const buildRfqChatFocusRevealTarget = (
   if (
     (changedFields.includes("products") || changedFields.some((f) => PRODUCT_TABLE_FIELDS.has(f))) &&
     !isVolumesCollectionPrompt(latestAssistantContent) &&
-    !changedFields.some((f) => LOGISTICS_FIELDS.has(f)) &&
-    !changedFields.some((f) => CONTACT_FIELDS.has(f))
+    !changedFields.some((f) => LOGISTICS_SECTION_FIELDS.has(f)) &&
+    !changedFields.some((f) => CONTACT_SECTION_FIELDS.has(f))
   ) {
     return {
       stepId: "step-client",
@@ -1155,7 +1188,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  if (changedFields.some((f) => LOGISTICS_FIELDS.has(f))) {
+  if (changedFields.some((f) => LOGISTICS_SECTION_FIELDS.has(f))) {
     return {
       stepId: "step-client",
       elementId: "rfq-logistics",
@@ -1165,7 +1198,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  if (changedFields.some((f) => CONTACT_FIELDS.has(f))) {
+  if (changedFields.some((f) => CONTACT_SECTION_FIELDS.has(f))) {
     return {
       stepId: "step-client",
       elementId: "rfq-contact",
@@ -1177,10 +1210,13 @@ const buildRfqChatFocusRevealTarget = (
   }
 
   // Volumes-question prompts anchor to the Volumes table.
+  // "For Product N (Part Number: ...)" → scroll to that product's specific row.
   if (isVolumesCollectionPrompt(latestAssistantContent)) {
+    const productMatch = latestAssistantContent.match(/for\s+\*{0,2}product\s+(\d+)\*{0,2}/i);
+    const rowIndex = productMatch ? parseInt(productMatch[1], 10) - 1 : null;
     return {
       stepId: "step-client",
-      elementId: "rfq-volumes",
+      elementId: rowIndex !== null && rowIndex >= 0 ? `rfq-volume-row-${rowIndex}` : "rfq-volumes",
       mode: "step",
       fieldName: "",
       updatedFields: changedFields,
@@ -1241,7 +1277,7 @@ const buildRfqChatFocusRevealTarget = (
     mergedFiles,
     rawRfqData
   );
-  if (nextIncompleteField && LOGISTICS_FIELDS.has(nextIncompleteField)) {
+  if (nextIncompleteField && LOGISTICS_SECTION_FIELDS.has(nextIncompleteField)) {
     return {
       stepId: "step-client",
       elementId: "rfq-logistics",
@@ -1251,7 +1287,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  if (nextIncompleteField && CONTACT_FIELDS.has(nextIncompleteField)) {
+  if (nextIncompleteField && CONTACT_SECTION_FIELDS.has(nextIncompleteField)) {
     return {
       stepId: "step-client",
       elementId: "rfq-contact",
@@ -3360,6 +3396,10 @@ export default function NewRfq() {
       // When elementId is set but the element isn't in the DOM yet, retry.
       if (pendingRfqAutofillReveal.elementId && !specificElement) {
         if (attempt >= 6) {
+          // For volume-row targets, fall back to the Volumes section header.
+          if (pendingRfqAutofillReveal.elementId.startsWith("rfq-volume-row-")) {
+            document.getElementById("rfq-volumes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
           setPendingRfqAutofillReveal(null);
           return;
         }
@@ -8392,14 +8432,14 @@ export default function NewRfq() {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {volumeRows.map((volume, volumeIndex) => {
-                                      const linkedProduct = productRows[volumeIndex] || createEmptyProductItem();
+                                    {productRows.map((linkedProduct, volumeIndex) => {
+                                      const volume = volumeRows[volumeIndex] || {};
                                       const rowSop = parseInt(linkedProduct.sop, 10);
                                       const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
                                         ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
                                         : new Set();
                                       return (
-                                        <tr key={`volume-${volumeIndex}`} className="border-t border-slate-200/70 bg-white">
+                                        <tr key={`volume-${volumeIndex}`} id={`rfq-volume-row-${volumeIndex}`} className="border-t border-slate-200/70 bg-white">
                                           <td className="px-3 py-3">
                                             <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
                                               {linkedProduct.partNumber || "—"}
