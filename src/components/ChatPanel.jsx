@@ -498,7 +498,7 @@ export default function ChatPanel({
   }, [composerDisabled, busy, messages.length]);
 
   return (
-    <div className="card flex h-full min-h-0 flex-col pt-6 pb-2 px-6 md:pt-7 md:pb-2 md:px-7">
+    <div className="card flex h-full min-h-0 flex-col pt-3 pb-2 px-3 md:pt-4 md:pb-2 md:px-4">
       <div className="flex items-center justify-between border-slate-200/70">
         <div className="flex items-center gap-3">
           {onCollapse ? (

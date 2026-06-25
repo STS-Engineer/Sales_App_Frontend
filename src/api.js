@@ -600,6 +600,13 @@ export async function deleteRoutingConfig(routingId) {
   });
 }
 
+export async function setRoutingAssignment(payload) {
+  return request("/api/owner/routing-config/assign", {
+    method: "PUT",
+    body: payload
+  });
+}
+
 export async function listProducts(productName = "") {
   const query = productName
     ? `?productName=${encodeURIComponent(productName)}`
@@ -690,5 +697,3 @@ export async function getKpiIndividual(email, year) {
 export async function getOwnerUsers() {
   return request("/api/owner/users");
 }
-
-

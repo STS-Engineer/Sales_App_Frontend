@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-import { Check, Eye, Files, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
+import { Check, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
@@ -44,14 +44,17 @@ import {
   mapBackendStatusToUi,
   mapBackendStatusToPipelineStage,
   mapChatHistory,
+  sanitizeAssistantChatContent,
   mapPotentialToForm,
   mapRfqDataToForm,
   calculateProductTargetTo,
   calculateTotalTargetTo,
   createEmptyProductItem,
+  createEmptyVolumeItem,
   getDeliveryZoneOptions,
   normalizeAutomotiveType,
   normalizeProductsForPayload,
+  normalizeVolumesForPayload,
   sanitizeNumberForInput
 } from "../utils/rfq.js";
 import { formatStandardTimestamp } from "../utils/dateUtils.js";
@@ -73,6 +76,7 @@ const initialForm = {
   productLine: "",
   projectName: "",
   products: [createEmptyProductItem()],
+  volumes: [createEmptyVolumeItem()],
   customerPn: "",
   costingData: "",
   deliveryZone: "",
@@ -226,7 +230,13 @@ const RFQ_STEP_REQUIREMENTS = {
 };
 
 const RFQ_PRODUCT_FIELD_REQUIREMENTS = {
+  product: STEP_REQUIREMENT_REQUIRED,
+  productLine: STEP_REQUIREMENT_REQUIRED,
+  application: STEP_REQUIREMENT_REQUIRED,
   partNumber: STEP_REQUIREMENT_REQUIRED,
+  drawing: STEP_REQUIREMENT_REQUIRED,
+  sop: STEP_REQUIREMENT_REQUIRED,
+  costingData: STEP_REQUIREMENT_OPTIONAL,
   revisionLevel: STEP_REQUIREMENT_OPTIONAL,
   quantity: STEP_REQUIREMENT_REQUIRED,
   targetPrice: STEP_REQUIREMENT_REQUIRED,
@@ -664,9 +674,11 @@ const hasCompleteProductCollection = (products = [], { includeOptional = false }
   Array.isArray(products) &&
   products.length > 0 &&
   products.every((product) =>
-    Object.keys(RFQ_PRODUCT_FIELD_REQUIREMENTS).every((fieldName) =>
-      isProductFieldFilled(product, fieldName, { includeOptional })
-    )
+    Object.keys(RFQ_PRODUCT_FIELD_REQUIREMENTS)
+      .filter((fieldName) => fieldName !== "drawing")
+      .every((fieldName) =>
+        isProductFieldFilled(product, fieldName, { includeOptional })
+      )
   );
 
 const hasMeaningfulValue = (value) => {
@@ -721,6 +733,10 @@ const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
       : String(nextValue ?? "").trim();
     return previousComparable !== nextComparable;
   });
+  // volumes is not in RFQ_STEP_REQUIREMENTS but must be tracked for scroll targeting
+  if (JSON.stringify(previousForm?.volumes || []) !== JSON.stringify(nextForm?.volumes || [])) {
+    changedFields.push("volumes");
+  }
 
   if (!changedFields.length) {
     return [];
@@ -851,7 +867,7 @@ const buildStepFocusRevealTarget = (
       highlight
     };
   }
-  if (fieldName === "products") {
+  if (fieldName === "products" || fieldName === "application") {
     return {
       stepId,
       elementId: "rfq-products",
@@ -928,15 +944,22 @@ const buildRfqAutofillRevealTarget = (
     )
     : "";
 
-  if (nextIncompleteFieldOnTargetStep === "products") {
+  if (nextIncompleteFieldOnTargetStep === "products" || nextIncompleteFieldOnTargetStep === "application") {
     return buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, rawRfqData, {
       highlight: false,
       updatedFields: changedFields
     });
   }
 
-  if (!wasClamped && lastChangedField === "products") {
-    return null;
+  if (!wasClamped && (lastChangedField === "products" || lastChangedField === "application")) {
+    return {
+      stepId: targetStepId,
+      elementId: "rfq-products",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
   }
 
   return {
@@ -953,6 +976,58 @@ const isProductsCollectionPrompt = (content = "") => {
   if (!normalized) {
     return false;
   }
+  // product name selection question (start of products section)
+  if (
+    normalized.includes("which product") ||
+    normalized.includes("product name should we use") ||
+    normalized.includes("product would you like")
+  ) {
+    return true;
+  }
+  // "add another product" question after completing a full product row
+  if (normalized.includes("would you like to add another product")) {
+    return true;
+  }
+  // fallback text: "Please provide the [ordinal] product details"
+  if (
+    normalized.includes("please provide the first product details") ||
+    normalized.includes("please provide the next product details") ||
+    normalized.includes("product details (one line item)")
+  ) {
+    return true;
+  }
+  // asking for application (products table field — no standalone DOM input)
+  if (
+    normalized.includes("what is the application") ||
+    normalized.includes("application for this part") ||
+    normalized.includes("application for the part") ||
+    normalized.includes("the application for this")
+  ) {
+    return true;
+  }
+  // asking for part number, drawing, or sop year (products table fields)
+  if (
+    normalized.includes("what is the part number") ||
+    normalized.includes("please provide the part number") ||
+    normalized.includes("part number for")
+  ) {
+    return true;
+  }
+  if (
+    (normalized.includes("drawing") || normalized.includes("attach file")) &&
+    (normalized.includes("upload") || normalized.includes("please"))
+  ) {
+    return true;
+  }
+  if (normalized.includes("sop year") && normalized.includes("?")) {
+    return true;
+  }
+  // asking for costing data (optional products table field).
+  // The LLM uses "Please provide the Costing Data values…" — no "?", so don't require it.
+  if (normalized.includes("costing data")) {
+    return true;
+  }
+  // original phrases (backwards compatibility)
   if (normalized.includes("would you like to add another part number to this request")) {
     return true;
   }
@@ -968,6 +1043,59 @@ const isProductsCollectionPrompt = (content = "") => {
     normalized.includes("currency") &&
     normalized.includes("price source")
   );
+};
+
+const isVolumesCollectionPrompt = (content = "") => {
+  const normalized = String(content || "").trim().toLowerCase();
+  if (!normalized) return false;
+  // quantity / volumes
+  if (
+    normalized.includes("qty/year") ||
+    normalized.includes("qty / year") ||
+    normalized.includes("quantity per year") ||
+    normalized.includes("yearly breakdown") ||
+    normalized.includes("annual volume") ||
+    normalized.includes("units per year") ||
+    normalized.includes("how many units") ||
+    normalized.includes("volumes table") ||
+    (normalized.includes("quantity") && normalized.includes("year"))
+  ) return true;
+  // target price / currency (volumes step) — only when the question is clearly about volumes
+  // (guard against LLM mentioning target price in a products-phase confirmation)
+  if (
+    (normalized.includes("target price") || normalized.includes("price and currency")) &&
+    !normalized.includes("would you like to add another product") &&
+    !normalized.includes("part number for product")
+  ) return true;
+  // price source
+  if (normalized.includes("price source")) return true;
+  if (normalized.includes("estimated") && normalized.includes("official")) return true;
+  // delivery zone / plant / country
+  if (normalized.includes("delivery zone")) return true;
+  if (normalized.includes("delivery plant") && normalized.includes("?")) return true;
+  return false;
+};
+
+const isLogisticsCollectionPrompt = (content = "") => {
+  const normalized = String(content || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized.includes("po date")) return true;
+  if (normalized.includes("ppap date")) return true;
+  if (normalized.includes("rfq reception date")) return true;
+  if (normalized.includes("reception date")) return true;
+  if (normalized.includes("expected quotation date")) return true;
+  if (normalized.includes("quotation date")) return true;
+  return false;
+};
+
+const isContactCollectionPrompt = (content = "") => {
+  const normalized = String(content || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized.includes("contact name")) return true;
+  if (normalized.includes("contact function")) return true;
+  if (normalized.includes("contact phone")) return true;
+  if (normalized.includes("contact email")) return true;
+  return false;
 };
 
 const getLatestAssistantMessageContent = (messages = []) => {
@@ -992,10 +1120,141 @@ const buildRfqChatFocusRevealTarget = (
   // products) and the step-fallback (which would incorrectly scroll to the top
   // of step-client).
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
-  if (changedFields.includes("products")) {
+
+  // Volumes changes take priority over products changes — the LLM updates both
+  // when saving qty/target price, but we want to show the Volumes table.
+  if (changedFields.includes("volumes")) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-volumes",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+  const LOGISTICS_FIELDS = new Set(["poDate", "ppapDate", "rfqReceptionDate", "expectedQuotationDate"]);
+  const CONTACT_FIELDS = new Set(["contactName", "contactFunction", "contactPhone", "contactEmail"]);
+  // Logistics/contact fields take priority over a coincident products update (e.g. when the LLM
+  // saves dates while also touching the products array), so evaluate the products check only when
+  // no logistics/contact fields changed.
+  // costingData can be saved top-level (not inside products array) — treat it as a products-table change.
+  const PRODUCT_TABLE_FIELDS = new Set(["costingData"]);
+  if (
+    (changedFields.includes("products") || changedFields.some((f) => PRODUCT_TABLE_FIELDS.has(f))) &&
+    !isVolumesCollectionPrompt(latestAssistantContent) &&
+    !changedFields.some((f) => LOGISTICS_FIELDS.has(f)) &&
+    !changedFields.some((f) => CONTACT_FIELDS.has(f))
+  ) {
     return {
       stepId: "step-client",
       elementId: "rfq-products",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+  if (changedFields.some((f) => LOGISTICS_FIELDS.has(f))) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-logistics",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+  if (changedFields.some((f) => CONTACT_FIELDS.has(f))) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-contact",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+
+  // Volumes-question prompts anchor to the Volumes table.
+  if (isVolumesCollectionPrompt(latestAssistantContent)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-volumes",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+
+  // Products-question prompts always anchor to the Products table.
+  if (isProductsCollectionPrompt(latestAssistantContent)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-products",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+
+  // Logistics-question prompts anchor to the Logistics details section.
+  if (isLogisticsCollectionPrompt(latestAssistantContent)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-logistics",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+
+  // Contact-question prompts anchor to the Contact details section.
+  if (isContactCollectionPrompt(latestAssistantContent)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-contact",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+
+  // Basic-info fields (customer, project name, automotive type, delivery zone at
+  // top-level) are at the very top of step-client — don't let autofill redirect
+  // to rfq-products just because application/productName aren't filled yet.
+  const BASIC_INFO_FIELDS = new Set(["automotiveType", "customer", "projectName", "deliveryZone", "plant", "country"]);
+  if (changedFields.length > 0 && changedFields.every((f) => BASIC_INFO_FIELDS.has(f))) {
+    return null;
+  }
+
+  // Form-state anchor: when message-text matching above didn't catch the context
+  // (unusual LLM phrasing, concurrent field saves, etc.), use the next incomplete
+  // workflow field to decide which section needs attention.
+  const nextIncompleteField = getFirstIncompleteWorkflowField(
+    "step-client",
+    nextForm,
+    mergedFiles,
+    rawRfqData
+  );
+  if (nextIncompleteField && LOGISTICS_FIELDS.has(nextIncompleteField)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-logistics",
+      mode: "step",
+      fieldName: "",
+      updatedFields: changedFields,
+      highlight: false
+    };
+  }
+  if (nextIncompleteField && CONTACT_FIELDS.has(nextIncompleteField)) {
+    return {
+      stepId: "step-client",
+      elementId: "rfq-contact",
       mode: "step",
       fieldName: "",
       updatedFields: changedFields,
@@ -1011,17 +1270,6 @@ const buildRfqChatFocusRevealTarget = (
   );
   if (autofillRevealTarget) {
     return autofillRevealTarget;
-  }
-
-  if (isProductsCollectionPrompt(latestAssistantContent)) {
-    return {
-      stepId: "step-client",
-      elementId: "rfq-products",
-      mode: "step",
-      fieldName: "",
-      updatedFields: changedFields,
-      highlight: false
-    };
   }
 
   const nextStepCompletion = getRfqStepCompletionMap(
@@ -1724,7 +1972,8 @@ const buildRfqDataPayloadFromForm = (form = {}) => {
     final_recommendation: form.finalRecommendation || "",
     to_total: totalTargetTo > 0 ? totalTargetTo / 1000 : form.toTotal || "",
     to_total_local: form.toTotalLocal || "",
-    zone_manager_email: form.validatorEmail || ""
+    zone_manager_email: form.validatorEmail || "",
+    volumes: normalizeVolumesForPayload(form.volumes)
   };
 };
 const buildRevisionGreeting = (revisionNotes = "") => {
@@ -2669,6 +2918,18 @@ export default function NewRfq() {
     isCostingStage && costingDisplaySubPhase === "Feasability";
   const isCostingPricingView =
     isCostingStage && costingDisplaySubPhase === "Pricing";
+
+    // SharePoint button — URL comes exclusively from the backend (rfq_data.sharepoint.folder_url)
+  const sharePointUrl =
+    rfqSnapshot?.rfq_data?.sharepoint?.folder_url ||
+    rfqSnapshot?.rfq_data?.sharepoint_folder_url || // legacy fallback
+    "";
+  const shouldShowSharePointButton = isCostingFeasabilityView || isCostingPricingView;
+  const handleOpenSharePoint = () => {
+    if (!sharePointUrl) return;
+    window.open(sharePointUrl, "_blank", "noopener,noreferrer");
+  };
+   
   const offerDisplaySubPhase = isOfferStage
     ? normalizeOfferSubPhase(
       selectedSubPhase || getActiveDisplaySubPhase("Offer") || "Offer preparation"
@@ -3532,6 +3793,42 @@ export default function NewRfq() {
     }
   };
 
+  // Poll after RFQ approval until rfq_data.sharepoint.folder_url is populated by the backend
+  // background task. Updates only rfqSnapshot so the SharePoint button activates automatically.
+  // Fire-and-forget — does not block UI. Max 15 attempts × 2 s = 30 s total.
+  const waitForSharePointUrl = (targetId) => {
+    const idToLoad = targetId || rfqId;
+    if (!idToLoad) return;
+ 
+    let attempt = 0;
+    const maxAttempts = 15;
+    const delayMs = 2000;
+ 
+    const poll = async () => {
+      if (attempt >= maxAttempts) return;
+      attempt++;
+      try {
+        const { rfq } = await loadRfqSnapshot(idToLoad);
+        const url = rfq?.rfq_data?.sharepoint?.folder_url || "";
+        console.log("DEBUG SHAREPOINT AFTER VALIDATION", {
+          attempt,
+          rfqId: idToLoad,
+          rfqData: rfq?.rfq_data,
+          sharePointUrl: url,
+        });
+        if (url) {
+          setRfqSnapshot(rfq);
+          return;
+        }
+      } catch {
+        // silent — polling failures must never disrupt the UI
+      }
+      setTimeout(poll, delayMs);
+    };
+ 
+    setTimeout(poll, delayMs);
+  };
+
   const ensureRfqExists = async () => {
     if (rfqId) {
       return rfqId;
@@ -3905,7 +4202,7 @@ export default function NewRfq() {
   };
 
   const handleProductChange = (index, fieldName, value) => {
-    if (isFormalDocumentTab && rfqFormFieldReadOnly) {
+    if (fieldName !== "drawing" && isFormalDocumentTab && rfqFormFieldReadOnly) {
       return;
     }
     setForm((prev) => {
@@ -3944,6 +4241,7 @@ export default function NewRfq() {
       const sharedCurrency = sanitizeProductCurrencyCode(
         currentProducts[0]?.currency || prev.targetPriceCurrency
       );
+      const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
       return {
         ...prev,
         products: [
@@ -3952,7 +4250,8 @@ export default function NewRfq() {
             ...createEmptyProductItem(),
             currency: sharedCurrency
           }
-        ]
+        ],
+        volumes: [...currentVolumes, createEmptyVolumeItem()]
       };
     });
   };
@@ -3967,11 +4266,32 @@ export default function NewRfq() {
         : [createEmptyProductItem()];
       const nextProducts = currentProducts.filter((_, productIndex) => productIndex !== index);
       const safeProducts = nextProducts.length ? nextProducts : [createEmptyProductItem()];
+      const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
+      const nextVolumes = currentVolumes.filter((_, volumeIndex) => volumeIndex !== index);
       return {
         ...prev,
         products: safeProducts,
+        volumes: nextVolumes,
         ...buildProductMirrorFields(safeProducts)
       };
+    });
+  };
+
+  const handleVolumeChange = (index, fieldName, value) => {
+    if (isFormalDocumentTab && rfqFormFieldReadOnly) {
+      return;
+    }
+    setForm((prev) => {
+      const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
+      const nextVolumes = currentVolumes.map((volume, volumeIndex) => {
+        if (volumeIndex !== index) return volume;
+        if (fieldName.startsWith("volumes.")) {
+          const year = fieldName.slice("volumes.".length);
+          return { ...volume, volumes: { ...volume.volumes, [year]: value } };
+        }
+        return { ...volume, [fieldName]: value };
+      });
+      return { ...prev, volumes: nextVolumes };
     });
   };
 
@@ -4254,7 +4574,7 @@ export default function NewRfq() {
         visibleMessageIndex,
         message: trimmedMessage
       });
-      finalAssistantResponse = String(reply?.response || "");
+      finalAssistantResponse = sanitizeAssistantChatContent(String(reply?.response || ""));
     } catch (error) {
       setRfqChatMessages(previousMessages);
       setRfqError(error?.message || "Unable to update this chat message.");
@@ -4300,7 +4620,7 @@ export default function NewRfq() {
         visibleMessageIndex,
         message: trimmedMessage
       });
-      finalAssistantResponse = String(reply?.response || "");
+      finalAssistantResponse = sanitizeAssistantChatContent(String(reply?.response || ""));
       if (reply?.lock_chat) {
         setPotentialChatCompleted(true);
       }
@@ -4352,7 +4672,7 @@ export default function NewRfq() {
         visibleMessageIndex,
         message: trimmedMessage
       });
-      finalAssistantResponse = String(reply?.response || "");
+      finalAssistantResponse = sanitizeAssistantChatContent(String(reply?.response || ""));
       if (reply?.rfq) {
         applyRfq(reply.rfq);
       }
@@ -4475,7 +4795,7 @@ export default function NewRfq() {
               activeFormalDocumentType
             );
       shouldAutoRedirect = Boolean(reply?.auto_redirect);
-      finalAssistantResponse = String(reply?.response || "");
+      finalAssistantResponse = sanitizeAssistantChatContent(String(reply?.response || ""));
       replyRfq = reply?.rfq || null;
       if (reply?.lock_chat && activeChatMode === "potential") {
         setPotentialChatCompleted(true);
@@ -4665,6 +4985,7 @@ export default function NewRfq() {
       setSelectedStage("RFQ");
       setSelectedSubPhase("Validation");
       setValidationSuccess(`${formalDocumentLabel} approved successfully.`);
+      waitForSharePointUrl(rfqId);
     } catch (error) {
       setRfqError(error?.message || `Unable to approve this ${formalDocumentLabel}.`);
     } finally {
@@ -5303,6 +5624,30 @@ export default function NewRfq() {
   const productRows = Array.isArray(form.products) && form.products.length
     ? form.products
     : [createEmptyProductItem()];
+  const volumeRows = Array.isArray(form.volumes) ? form.volumes : [];
+  const volumeYearColumns = useMemo(() => {
+    const allYears = new Set();
+    productRows.forEach((product) => {
+      const sopYear = parseInt(product.sop, 10);
+      if (!Number.isNaN(sopYear) && sopYear > 1900) {
+        for (let i = 0; i < 5; i++) allYears.add(sopYear + i);
+      }
+    });
+    return Array.from(allYears).sort((a, b) => a - b);
+  }, [productRows]);
+  const totalTargetToK = useMemo(() => {
+    return volumeRows.reduce((total, volume, idx) => {
+      const linkedProduct = productRows[idx] || createEmptyProductItem();
+      const rowSop = parseInt(linkedProduct.sop, 10);
+      const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
+        ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
+        : new Set();
+      const totalQty = volumeYearColumns.reduce((sum, year) => {
+        return sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0);
+      }, 0);
+      return total + totalQty * Number(volume.targetPrice || 0);
+    }, 0);
+  }, [volumeRows, productRows, volumeYearColumns]);
   const deliveryZoneOptions = useMemo(
     () => getDeliveryZoneOptions(form.deliveryZone),
     [form.deliveryZone]
@@ -5576,7 +5921,7 @@ export default function NewRfq() {
         <div className="w-full flex flex-1 min-h-0 flex-col overflow-auto lg:overflow-hidden">
           <div className="app-shell w-full flex flex-1 min-h-0 flex-col rounded-none border border-slate-200/70 shadow-card overflow-auto lg:overflow-hidden">
             <div className="flex flex-1 min-h-0 flex-col gap-6 lg:gap-2 overflow-auto lg:overflow-hidden">
-              <div className="px-4 pt-4">
+              <div className="px-4 pt-2">
                 <div className="flex flex-wrap items-center gap-4">
                   <button
                     type="button"
@@ -6051,15 +6396,35 @@ export default function NewRfq() {
               ) : null}
 
               <div
-                className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.42fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)_var(--chat-col)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-auto lg:overflow-hidden"
+                className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.32fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)_var(--chat-col)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-auto lg:overflow-hidden"
                 style={{
-                  "--nav-col": navCollapsed ? "72px" : "0.45fr",
+                  "--nav-col": navCollapsed ? "72px" : "0.35fr",
                   "--chat-col": chatCollapsed ? "72px" : `${chatWidth}px`
                 }}
               >
                 {!isRfqStage ? (
                   isCostingStage ? (
                     <section className="card col-span-full flex min-h-[280px] flex-col gap-6 overflow-x-hidden overflow-y-auto p-6 sm:p-8 lg:h-full lg:min-h-0">
+                      {shouldShowSharePointButton && (
+                        <div className="flex justify-end">
+                          {console.log("DEBUG SHAREPOINT BUTTON URL", {
+                            rfqData: rfqSnapshot?.rfq_data,
+                            sharepointData: rfqSnapshot?.rfq_data?.sharepoint,
+                            sharePointUrl,
+                            shouldShowSharePointButton,
+                          }) || null}
+                          <button
+                            type="button"
+                            disabled={!sharePointUrl}
+                            onClick={handleOpenSharePoint}
+                            title={sharePointUrl ? "Open SharePoint folder" : "SharePoint link not available yet"}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <FolderOpen className="h-4 w-4" />
+                            SharePoint
+                          </button>
+                        </div>
+                      )}
                       {!isCostingPricingView ? (
                         <>
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
@@ -6971,7 +7336,7 @@ export default function NewRfq() {
 
                     </section>
                   ) : isOfferStage ? (
-                    <section className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+                    <section className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-3 sm:p-4 md:p-5 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
                       <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="max-w-3xl">
@@ -7046,7 +7411,7 @@ export default function NewRfq() {
                 {isRfqFormView && activeRfqTab === "potential" ? (
                   <form
                     onSubmit={handleSubmit}
-                    className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-5 sm:p-7 md:p-8 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto"
+                    className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-3 sm:p-4 md:p-5 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto"
                   >
                     <div className="relative flex flex-wrap items-start justify-between gap-4">
                       <div>
@@ -7064,7 +7429,7 @@ export default function NewRfq() {
                     <div className="relative grid gap-6">
                       <section
                         id="potential-section-overview"
-                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-tide/10 text-sm font-semibold text-tide">
@@ -7089,7 +7454,7 @@ export default function NewRfq() {
 
                       <section
                         id="potential-section-strategy"
-                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sun/10 text-sm font-semibold text-sun">
@@ -7123,7 +7488,7 @@ export default function NewRfq() {
 
                       <section
                         id="potential-section-business"
-                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-mint/10 text-sm font-semibold text-mint">
@@ -7151,7 +7516,7 @@ export default function NewRfq() {
 
                       <section
                         id="potential-section-risks-do"
-                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-coral/10 text-sm font-semibold text-coral">
@@ -7181,7 +7546,7 @@ export default function NewRfq() {
 
                       <section
                         id="potential-section-risks-not-do"
-                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-ink/5 text-sm font-semibold text-ink">
@@ -7211,7 +7576,7 @@ export default function NewRfq() {
 
                       <section
                         id="potential-section-contact"
-                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md"
+                        className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-sm font-semibold text-slate-600">
@@ -7279,7 +7644,7 @@ export default function NewRfq() {
 
                 {showRfqStepNavigation ? (
                   <aside
-                    className={`card flex flex-col ${navCollapsed ? "p-3 sm:p-4" : "px-4 pt-4 pb-0 sm:px-6 sm:pt-6 sm:pb-0"
+                    className={`card flex flex-col ${navCollapsed ? "p-3 sm:p-4" : "px-3 pt-4 pb-0 sm:px-4 sm:pt-5 sm:pb-0"
                       } lg:sticky lg:top-0 lg:h-full lg:min-h-0`}
                   >
                     <div className={`flex items-center ${navCollapsed ? "justify-center" : "justify-between"}`}>
@@ -7403,7 +7768,7 @@ export default function NewRfq() {
                               onClick={() => handleStepViewChange(step.id)}
                               aria-pressed={isActive}
                               aria-disabled={isLocked || undefined}
-                              className={`group flex w-full gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition lg:px-3 lg:py-2 lg:text-[13px] ${isActive
+                              className={`group flex w-full gap-3 rounded-2xl border px-3 py-2 text-left text-sm transition lg:px-2.5 lg:py-1.5 lg:text-[13px] ${isActive
                                 ? `${style.ring} ${style.bg} shadow-soft`
                                 : isLocked
                                   ? "cursor-not-allowed border-slate-200/70 bg-slate-50 text-slate-300"
@@ -7784,414 +8149,447 @@ export default function NewRfq() {
                       </div>
                     </div>
 
-                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 sm:px-5 sm:pb-5 sm:pr-2 md:px-8 md:pb-8 lg:overflow-y-auto">
+                    <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 sm:px-4 sm:pb-4 md:px-5 md:pb-5 lg:overflow-y-auto">
                       {activeStep === "step-client" ? (
                         <div
                           id="step-client"
                           className="scroll-mt-28 space-y-4"
                         >
                           <div className="flex flex-col gap-5">
-                            <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                            <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Automotive / Non automotive" name="automotiveType" value={form.automotiveType} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("automotiveType")} />
                                 <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
-                                <FormField label="Application" name="application" value={form.application} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("application")} />
-                                <FormField label="Product name" name="productName" value={form.productName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productName")} />
-                                <FormField label="Product line" name="productLine" value={form.productLine} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("productLine")} />
-                                <FormField label="Costing data" name="costingData" value={form.costingData} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("costingData")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
-                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500 lg:col-span-1">
-                                  {renderRequirementLabel(
-                                    `${formalDocumentLabel} Files`,
-                                    getRfqFieldRequirementProps("rfqFiles")
-                                  )}
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    <button
-                                      type="button"
-                                      className="outline-button px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"
-                                      onClick={() => rfqFileInputRef.current?.click()}
-                                      disabled={!allowFileUpload}
-                                    >
-                                      Choose files
-                                    </button>
-                                    <span className="text-xs font-medium text-slate-500">
-                                      {mergedFiles.length
-                                        ? `${mergedFiles.length} file${mergedFiles.length > 1 ? "s" : ""}`
-                                        : "No files"}
-                                    </span>
-                                  </div>
-                                  <input
-                                    ref={rfqFileInputRef}
-                                    type="file"
-                                    multiple
-                                    className="hidden"
-                                    onChange={handleFilesChange}
-                                    disabled={!allowFileUpload}
-                                  />
-                                  {mergedFiles.length ? (
-                                    <div className="mt-3 flex flex-col gap-2 normal-case">
-                                      {mergedFiles.map((file) => {
-                                        const canPreview = Boolean(file.url);
-                                        const isDeleting = fileActionId === file.id;
-                                        const isPreviewing = filePreviewLoadingId === file.id;
-                                        return (
-                                          <div
-                                            key={file.id}
-                                            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/70 bg-white/90 px-3 py-2 text-[11px] font-medium text-slate-600"
-                                          >
-                                            <button
-                                              type="button"
-                                              className={`inline-flex items-center gap-2 truncate text-left ${canPreview ? "hover:text-ink" : "cursor-not-allowed opacity-60"
-                                                }`}
-                                              onClick={() => handlePreviewFile(file)}
-                                              disabled={!canPreview || isPreviewing}
-                                            >
-                                              <span className="h-2 w-2 rounded-full bg-slate-400" />
-                                              <span className="max-w-[200px] truncate">{file.name}</span>
-                                            </button>
-                                            <div className="flex items-center gap-2">
-                                              <button
-                                                type="button"
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
-                                                onClick={() => handlePreviewFile(file)}
-                                                disabled={!canPreview || isPreviewing}
-                                                aria-label="View file"
-                                                title={isPreviewing ? "Loading..." : "View"}
-                                              >
-                                                <Eye className="h-4 w-4" />
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                                onClick={() => setFileDeleteTarget(file)}
-                                                disabled={isDeleting || !allowFileDeletion}
-                                                aria-label="Delete file"
-                                                title={isDeleting ? "Removing..." : "Delete"}
-                                              >
-                                                <Trash2 className="h-4 w-4" />
-                                              </button>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                </label>
+                              </div>
+                            </div>
 
-                                <div className="lg:col-span-2 scroll-mt-28 min-w-0" id="rfq-products">
-                                  <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                                        Products
-                                      </p>
-                                    </div>
-                                    {!rfqFormFieldReadOnly && (
-                                      <button
-                                        type="button"
-                                        className="outline-button inline-flex items-center gap-2 px-3 py-2 text-xs"
-                                        onClick={handleAddProduct}
-                                      >
-                                        <Plus className="h-4 w-4" />
-                                        Add Product
-                                      </button>
-                                    )}
-                                  </div>
-                                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200/70">
-                                    <table className="w-full min-w-[980px] text-left text-xs">
+                            <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <h3 className="mt-2 font-display text-xl font-semibold text-sun">Products</h3>
+                                {!rfqFormFieldReadOnly && (
+                                  <button
+                                    type="button"
+                                    className="outline-button inline-flex items-center gap-2 px-3 py-2 text-xs"
+                                    onClick={handleAddProduct}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                    Add Product
+                                  </button>
+                                )}
+                              </div>
+                              <div id="rfq-products" className="scroll-mt-28 mt-3 overflow-x-auto rounded-xl border border-slate-200/70">
+                                    <table className="w-full min-w-[900px] text-left text-xs">
                                       <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
                                         <tr>
-                                          <th className="px-3 py-3">
-                                            {renderRequirementLabel(
-                                              "Part Number",
-                                              getProductFieldRequirementProps("partNumber")
-                                            )}
-                                          </th>
-                                          <th className="px-3 py-3">
-                                            {renderRequirementLabel(
-                                              "Revision Level",
-                                              getProductFieldRequirementProps("revisionLevel")
-                                            )}
-                                          </th>
-                                          <th className="px-3 py-3">
-                                            {renderRequirementLabel(
-                                              "Quantity",
-                                              getProductFieldRequirementProps("quantity")
-                                            )}
-                                          </th>
-                                          <th className="px-3 py-3">
-                                            {renderRequirementLabel(
-                                              "Target Price",
-                                              getProductFieldRequirementProps("targetPrice")
-                                            )}
-                                          </th>
-                                          <th className="px-3 py-3">
-                                            {sharedProductCurrency
-                                              ? `Target TO (k${sharedProductCurrency})`
-                                              : "Target TO (k)"}
-                                          </th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("Product", getProductFieldRequirementProps("product"))}</th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("Product Line", getProductFieldRequirementProps("productLine"))}</th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("Costing Data", getProductFieldRequirementProps("costingData"))}</th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("Application", getProductFieldRequirementProps("application"))}</th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("Part Number", getProductFieldRequirementProps("partNumber"))}</th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("Drawing", getProductFieldRequirementProps("drawing"))}</th>
+                                          <th className="px-3 py-3">{renderRequirementLabel("SOP Year", getProductFieldRequirementProps("sop"))}</th>
                                           <th className="px-3 py-3" aria-label="Remove product" />
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {productRows.map((product, productIndex) => {
-                                          const rowTargetTo = calculateProductTargetTo(product);
-                                          const rowTargetToNumber = parseNumericInputValue(rowTargetTo);
-                                          const rowCurrency = sanitizeProductCurrencyCode(product.currency);
-                                          const rowRate = ratesByCurrency[rowCurrency];
-                                          const rowRateLoading = loadingByCurrency[rowCurrency];
-                                          const rowFallbackUsed = fallbackByCurrency[rowCurrency];
-                                          const rowPriceNumber = parseNumericInputValue(product.targetPrice);
-                                          const rowEurPreview = rowCurrency &&
-                                            rowCurrency !== "EUR" &&
-                                            rowPriceNumber !== null &&
-                                            Number.isFinite(rowRate)
-                                            ? rowPriceNumber * rowRate
-                                            : null;
-                                          const rowTargetToEurPreview = rowCurrency &&
-                                            rowCurrency !== "EUR" &&
-                                            rowTargetToNumber !== null &&
-                                            Number.isFinite(rowRate)
-                                            ? rowTargetToNumber * rowRate
-                                            : null;
-                                          const rowPriceSourceLabel = product.targetPriceIsEstimated === true
-                                            ? "Estimated"
-                                            : product.targetPriceIsEstimated === false
-                                              ? "Official Customer Price"
-                                              : "";
-                                          return (
-                                            <tr key={`product-${productIndex}`} className="border-t border-slate-200/70 bg-white">
-                                              <td className="px-3 py-3">
-                                                {rfqFormFieldReadOnly ? (
-                                                  <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
-                                                    {product.partNumber || "—"}
-                                                  </div>
-                                                ) : (
-                                                  <input
-                                                    className="input-field min-w-[130px]"
-                                                    value={product.partNumber || ""}
-                                                    onChange={(event) => handleProductChange(productIndex, "partNumber", event.target.value)}
-                                                    readOnly={rfqFormFieldReadOnly}
-                                                    aria-label={`Product ${productIndex + 1} part number`}
-                                                  />
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-3">
-                                                {rfqFormFieldReadOnly ? (
-                                                  <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
-                                                    {product.revisionLevel || "—"}
-                                                  </div>
-                                                ) : (
-                                                  <input
-                                                    className="input-field min-w-[120px]"
-                                                    value={product.revisionLevel || ""}
-                                                    onChange={(event) => handleProductChange(productIndex, "revisionLevel", event.target.value)}
-                                                    readOnly={rfqFormFieldReadOnly}
-                                                    aria-label={`Product ${productIndex + 1} revision level`}
-                                                  />
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-3">
-                                                {rfqFormFieldReadOnly ? (
-                                                  <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
-                                                    {formatTurnover(product.quantity) || "—"}
-                                                  </div>
-                                                ) : (
-                                                  <input
-                                                    className="input-field min-w-[110px]"
-                                                    type="number"
-                                                    value={product.quantity ?? ""}
-                                                    onChange={(event) => handleProductChange(productIndex, "quantity", event.target.value)}
-                                                    readOnly={rfqFormFieldReadOnly}
-                                                    aria-label={`Product ${productIndex + 1} quantity`}
-                                                  />
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-3">
-                                                <div className="min-w-[280px] space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
-                                                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                    {renderRequirementLabel(
-                                                      "Target price",
-                                                      getProductFieldRequirementProps("targetPrice")
-                                                    )}
-                                                    {renderRequirementLabel(
-                                                      "Currency",
-                                                      getProductFieldRequirementProps("currency")
-                                                    )}
-                                                  </div>
-                                                  {rfqFormFieldReadOnly ? (
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                      <div className="text-sm font-semibold text-ink">
-                                                        {formatTurnover(product.targetPrice) || "—"}
-                                                      </div>
-                                                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                                        {rowCurrency || "—"}
-                                                      </span>
-                                                    </div>
-                                                  ) : (
-                                                    <div className="flex items-start gap-2">
-                                                      <input
-                                                        className="input-field min-w-0 flex-1"
-                                                        type="number"
-                                                        value={product.targetPrice ?? ""}
-                                                        onChange={(event) => handleProductChange(productIndex, "targetPrice", event.target.value)}
-                                                        aria-label={`Product ${productIndex + 1} target price`}
-                                                      />
-                                                      <input
-                                                        className="w-20 rounded-2xl border border-slate-300/60 bg-white px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-ink shadow-sm transition placeholder:text-slate-300 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20"
-                                                        value={rowCurrency}
-                                                        onChange={(event) => handleProductChange(productIndex, "currency", event.target.value)}
-                                                        maxLength={3}
-                                                        placeholder="EUR"
-                                                        aria-label={`Product ${productIndex + 1} currency`}
-                                                      />
-                                                    </div>
-                                                  )}
-                                                  {rowCurrency && rowCurrency !== "EUR" && rowPriceNumber !== null ? (
-                                                    <p className="text-[11px] font-medium text-slate-400">
-                                                      {rowFallbackUsed
-                                                        ? "FX unavailable"
-                                                        : rowRateLoading
-                                                          ? "Loading FX..."
-                                                          : rowEurPreview !== null
-                                                            ? `≈ ${formatInlineEurPreview(rowEurPreview)} EUR`
-                                                            : ""}
-                                                    </p>
-                                                  ) : null}
-                                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                    {renderRequirementLabel(
-                                                      "Price source",
-                                                      getProductFieldRequirementProps("targetPriceIsEstimated")
-                                                    )}
-                                                  </div>
-                                                  <div className="flex flex-wrap gap-2">
-                                                    {rfqFormFieldReadOnly ? (
-                                                      rowPriceSourceLabel ? (
-                                                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${getPriceSourceBadgeClasses(product.targetPriceIsEstimated === true)}`}>
-                                                          {rowPriceSourceLabel}
+                                        {productRows.map((product, productIndex) => (
+                                          <tr key={`product-${productIndex}`} className="border-t border-slate-200/70 bg-white">
+                                            <td className="px-3 py-3">
+                                              {rfqFormFieldReadOnly ? (
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
+                                                  {product.product || "—"}
+                                                </div>
+                                              ) : (
+                                                <input
+                                                  className="input-field min-w-[120px]"
+                                                  value={product.product || ""}
+                                                  onChange={(e) => handleProductChange(productIndex, "product", e.target.value)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  aria-label={`Product ${productIndex + 1} product`}
+                                                />
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                              {rfqFormFieldReadOnly ? (
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
+                                                  {product.productLine || "—"}
+                                                </div>
+                                              ) : (
+                                                <input
+                                                  className="input-field min-w-[120px]"
+                                                  value={product.productLine || ""}
+                                                  onChange={(e) => handleProductChange(productIndex, "productLine", e.target.value)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  aria-label={`Product ${productIndex + 1} product line`}
+                                                />
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                              {rfqFormFieldReadOnly ? (
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
+                                                  {product.costingData || "—"}
+                                                </div>
+                                              ) : (
+                                                <input
+                                                  className="input-field min-w-[120px]"
+                                                  value={product.costingData || ""}
+                                                  onChange={(e) => handleProductChange(productIndex, "costingData", e.target.value)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  aria-label={`Product ${productIndex + 1} costing data`}
+                                                />
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                              {rfqFormFieldReadOnly ? (
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
+                                                  {product.application || "—"}
+                                                </div>
+                                              ) : (
+                                                <input
+                                                  className="input-field min-w-[120px]"
+                                                  value={product.application || ""}
+                                                  onChange={(e) => handleProductChange(productIndex, "application", e.target.value)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  aria-label={`Product ${productIndex + 1} application`}
+                                                />
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                              {rfqFormFieldReadOnly ? (
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
+                                                  {product.partNumber || "—"}
+                                                </div>
+                                              ) : (
+                                                <input
+                                                  className="input-field min-w-[130px]"
+                                                  value={product.partNumber || ""}
+                                                  onChange={(e) => handleProductChange(productIndex, "partNumber", e.target.value)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  aria-label={`Product ${productIndex + 1} part number`}
+                                                />
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                              {(() => {
+                                                const serverDrawing = mergedFiles[productIndex] || null;
+                                                const localDrawing = product.drawing || null;
+                                                const displayFile = localDrawing
+                                                  ? { name: localDrawing.name, url: URL.createObjectURL(localDrawing), source: "local", id: `local-drawing-${productIndex}` }
+                                                  : serverDrawing;
+                                                const isDeleting = serverDrawing && fileActionId === serverDrawing.id;
+                                                return (
+                                                  <div className="flex flex-col gap-1.5 min-w-[140px]">
+                                                    {displayFile && (
+                                                      <div className="flex items-center gap-1.5">
+                                                        <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold uppercase ${getFileAccentClasses(displayFile.name)}`}>
+                                                          {getFileExtension(displayFile.name).slice(0, 4)}
                                                         </span>
-                                                      ) : (
-                                                        <span className="text-[11px] text-slate-400">Price source pending</span>
-                                                      )
-                                                    ) : (
-                                                      PRODUCT_PRICE_SOURCE_OPTIONS.map((option) => {
-                                                        const isSelected = product.targetPriceIsEstimated === option.value;
-                                                        return (
-                                                          <button
-                                                            key={`${productIndex}-${option.label}`}
-                                                            type="button"
-                                                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] transition ${getPriceSourceBadgeClasses(option.value, isSelected)}`}
-                                                            onClick={() => handleProductChange(productIndex, "targetPriceIsEstimated", option.value)}
-                                                            aria-pressed={isSelected}
-                                                          >
-                                                            {option.label}
-                                                          </button>
-                                                        );
-                                                      })
+                                                        <span className="max-w-[100px] truncate text-xs font-medium text-slate-600" title={displayFile.name}>
+                                                          {displayFile.name}
+                                                        </span>
+                                                      </div>
                                                     )}
-                                                  </div>
-                                                </div>
-                                              </td>
-                                              <td className="px-3 py-3">
-                                                <div className="min-w-[220px] space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
-                                                  <div className="flex flex-wrap items-center gap-2">
-                                                    <div className="text-sm font-semibold text-ink">
-                                                      {formatTurnoverInThousands(rowTargetTo) || "—"}
+                                                    <div className="flex flex-wrap gap-1">
+                                                      <input
+                                                        id={`product-drawing-${productIndex}`}
+                                                        type="file"
+                                                        className="hidden"
+                                                        onChange={(e) => handleProductChange(productIndex, "drawing", e.target.files?.[0] || null)}
+                                                      />
+                                                      <label
+                                                        htmlFor={`product-drawing-${productIndex}`}
+                                                        className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-tide/40 hover:text-tide"
+                                                      >
+                                                        {displayFile ? "Replace" : "Choose file"}
+                                                      </label>
+                                                      {displayFile && (
+                                                        <button
+                                                          type="button"
+                                                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-slate-600 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-60"
+                                                          onClick={() => handlePreviewFile(displayFile)}
+                                                          disabled={!displayFile.url}
+                                                          title="View"
+                                                        >
+                                                          <Eye className="h-3.5 w-3.5" />
+                                                        </button>
+                                                      )}
+                                                      {displayFile && allowFileDeletion && (
+                                                        <button
+                                                          type="button"
+                                                          className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-1.5 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                          onClick={() => {
+                                                            if (localDrawing) {
+                                                              handleProductChange(productIndex, "drawing", null);
+                                                            } else {
+                                                              setFileDeleteTarget(serverDrawing);
+                                                            }
+                                                          }}
+                                                          disabled={Boolean(isDeleting)}
+                                                          title="Delete"
+                                                        >
+                                                          <Trash2 className="h-3.5 w-3.5" />
+                                                        </button>
+                                                      )}
                                                     </div>
-                                                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                                      {rowCurrency ? `k${rowCurrency}` : "k"}
-                                                    </span>
                                                   </div>
-                                                  {rowCurrency && rowCurrency !== "EUR" && rowTargetToNumber !== null ? (
-                                                    <p className="text-[11px] font-medium text-slate-400">
-                                                      {rowFallbackUsed
-                                                        ? "FX unavailable"
-                                                        : rowRateLoading
-                                                          ? "Loading FX..."
-                                                          : rowTargetToEurPreview !== null
-                                                            ? `≈ ${formatTurnoverInThousands(rowTargetToEurPreview)} kEUR`
-                                                            : ""}
-                                                    </p>
-                                                  ) : null}
+                                                );
+                                              })()}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                              {rfqFormFieldReadOnly ? (
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[90px]`}>
+                                                  {product.sop || "—"}
                                                 </div>
-                                              </td>
-                                              <td className="px-3 py-3 text-right">
-                                                {rfqFormFieldReadOnly ? null : (
-                                                  <button
-                                                    type="button"
-                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    onClick={() => handleRemoveProduct(productIndex)}
-                                                    disabled={rfqFormFieldReadOnly}
-                                                    aria-label={`Delete product ${productIndex + 1}`}
-                                                    title="Delete product"
-                                                  >
-                                                    <Trash2 className="h-4 w-4" />
-                                                  </button>
-                                                )}
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
+                                              ) : (
+                                                <input
+                                                  className="input-field min-w-[90px]"
+                                                  type="number"
+                                                  value={product.sop ?? ""}
+                                                  onChange={(e) => handleProductChange(productIndex, "sop", e.target.value)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  placeholder="2026"
+                                                  aria-label={`Product ${productIndex + 1} SOP`}
+                                                />
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-3 text-right">
+                                              {rfqFormFieldReadOnly ? null : (
+                                                <button
+                                                  type="button"
+                                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                  onClick={() => handleRemoveProduct(productIndex)}
+                                                  disabled={rfqFormFieldReadOnly}
+                                                  aria-label={`Delete product ${productIndex + 1}`}
+                                                  title="Delete product"
+                                                >
+                                                  <Trash2 className="h-4 w-4" />
+                                                </button>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
                                       </tbody>
                                     </table>
-                                  </div>
-                                  <div className="mt-3 flex justify-end">
-                                    <label className="flex w-full max-w-xs flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                                      <span>
-                                        {sharedProductCurrency
-                                          ? `Total Target TO (k${sharedProductCurrency})`
-                                          : "Total Target TO (k)"}
-                                      </span>
-                                      <div className="space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <div className="text-sm font-semibold text-ink">
-                                            {formatTurnoverInThousands(totalTargetTo) || "—"}
-                                          </div>
-                                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                            {sharedTurnoverUnit}
-                                          </span>
-                                        </div>
-                                        {sharedProductCurrency && sharedProductCurrency !== "EUR" && totalTargetToNumber !== null ? (
-                                          <p className="text-[11px] font-medium text-slate-400">
-                                            {sharedCurrencyFallbackUsed
-                                              ? "FX unavailable"
-                                              : sharedCurrencyRateLoading
-                                                ? "Loading FX..."
-                                                : totalTargetToEurPreview !== null
-                                                  ? `≈ ${formatTurnoverInThousands(totalTargetToEurPreview)} kEUR`
-                                                  : ""}
-                                          </p>
-                                        ) : null}
-                                      </div>
-                                    </label>
+                              </div>
+                            </div>
+
+                            <div id="rfq-volumes" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
+                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Volumes</h3>
+                              <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200/70">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
+                                    <tr>
+                                      <th className="px-3 py-3">{renderRequirementLabel("Part Number", { required: true })}</th>
+                                      <th className="px-3 py-3">{renderRequirementLabel("Revision Level", { optional: true })}</th>
+                                      <th className="px-3 py-3">Qty / Year <span className="text-red-400">*</span></th>
+                                      <th className="px-3 py-3">Target Price <span className="text-red-400">*</span></th>
+                                      <th className="px-3 py-3">Target To (K)</th>
+                                      <th className="px-3 py-3">{renderRequirementLabel("Delivery Zone", { required: true })}</th>
+                                      <th className="px-3 py-3">{renderRequirementLabel("Delivery Plant", { required: true })}</th>
+                                      <th className="px-3 py-3">{renderRequirementLabel("Country", { required: true })}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {volumeRows.map((volume, volumeIndex) => {
+                                      const linkedProduct = productRows[volumeIndex] || createEmptyProductItem();
+                                      const rowSop = parseInt(linkedProduct.sop, 10);
+                                      const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
+                                        ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
+                                        : new Set();
+                                      return (
+                                        <tr key={`volume-${volumeIndex}`} className="border-t border-slate-200/70 bg-white">
+                                          <td className="px-3 py-3">
+                                            <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
+                                              {linkedProduct.partNumber || "—"}
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            {rfqFormFieldReadOnly ? (
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[100px]`}>
+                                                {linkedProduct.revisionLevel || "—"}
+                                              </div>
+                                            ) : (
+                                              <input
+                                                className="input-field min-w-[100px]"
+                                                value={linkedProduct.revisionLevel || ""}
+                                                onChange={(e) => handleProductChange(volumeIndex, "revisionLevel", e.target.value)}
+                                                placeholder="optional"
+                                                aria-label={`Volume ${volumeIndex + 1} revision level`}
+                                              />
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            <div className="flex min-w-[170px] flex-col gap-1.5">
+                                              {!Number.isNaN(rowSop) && rowSop > 1900 ? (
+                                                Array.from({ length: 5 }, (_, i) => rowSop + i).map((year) => (
+                                                  <div key={year} className="flex items-center gap-2">
+                                                    <span className="w-9 shrink-0 text-[10px] font-semibold text-slate-400">{year}</span>
+                                                    {rfqFormFieldReadOnly ? (
+                                                      <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} flex-1`}>
+                                                        {volume.volumes?.[year] ?? "—"}
+                                                      </div>
+                                                    ) : (
+                                                      <input
+                                                        className="input-field min-w-[60px] flex-1"
+                                                        type="number"
+                                                        value={volume.volumes?.[year] ?? ""}
+                                                        onChange={(e) => handleVolumeChange(volumeIndex, `volumes.${year}`, e.target.value)}
+                                                        aria-label={`Volume ${volumeIndex + 1} year ${year}`}
+                                                      />
+                                                    )}
+                                                  </div>
+                                                ))
+                                              ) : (
+                                                <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>—</div>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            <div className="min-w-[260px] rounded-xl border border-slate-200/70 bg-white p-3">
+                                              <div className="mb-2 grid grid-cols-2 gap-2">
+                                                <div>
+                                                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Target Price <span className="text-red-400">*</span></p>
+                                                  {rfqFormFieldReadOnly ? (
+                                                    <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>{volume.targetPrice || "—"}</div>
+                                                  ) : (
+                                                    <input
+                                                      className="input-field w-full"
+                                                      type="number"
+                                                      value={volume.targetPrice ?? ""}
+                                                      onChange={(e) => handleVolumeChange(volumeIndex, "targetPrice", e.target.value)}
+                                                      aria-label={`Volume ${volumeIndex + 1} target price`}
+                                                    />
+                                                  )}
+                                                </div>
+                                                <div>
+                                                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Currency <span className="text-red-400">*</span></p>
+                                                  <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>{linkedProduct.currency || "—"}</div>
+                                                </div>
+                                              </div>
+                                              <div>
+                                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Price Source <span className="text-red-400">*</span></p>
+                                                {rfqFormFieldReadOnly ? (
+                                                  volume.priceSource ? (
+                                                    <span className={`inline-block rounded-full border px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide ${volume.priceSource === "Estimated" ? "border-amber-300 bg-amber-50 text-amber-600" : "border-sky-300 bg-sky-50 text-sky-600"}`}>
+                                                      {volume.priceSource}
+                                                    </span>
+                                                  ) : (
+                                                    <span className="italic text-xs text-slate-400">Pending</span>
+                                                  )
+                                                ) : (
+                                                  <div className="flex flex-wrap gap-1">
+                                                    {[
+                                                      { value: "Estimated", label: "Estimated", active: "border-amber-300 bg-amber-50 text-amber-600" },
+                                                      { value: "Official Customer Price", label: "Official Customer Price", active: "border-sky-300 bg-sky-50 text-sky-600" }
+                                                    ].map((opt) => (
+                                                      <button
+                                                        key={opt.value}
+                                                        type="button"
+                                                        onClick={() => handleVolumeChange(volumeIndex, "priceSource", volume.priceSource === opt.value ? "" : opt.value)}
+                                                        className={`rounded-full border px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide transition ${volume.priceSource === opt.value ? opt.active : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-500"}`}
+                                                        aria-label={`Volume ${volumeIndex + 1} price source ${opt.value}`}
+                                                      >
+                                                        {opt.label}
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            {(() => {
+                                              const totalQty = volumeYearColumns.reduce((sum, year) =>
+                                                sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0), 0);
+                                              const targetToK = totalQty * Number(volume.targetPrice || 0);
+                                              return (
+                                                <div className="flex min-w-[130px] items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm">
+                                                  <span className="flex-1 text-sm font-semibold text-ink">
+                                                    {volume.targetPrice ? targetToK.toLocaleString() : "—"}
+                                                  </span>
+                                                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-400">K</span>
+                                                </div>
+                                              );
+                                            })()}
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            {rfqFormFieldReadOnly ? (
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
+                                                {volume.deliveryZone || "—"}
+                                              </div>
+                                            ) : (
+                                              <select
+                                                className="input-field min-w-[130px]"
+                                                value={volume.deliveryZone || ""}
+                                                onChange={(e) => handleVolumeChange(volumeIndex, "deliveryZone", e.target.value)}
+                                                aria-label={`Volume ${volumeIndex + 1} delivery zone`}
+                                              >
+                                                {getDeliveryZoneOptions(volume.deliveryZone).map((opt) => (
+                                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                ))}
+                                              </select>
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            {rfqFormFieldReadOnly ? (
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
+                                                {volume.plant || "—"}
+                                              </div>
+                                            ) : (
+                                              <input
+                                                className="input-field min-w-[110px]"
+                                                value={volume.plant || ""}
+                                                onChange={(e) => handleVolumeChange(volumeIndex, "plant", e.target.value)}
+                                                aria-label={`Volume ${volumeIndex + 1} plant`}
+                                              />
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-3">
+                                            {rfqFormFieldReadOnly ? (
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
+                                                {volume.country || "—"}
+                                              </div>
+                                            ) : (
+                                              <input
+                                                className="input-field min-w-[110px]"
+                                                value={volume.country || ""}
+                                                onChange={(e) => handleVolumeChange(volumeIndex, "country", e.target.value)}
+                                                aria-label={`Volume ${volumeIndex + 1} country`}
+                                              />
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="mt-4 flex justify-end">
+                                <div className="flex flex-col items-start gap-1.5">
+                                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                                    Total Target To (K)
+                                  </span>
+                                  <div className="flex min-w-[400px] max-w-full items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-4 py-2.5 shadow-sm">
+                                    <span className="flex-1 text-sm font-semibold text-ink">{totalTargetToK.toLocaleString()}</span>
+                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-400">K</span>
                                   </div>
                                 </div>
                               </div>
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                            <div id="rfq-logistics" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                                <FormField
-                                  label="Delivery zone"
-                                  name="deliveryZone"
-                                  value={form.deliveryZone}
-                                  onChange={handleChange}
-                                  options={deliveryZoneOptions}
-                                  readOnly={rfqFormFieldReadOnly}
-                                  {...getRfqFieldRequirementProps("deliveryZone")}
-                                />
-                                <FormField label="Plant" name="plant" value={form.plant} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("plant")} />
-                                <FormField label="Country" name="country" value={form.country} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("country")} />
                                 <FormField label="PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("poDate")} />
                                 <FormField label="Ppap date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("ppapDate")} />
-                                <FormField label="SOP year" name="sop" type="number" value={form.sop} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("sop")} />
                                 <FormField label={`${formalDocumentLabel} reception date`} name="rfqReceptionDate" type="date" value={form.rfqReceptionDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("rfqReceptionDate")} />
                                 <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("expectedQuotationDate")} />
                               </div>
                             </div>
 
-                            <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft transition hover:shadow-md">
+                            <div id="rfq-contact" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Contact details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
@@ -8480,7 +8878,7 @@ export default function NewRfq() {
                           className="chat-resize-handle"
                           aria-label="Resize chatbot"
                         >
-                          <span className="h-12 w-1 rounded-full bg-slate-300/80" />
+                          <span className="h-8 w-1 rounded-full bg-slate-400/70" />
                         </button>
                         <ChatPanel
                           messages={chatFeed}

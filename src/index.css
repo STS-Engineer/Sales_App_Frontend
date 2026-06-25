@@ -847,7 +847,7 @@ body {
 
 
   .chat-resize-handle {
-    @apply absolute left-2 top-1/2 z-10 hidden h-24 w-5 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-full border border-slate-200/70 bg-white/90 shadow-sm transition hover:border-tide/40 hover:bg-tide/5 lg:flex;
+    @apply absolute left-2 top-1/2 z-10 hidden h-16 w-4 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-full border border-slate-300 bg-white shadow-md transition hover:border-tide/40 hover:bg-tide/5 lg:flex;
     touch-action: none;
   }
 }

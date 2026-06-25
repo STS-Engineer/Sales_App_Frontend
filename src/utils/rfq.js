@@ -78,19 +78,19 @@ const PIPELINE_STAGE_MAP = {
  
 const normalizeStatusValue = (value) =>
   typeof value === "string" ? value : value?.value;
-
+ 
 const formatDateParts = (date) => {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 };
-
+ 
 export const sanitizeDateForInput = (dateStr) => {
   if (dateStr === null || dateStr === undefined) return "";
   const text = String(dateStr).trim();
   if (!text) return "";
-
+ 
   const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
   if (isoMatch) {
     const [, year, month, day] = isoMatch;
@@ -105,21 +105,21 @@ export const sanitizeDateForInput = (dateStr) => {
     }
     return `${year}-${month}-${day}`;
   }
-
+ 
   const parsedDate = new Date(text);
   if (Number.isNaN(parsedDate.getTime())) return "";
   return formatDateParts(parsedDate);
 };
-
+ 
 export const sanitizeNumberForInput = (value) => {
   if (value === null || value === undefined) return "";
   let text = String(value).trim();
   if (!text) return "";
   text = text.replace(/\s/g, "");
-
+ 
   const lastComma = text.lastIndexOf(",");
   const lastDot = text.lastIndexOf(".");
-
+ 
   if (lastComma !== -1 && lastDot !== -1) {
     if (lastComma > lastDot) {
       text = text.replace(/\./g, "").replace(",", ".");
@@ -134,13 +134,21 @@ export const sanitizeNumberForInput = (value) => {
       text = text.replace(/,/g, "");
     }
   }
-
+ 
   const parsed = parseFloat(text);
   return Number.isNaN(parsed) ? "" : parsed;
 };
-
+ 
 export const createEmptyProductItem = () => ({
+  product: "",
+  application: "",
   partNumber: "",
+  productLine: "",
+  costingData: "",
+  drawing: null,
+  poDate: "",
+  ppapDate: "",
+  sop: "",
   revisionLevel: "",
   quantity: "",
   targetPrice: "",
@@ -148,7 +156,16 @@ export const createEmptyProductItem = () => ({
   targetPriceIsEstimated: null,
   targetTo: ""
 });
-
+ 
+export const createEmptyVolumeItem = () => ({
+  targetPrice: "",
+  priceSource: "",
+  deliveryZone: "",
+  plant: "",
+  country: "",
+  volumes: {}
+});
+ 
 export const DELIVERY_ZONE_OPTIONS = [
   { value: "Europe", label: "Europe" },
   { value: "Africa", label: "Africa" },
@@ -158,11 +175,11 @@ export const DELIVERY_ZONE_OPTIONS = [
   { value: "China / South Pacific", label: "China / South Pacific" },
   { value: "Korea / Japan", label: "Korea / Japan" }
 ];
-
+ 
 const DELIVERY_ZONE_OPTION_VALUES = new Set(
   DELIVERY_ZONE_OPTIONS.map((option) => option.value)
 );
-
+ 
 export const getDeliveryZoneOptions = (currentValue = "") => {
   const baseOptions = [
     { value: "", label: "" },
@@ -170,21 +187,21 @@ export const getDeliveryZoneOptions = (currentValue = "") => {
   ];
   const normalizedCurrentValue =
     typeof currentValue === "string" ? currentValue.trim() : "";
-
+ 
   if (
     !normalizedCurrentValue ||
     DELIVERY_ZONE_OPTION_VALUES.has(normalizedCurrentValue)
   ) {
     return baseOptions;
   }
-
+ 
   return [
     { value: "", label: "Not selected yet" },
     { value: normalizedCurrentValue, label: `${normalizedCurrentValue} (Legacy)` },
     ...DELIVERY_ZONE_OPTIONS
   ];
 };
-
+ 
 const pickNonEmptyValue = (...values) => {
   for (const value of values) {
     if (value === 0 || value === false) return value;
@@ -194,7 +211,7 @@ const pickNonEmptyValue = (...values) => {
   }
   return undefined;
 };
-
+ 
 const normalizeEstimatedFlag = (value) => {
   if (value === true || value === false) return value;
   if (value === null || value === undefined) return null;
@@ -213,30 +230,30 @@ const normalizeEstimatedFlag = (value) => {
   }
   return null;
 };
-
+ 
 export const normalizeAutomotiveType = (value) => {
   if (value === null || value === undefined) return "";
   const text = String(value).trim();
   if (!text) return "";
-
+ 
   const normalized = text
     .toLowerCase()
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-
-  if (normalized === "1") return "Automotive";
-  if (normalized === "2") return "Non automotive";
+ 
+  if (normalized === "1") return "Auto";
+  if (normalized === "2") return "Non Auto";
   if (normalized.includes("non") && normalized.includes("auto")) {
-    return "Non automotive";
+    return "Non Auto";
   }
   if (normalized.includes("auto")) {
-    return "Automotive";
+    return "Auto";
   }
-
+ 
   return text;
 };
-
+ 
 export const calculateProductTargetTo = (product = {}) => {
   const quantity = sanitizeNumberForInput(product.quantity);
   const targetPrice = sanitizeNumberForInput(product.targetPrice);
@@ -244,20 +261,31 @@ export const calculateProductTargetTo = (product = {}) => {
   const targetTo = Number(quantity) * Number(targetPrice);
   return Number.isFinite(targetTo) ? targetTo : "";
 };
-
+ 
 export const calculateTotalTargetTo = (products = []) =>
   products.reduce((total, product) => {
     const targetTo = calculateProductTargetTo(product);
     return total + (targetTo === "" ? 0 : Number(targetTo));
   }, 0);
-
+ 
 const normalizeProductItem = (item = {}) => {
+  const product = pickNonEmptyValue(item.product);
+  const application = pickNonEmptyValue(item.application);
   const partNumber = pickNonEmptyValue(
     item.part_number,
     item.partNumber,
     item.customer_pn,
     item.customerPn
   );
+  const productLine = pickNonEmptyValue(
+    item.product_line,
+    item.productLine,
+    item.product_line_acronym
+  );
+  const costingData = pickNonEmptyValue(item.costing_data, item.costingData);
+  const poDate = pickNonEmptyValue(item.po_date, item.poDate, item.drawing_po_date, item.drawingPoDate);
+  const ppapDate = pickNonEmptyValue(item.ppap_date, item.ppapDate);
+  const sop = pickNonEmptyValue(item.sop, item.sop_year, item.sopYear);
   const revisionLevel = pickNonEmptyValue(
     item.revision_level,
     item.revisionLevel,
@@ -293,7 +321,15 @@ const normalizeProductItem = (item = {}) => {
     )
   );
   const normalized = {
+    product: product ?? "",
+    application: application ?? "",
     partNumber: partNumber ?? "",
+    productLine: productLine ?? "",
+    costingData: costingData ?? "",
+    drawing: null,
+    poDate: poDate ?? "",
+    ppapDate: ppapDate ?? "",
+    sop: sop != null ? String(sop) : "",
     revisionLevel: revisionLevel ?? "",
     quantity,
     targetPrice,
@@ -304,13 +340,13 @@ const normalizeProductItem = (item = {}) => {
   normalized.targetTo = calculateProductTargetTo(normalized);
   return normalized;
 };
-
+ 
 const hasProductValue = (product = {}) =>
-  ["partNumber", "revisionLevel", "quantity", "targetPrice", "targetPriceIsEstimated"].some((key) => {
+  ["product", "application", "partNumber", "productLine", "costingData", "revisionLevel", "quantity", "targetPrice", "targetPriceIsEstimated"].some((key) => {
     const value = product[key];
     return value === 0 || String(value ?? "").trim() !== "";
   });
-
+ 
 export const normalizeProductsFromRfqData = (data = {}) => {
   const rawProducts = Array.isArray(data.products) ? data.products : [];
   const legacyTargetPriceIsEstimated = pickNonEmptyValue(
@@ -329,11 +365,11 @@ export const normalizeProductsFromRfqData = (data = {}) => {
       })
     )
     .filter(hasProductValue);
-
+ 
   if (normalizedProducts.length) {
     return normalizedProducts;
   }
-
+ 
   const legacyProduct = normalizeProductItem({
     part_number: data.customer_pn || data.customerPn,
     revision_level: data.revision_level || data.revisionLevel,
@@ -350,13 +386,20 @@ export const normalizeProductsFromRfqData = (data = {}) => {
   });
   return hasProductValue(legacyProduct) ? [legacyProduct] : [createEmptyProductItem()];
 };
-
+ 
 export const normalizeProductsForPayload = (products = []) =>
   (Array.isArray(products) ? products : [])
     .map(normalizeProductItem)
     .filter(hasProductValue)
     .map((product) => ({
+      product: String(product.product || "").trim(),
+      application: String(product.application || "").trim(),
       part_number: String(product.partNumber || "").trim(),
+      product_line: String(product.productLine || "").trim(),
+      costing_data: String(product.costingData || "").trim(),
+      po_date: String(product.poDate || "").trim(),
+      ppap_date: String(product.ppapDate || "").trim(),
+      sop: product.sop === "" ? null : Number(product.sop) || null,
       revision_level: String(product.revisionLevel || "").trim(),
       quantity: product.quantity === "" ? null : Number(product.quantity),
       target_price: product.targetPrice === "" ? null : Number(product.targetPrice),
@@ -366,7 +409,17 @@ export const normalizeProductsForPayload = (products = []) =>
         ? null
         : Number(calculateProductTargetTo(product))
     }));
-
+ 
+export const normalizeVolumesForPayload = (volumes = []) =>
+  (Array.isArray(volumes) ? volumes : []).map((v) => ({
+    target_price: v.targetPrice === "" ? null : Number(v.targetPrice),
+    price_source: v.priceSource || null,
+    delivery_zone: String(v.deliveryZone || "").trim(),
+    plant: String(v.plant || "").trim(),
+    country: String(v.country || "").trim(),
+    volumes: (v.volumes && typeof v.volumes === "object") ? { ...v.volumes } : {}
+  }));
+ 
 const sanitizeIntegerForInput = (value) => {
   if (value === null || value === undefined) return "";
   const cleaned = String(value).replace(/[\s,]/g, "");
@@ -395,14 +448,14 @@ export const mapBackendStatusToUi = (rfqOrStatus) => {
 export const mapBackendStatusToPipelineStage = (rfqOrStatus) => {
   const raw = resolveBackendStateKey(rfqOrStatus);
   if (!raw) return "RFQ";
-
+ 
   const TERMINAL_SUBS = new Set(["CANCELED", "CANCELLED", "LOST"]);
   if (TERMINAL_SUBS.has(raw) && rfqOrStatus && typeof rfqOrStatus === "object") {
     const PHASE_MAP = { RFQ: "RFQ", COSTING: "In costing", OFFER: "Offer", PO: "PO", PROTOTYPE: "Prototype", CLOSED: "RFQ" };
     const phase = typeof rfqOrStatus.phase === "string" ? rfqOrStatus.phase : rfqOrStatus.phase?.value;
     if (phase && PHASE_MAP[phase]) return PHASE_MAP[phase];
   }
-
+ 
   return PIPELINE_STAGE_MAP[raw] || raw;
 };
  
@@ -432,6 +485,18 @@ export const mapRfqDataToForm = (rfq) => {
     data.total_target_to,
     productsHaveValues ? calculateTotalTargetTo(products) : undefined
   );
+  const mappedVolumes = Array.isArray(data.volumes) && data.volumes.length > 0
+    ? data.volumes.map((v) => ({
+        targetPrice: sanitizeNumberForInput(pickFirst(v.target_price, v.targetPrice)) ?? "",
+        priceSource: String(pickFirst(v.price_source, v.priceSource) || ""),
+        deliveryZone: String(v.delivery_zone || v.deliveryZone || ""),
+        plant: String(v.plant || ""),
+        country: String(v.country || ""),
+        volumes: (v.volumes && typeof v.volumes === "object") ? { ...v.volumes } : {}
+      }))
+    : [];
+  // Always keep volumes aligned with products — pad with empty rows if needed
+  const volumes = products.map((_, i) => mappedVolumes[i] || createEmptyVolumeItem());
  
   return {
     id: rfq?.rfq_id || "",
@@ -446,6 +511,7 @@ export const mapRfqDataToForm = (rfq) => {
     projectName: pickText(data.project_name, data.projectName),
     costingData: pickText(data.costing_data, data.costingData),
     products,
+    volumes,
     customerPn: pickFirst(firstProduct.partNumber, data.customer_pn, data.customerPn),
     revisionLevel: pickFirst(firstProduct.revisionLevel, data.revision_level, data.revisionLevel),
     deliveryZone: pickText(data.delivery_zone, data.deliveryZone),
@@ -560,7 +626,7 @@ export const mapRfqDataToForm = (rfq) => {
     )
   };
 };
-
+ 
 export const mapPotentialToForm = (potential) => {
   const data = potential || {};
   const pickValue = (value) => {
@@ -580,7 +646,7 @@ export const mapPotentialToForm = (potential) => {
     const v = pickFirst(...values);
     return typeof v === "string" && v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
   };
-
+ 
   return {
     potentialSystematicId: pickFirst(
       data.potential_systematic_id,
@@ -663,7 +729,7 @@ export const mapPotentialToForm = (potential) => {
     )
   };
 };
-
+ 
 export const mapRfqToRow = (rfq) => {
   const data = rfq?.rfq_data || {};
   const potential = rfq?.potential || {};
@@ -684,13 +750,13 @@ export const mapRfqToRow = (rfq) => {
       : Number.isFinite(explicitToTotal)
         ? explicitToTotal
         : derivedToTotal ?? explicitToTotalRaw;
-
+ 
   return {
     id: rfq?.rfq_id,
     documentType: normalizeDocumentTypeValue(rfq?.document_type),
     sector: normalizeAutomotiveType(data.automotive_type || data.automotiveType || ""),
     displayId: data.systematic_rfq_id || "Draft - Pending",
-    creator: rfq?.created_by_email || "",
+    creator: rfq?.created_by_name || rfq?.created_by_email || "",
     customer: data.customer_name || potential.customer,
     client: data.customer_name || potential.customer,
     productName: data.product_name || data.product_line_acronym,
@@ -700,12 +766,14 @@ export const mapRfqToRow = (rfq) => {
     deliveryZone: data.delivery_zone,
     location: data.delivery_zone || potential.customer_location,
     validator:
+      rfq?.zone_manager_name ||
       data.zone_manager_email ||
       rfq?.zone_manager_email ||
       data.validator_email ||
       "",
     validatorRole: data.validator_role || "",
     toTotal: Number.isFinite(toTotal) ? toTotal : explicitToTotalRaw,
+    createdAt: rfq?.created_at || null,
     status: mapBackendStatusToUi(rfq),
     pipelineStage: mapBackendStatusToPipelineStage(rfq),
     potentialSystematicId: potential.potential_systematic_id || "",
@@ -714,14 +782,14 @@ export const mapRfqToRow = (rfq) => {
     potentialLocation: potential.customer_location || ""
   };
 };
-
+ 
 const normalizeDocumentTypeValue = (value) => {
   const normalized = String(value || "").trim().toUpperCase();
   if (normalized === "RFI") return "RFI";
   if (normalized === "POTENTIAL") return "POTENTIAL";
   return "RFQ";
 };
-
+ 
 const normalizeInitialDocumentGreeting = (content, documentType) => {
   const normalizedDocumentType = normalizeDocumentTypeValue(documentType);
   if (normalizedDocumentType !== "RFI") return content;
@@ -733,7 +801,7 @@ const normalizeInitialDocumentGreeting = (content, documentType) => {
     /whole paragraph/i.test(text);
   return looksLikeInitialGreeting ? text.replace(/\bRFQ\b/g, "RFI") : text;
 };
-
+ 
 const INTERNAL_TOOL_MARKER_KEYS = new Set([
   "fieldstoupdate",
   "fields_to_update",
@@ -749,7 +817,7 @@ const INTERNAL_TOOL_MARKER_KEYS = new Set([
   "toolname",
   "tool_name"
 ]);
-
+ 
 const tryParseExactJsonPayload = (content) => {
   const text = String(content || "").trim();
   if (!text) return null;
@@ -759,7 +827,7 @@ const tryParseExactJsonPayload = (content) => {
     return null;
   }
 };
-
+ 
 const payloadContainsInternalToolMarkers = (payload) => {
   if (Array.isArray(payload)) {
     return payload.some(payloadContainsInternalToolMarkers);
@@ -767,22 +835,22 @@ const payloadContainsInternalToolMarkers = (payload) => {
   if (!payload || typeof payload !== "object") {
     return false;
   }
-
+ 
   const keys = Object.keys(payload).map((key) => String(key).toLowerCase());
   if (keys.some((key) => INTERNAL_TOOL_MARKER_KEYS.has(key))) {
     return true;
   }
-
+ 
   return Object.values(payload).some(payloadContainsInternalToolMarkers);
 };
-
+ 
 const findJsonBlockEnd = (content, startIndex) => {
   const opening = content[startIndex];
   const closing = opening === "{" ? "}" : "]";
   const stack = [closing];
   let inString = false;
   let escapeNext = false;
-
+ 
   for (let index = startIndex + 1; index < content.length; index += 1) {
     const char = content[index];
     if (inString) {
@@ -795,7 +863,7 @@ const findJsonBlockEnd = (content, startIndex) => {
       }
       continue;
     }
-
+ 
     if (char === "\"") {
       inString = true;
       continue;
@@ -818,31 +886,51 @@ const findJsonBlockEnd = (content, startIndex) => {
       }
     }
   }
-
+ 
   return null;
 };
-
+ 
 const stripLeadingInternalToolPayload = (content) => {
   const text = String(content || "").trim();
   if (!text || !["{", "["].includes(text[0])) {
     return text;
   }
-
+ 
   const blockEnd = findJsonBlockEnd(text, 0);
   if (!blockEnd) {
     return text;
   }
-
+ 
   const leadingPayload = tryParseExactJsonPayload(text.slice(0, blockEnd));
   if (!payloadContainsInternalToolMarkers(leadingPayload)) {
     return text;
   }
-
+ 
   return text.slice(blockEnd).trim();
 };
+ 
+const isTechnicalErrorLine = (line) => {
+  const normalized = line.trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized.startsWith("oops")) return true;
+  if (/silently\.?\s*$/.test(normalized)) return true;
+  if (/^failed to parse as json\s*:/.test(normalized)) return true;
+  if (/tool call arguments must be valid json/.test(normalized)) return true;
+  if (/^error\s*:\s*(tool|function|call|json|parse)/.test(normalized)) return true;
+  return false;
+};
 
-const sanitizeAssistantChatContent = (content) => {
+const stripTechnicalErrorLines = (content) => {
+  const lines = String(content || "").split("\n");
+  const filtered = lines.filter((line) => !isTechnicalErrorLine(line));
+  return filtered.join("\n").trim();
+};
+
+export const sanitizeAssistantChatContent = (content) => {
   let text = String(content || "").trim();
+  if (!text) return "";
+
+  text = stripTechnicalErrorLines(text);
   if (!text) return "";
 
   text = text.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, payloadText) => {
@@ -857,10 +945,10 @@ const sanitizeAssistantChatContent = (content) => {
 
   return stripLeadingInternalToolPayload(text);
 };
-
+ 
 export const mapChatHistory = (history = [], documentType = "RFQ") => {
   let firstAssistantChecked = false;
-
+ 
   return history.reduce((messages, entry) => {
     if (
       (entry?.role !== "assistant" && entry?.role !== "user") ||
@@ -869,12 +957,12 @@ export const mapChatHistory = (history = [], documentType = "RFQ") => {
     ) {
       return messages;
     }
-
+ 
     let content = entry.content.trim();
     if (!content) {
       return messages;
     }
-
+ 
     if (entry.role === "assistant") {
       content = sanitizeAssistantChatContent(content);
       if (!content) {
@@ -885,11 +973,11 @@ export const mapChatHistory = (history = [], documentType = "RFQ") => {
         firstAssistantChecked = true;
       }
     }
-
+ 
     if (!content.trim()) {
       return messages;
     }
-
+ 
     messages.push({ role: entry.role, content });
     return messages;
   }, []);

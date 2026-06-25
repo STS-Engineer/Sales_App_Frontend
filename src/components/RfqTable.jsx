@@ -86,8 +86,8 @@ export default function RfqTable({
               <th className="px-4 py-4">Creator</th>
               <th className="px-4 py-4">Product name</th>
               <th className="px-4 py-4">Product line</th>
-              <th className="px-4 py-4">Application</th>
               <th className="px-4 py-4">TO Total</th>
+              <th className="px-4 py-4">Creation Date</th>
               {showPhaseColumn ? (
                 <th className="px-4 py-4">Phase</th>
               ) : null}
@@ -119,10 +119,20 @@ export default function RfqTable({
                     {documentTypeLabels[row.documentType] || row.documentType || "RFQ"}
                   </span>
                 </td>
-                <td className="px-4 py-4 font-medium text-slate-700">
-                  <span className="block max-w-[140px] truncate">
-                    {row.sector || "-"}
-                  </span>
+                <td className="px-4 py-4">
+                  {row.sector ? (
+                    <span
+                      className={`badge whitespace-nowrap ${
+                        row.sector.toLowerCase().includes("non")
+                          ? "border-orange-300 bg-orange-50 text-orange-600"
+                          : "border-tide/30 bg-tide/10 text-tide"
+                      }`}
+                    >
+                      {row.sector}
+                    </span>
+                  ) : (
+                    "-"
+                  )}
                 </td>
                 <td className="px-4 py-4 font-medium text-slate-700">
                   <span className="block max-w-[150px] truncate">
@@ -144,15 +154,15 @@ export default function RfqTable({
                     {row.productLine || row.item || "-"}
                   </span>
                 </td>
-                <td className="px-4 py-4">
-                  <span className="block max-w-[140px] truncate">
-                    {row.application || "-"}
-                  </span>
-                </td>
                 <td className="px-4 py-4 whitespace-nowrap font-medium text-slate-700">
                   <span className="block max-w-[110px] truncate">
                     {formatToTotal(row.toTotal ?? row.budget)}
                   </span>
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-slate-500 text-sm">
+                  {row.createdAt
+                    ? new Date(row.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
+                    : "-"}
                 </td>
                 {showPhaseColumn ? (
                   <td className="px-4 py-4">

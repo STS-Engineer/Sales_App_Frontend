@@ -485,7 +485,7 @@ export default function Dashboard() {
     <div className="min-h-screen">
       <TopBar />
 
-      <div className="px-2 py-4 sm:px-4 sm:py-6 md:px-5 md:py-9 xl:px-6 xl:py-10">
+      <div className="px-1 py-4 sm:px-2 sm:py-6 md:px-3 md:py-9 xl:px-4 xl:py-10">
         <div className="w-full">
           <div className="app-shell rounded-[24px] border border-slate-200/70 p-3 shadow-card sm:rounded-[32px] sm:p-5 md:p-6 xl:p-7">
             <div className="flex flex-col gap-8">
