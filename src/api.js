@@ -343,6 +343,12 @@ export async function submitRfq(rfqId) {
   });
 }
 
+export async function unlockChatForEdit(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/unlock-chat`, {
+    method: "POST"
+  });
+}
+
 export async function validateRfq(rfqId, payload) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/validate`, {
     method: "POST",
@@ -416,14 +422,15 @@ export async function downloadOfferTemplate(rfqId) {
   return requestBinary(`/api/rfq/${encodeURIComponent(rfqId)}/offer-template`);
 }
 
-export async function sendChat(rfqId, message, chatMode = "rfq", documentType = "RFQ") {
+export async function sendChat(rfqId, message, chatMode = "rfq", documentType = "RFQ", isPostValidationEdit = false) {
   return request("/api/chat", {
     method: "POST",
     body: {
       rfq_id: rfqId,
       message,
       chat_mode: chatMode,
-      document_type: documentType
+      document_type: documentType,
+      ...(isPostValidationEdit ? { is_post_validation_edit: true } : {})
     }
   });
 }

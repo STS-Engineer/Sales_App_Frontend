@@ -455,7 +455,13 @@ export const mapBackendStatusToPipelineStage = (rfqOrStatus) => {
     const phase = typeof rfqOrStatus.phase === "string" ? rfqOrStatus.phase : rfqOrStatus.phase?.value;
     if (phase && PHASE_MAP[phase]) return PHASE_MAP[phase];
   }
- 
+
+  if (raw === "PENDING_FOR_VALIDATION" && rfqOrStatus && typeof rfqOrStatus === "object") {
+    const RESUBMISSION_PHASE_MAP = { COSTING: "In costing", OFFER: "Offer", PO: "PO", PROTOTYPE: "Prototype" };
+    const phase = typeof rfqOrStatus.phase === "string" ? rfqOrStatus.phase : rfqOrStatus.phase?.value;
+    if (phase && RESUBMISSION_PHASE_MAP[phase]) return RESUBMISSION_PHASE_MAP[phase];
+  }
+
   return PIPELINE_STAGE_MAP[raw] || raw;
 };
  
