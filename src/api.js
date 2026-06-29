@@ -6,7 +6,7 @@ import {
   setToken
 } from "./utils/session.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "https://sales-app-backend.azurewebsites.net";
 const REQUEST_TIMEOUT_MS = 300000;
 let refreshPromise = null;
 
