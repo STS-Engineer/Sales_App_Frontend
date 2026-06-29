@@ -13,7 +13,7 @@ import {
   setRoutingAssignment,
   setViewerAssignment
 } from "../api";
-import { getUserProfile } from "../utils/session.js";
+import { getUserProfile, hasRole } from "../utils/session.js";
 
 const ROLE_OPTIONS = [
   { value: "COSTING", label: "Costing" },
@@ -141,7 +141,7 @@ function UserChecklist({ users, selectedEmails, onToggle, isSaving, filter, onFi
 export default function RoutingSettings() {
   const { showToast } = useToast();
   const profile = getUserProfile();
-  const isOwner = profile.role === "OWNER";
+  const isOwner = hasRole("OWNER");
 
   const [routingEntries, setRoutingEntries] = useState([]);
   const [viewerEntries, setViewerEntries] = useState([]);

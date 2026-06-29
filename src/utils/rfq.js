@@ -762,7 +762,10 @@ export const mapRfqToRow = (rfq) => {
     documentType: normalizeDocumentTypeValue(rfq?.document_type),
     sector: normalizeAutomotiveType(data.automotive_type || data.automotiveType || ""),
     displayId: data.systematic_rfq_id || "Draft - Pending",
-    creator: rfq?.created_by_name || rfq?.created_by_email || "",
+    creator: (() => {
+      const raw = rfq?.created_by_name || rfq?.created_by_email || "";
+      return raw.includes("@") ? raw.split("@")[0] : raw;
+    })(),
     customer: data.customer_name || potential.customer,
     client: data.customer_name || potential.customer,
     productName: data.product_name || data.product_line_acronym,
