@@ -495,9 +495,12 @@ export async function proceedToFormalRfq(rfqId, documentType = "RFQ") {
   });
 }
 
-export async function uploadRfqFile(rfqId, file) {
+export async function uploadRfqFile(rfqId, file, updateType = "simple") {
   const formData = new FormData();
   formData.append("file", file);
+  if (updateType && updateType !== "simple") {
+    formData.append("update_type", updateType);
+  }
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/upload`, {
     method: "POST",
     body: formData,

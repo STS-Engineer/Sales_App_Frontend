@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-import { Check, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
+import { Check, Download, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
@@ -1800,26 +1800,32 @@ const parseServerTimestamp = (value) => {
   if (!text) {
     return null;
   }
-  const parsed = new Date(text);
+  // If no timezone info is present, the backend stored it in UTC — append Z so
+  // JavaScript's Date constructor treats it as UTC rather than local time.
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(text);
+  const normalized = hasTimezone ? text : `${text}Z`;
+  const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const formatFileDate = (value, { withTime = false } = {}) => {
   if (value === null || value === undefined || value === "") return "Date unavailable";
   const parsed = parseServerTimestamp(value);
-  if (!parsed) return String(value);https://sales-app-backend.azurewebsites.net
+  if (!parsed) return String(value);
   return parsed.toLocaleString("en-GB", withTime
     ? {
       day: "2-digit",
       month: "short",
       year: "numeric",
       hour: "2-digit",
-      minute: "2-digit"
+      minute: "2-digit",
+      timeZone: "Africa/Tunis"
     }
     : {
       day: "2-digit",
       month: "short",
-      year: "numeric"
+      year: "numeric",
+      timeZone: "Africa/Tunis"
     });
 };
 
@@ -2467,6 +2473,14 @@ const mergeFilesWithoutDuplicates = (existingFiles, newFiles) => {
   return Array.from(filesMap.values());
 };
 
+const incrementRfqIndex = (ref) => {
+  const match = String(ref || "").match(/^(.*)-(\d+)$/);
+  if (!match) return null;
+  const prefix = match[1];
+  const cur = match[2];
+  return `${prefix}-${String(Number(cur) + 1).padStart(cur.length, "0")}`;
+};
+
 export default function NewRfq() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -2555,6 +2569,10 @@ export default function NewRfq() {
   const [isCostingDiscussionOpen, setIsCostingDiscussionOpen] = useState(false);
   const [filePreview, setFilePreview] = useState(null);
   const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
+  const [fileUploadModalOpen, setFileUploadModalOpen] = useState(false);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState([]);
+  const [fileUpdateType, setFileUpdateType] = useState("simple");
+  const [fileUploadPending, setFileUploadPending] = useState(false);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [fileActionId, setFileActionId] = useState("");
   const [filePreviewLoadingId, setFilePreviewLoadingId] = useState("");
@@ -4480,26 +4498,31 @@ export default function NewRfq() {
     });
   };
 
-  const handleFilesChange = async (event) => {
+  const handleFilesChange = (event) => {
     if (!allowFileUpload) {
-      if (rfqFileInputRef.current) {
-        rfqFileInputRef.current.value = "";
-      }
+      if (rfqFileInputRef.current) rfqFileInputRef.current.value = "";
       return;
     }
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
+    if (rfqFileInputRef.current) rfqFileInputRef.current.value = "";
+    setPendingUploadFiles(files);
+    setFileUpdateType("simple");
+    setFileUploadModalOpen(true);
+  };
+
+  const handleConfirmFileUpload = async () => {
+    if (!pendingUploadFiles.length) return;
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
     } catch {
-      if (rfqFileInputRef.current) {
-        rfqFileInputRef.current.value = "";
-      }
       setRfqError(`Unable to create the ${activeFormalDocumentLabel} before uploading files.`);
+      setFileUploadModalOpen(false);
+      setPendingUploadFiles([]);
       return;
     }
-    const newLocalFiles = files.map((file) => ({
+    const newLocalFiles = pendingUploadFiles.map((file) => ({
       id: `local-${file.name}-${file.size}-${file.lastModified}-${Math.random()
         .toString(36)
         .slice(2, 8)}`,
@@ -4512,20 +4535,32 @@ export default function NewRfq() {
       owner: currentUserLabel
     }));
     setLocalFiles((prev) => [...prev, ...newLocalFiles]);
-    if (rfqFileInputRef.current) {
-      rfqFileInputRef.current.value = "";
-    }
-
+    setFileUploadModalOpen(false);
+    const chosenUpdateType = fileUpdateType;
+    setFileUploadPending(true);
     setSaving(true);
     try {
-      for (const file of files) {
-        await uploadRfqFile(currentRfqId, file);
+      for (const file of pendingUploadFiles) {
+        await uploadRfqFile(currentRfqId, file, chosenUpdateType);
       }
       await syncRfq(currentRfqId);
-    } catch {
-      setRfqError("Unable to upload file. Please try again.");
+      if (chosenUpdateType === "change_index") {
+        showToast("Files uploaded and RFQ index incremented successfully.", {
+          type: "success",
+          title: "RFQ index updated"
+        });
+      } else {
+        showToast("Files uploaded successfully.", {
+          type: "success",
+          title: `${formalDocumentLabel} updated`
+        });
+      }
+    } catch (err) {
+      setRfqError(err?.message || "Unable to upload file. Please try again.");
     } finally {
       setSaving(false);
+      setFileUploadPending(false);
+      setPendingUploadFiles([]);
     }
   };
 
@@ -4595,6 +4630,63 @@ export default function NewRfq() {
       setRfqError("Unable to preview this file. Please try again.");
     } finally {
       setFilePreviewLoadingId("");
+    }
+  };
+
+  const handleDownloadFile = async (file) => {
+    if (!file) return;
+    const fileName = file.name || "downloaded-file";
+
+    // Blob URL already cached from a previous preview — download directly without re-fetching.
+    const cached = file.previewUrl;
+    if (cached && cached.startsWith("blob:")) {
+      const link = document.createElement("a");
+      link.href = cached;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    const rawUrl = cached || file.url;
+    if (!rawUrl) {
+      setRfqError("Download link not available for this file.");
+      return;
+    }
+
+    try {
+      let response;
+      if (/^https?:\/\//i.test(rawUrl)) {
+        // Azure SAS URLs are blocked by CORS when fetched directly from the browser.
+        // Route through our backend proxy which fetches the blob server-side.
+        const fileId = file.id ? String(file.id) : "";
+        const currentRfqId = rfqId || "";
+        if (fileId && currentRfqId) {
+          response = await authorizedFetch(
+            `/api/rfq/${encodeURIComponent(currentRfqId)}/costing-file/${encodeURIComponent(fileId)}/download`
+          );
+        } else {
+          // Fallback: try plain fetch (works if CORS is configured on the storage bucket).
+          response = await fetch(rawUrl);
+        }
+      } else {
+        // Backend API path — must include the Bearer auth token.
+        const resolvedUrl = resolveFileUrl(rawUrl);
+        response = await authorizedFetch(resolvedUrl, { prependApiBase: false });
+      }
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      setRfqError("Unable to download this file. Please try again.");
     }
   };
 
@@ -7141,10 +7233,10 @@ export default function NewRfq() {
 
                               <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
                                 <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                                  Required Templates
+                                  Required Template
                                 </h3>
                                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-                                  Please download and complete these templates before uploading your final feasibility analysis.
+                                  Please download and complete this template before uploading your final feasibility analysis.
                                 </p>
                                 <div className="mt-4">
                                   <a
@@ -7318,29 +7410,7 @@ export default function NewRfq() {
                                       )}
                                     </div>
 
-                                    {effectiveCostingFileState?.file ? (
-                                      <div className="flex flex-wrap items-center gap-3">
-                                        {effectiveCostingFileState.file.url ? (
-                                          <button
-                                            type="button"
-                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                                            onClick={() => handlePreviewFile(effectiveCostingFileState.file)}
-                                          >
-                                            <Eye className="h-4 w-4" />
-                                            Preview
-                                          </button>
-                                        ) : null}
-                                        {effectiveCostingFileState.file.url ? (
-                                          <a
-                                            href={effectiveCostingFileState.file.url}
-                                            download={effectiveCostingFileState.file.name}
-                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
-                                          >
-                                            Download
-                                          </a>
-                                        ) : null}
-                                      </div>
-                                    ) : null}
+                                    {null}
                                   </div>
 
                                   <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
@@ -7371,15 +7441,37 @@ export default function NewRfq() {
                                           (f) => f.fileRole === "FEASIBILITY"
                                         );
                                         return feasibilityFiles.length > 0 ? (
-                                          <ul className="mt-2 flex flex-col gap-1">
+                                          <ul className="mt-2 flex flex-col gap-1.5">
                                             {feasibilityFiles.map((f) => (
-                                              <li key={f.id} className="flex min-w-0 items-center gap-1">
+                                              <li key={f.id} className="flex min-w-0 items-center justify-between gap-2">
                                                 <span
                                                   className="min-w-0 truncate text-sm font-semibold text-ink"
                                                   title={f.name}
                                                 >
                                                   {f.name}
                                                 </span>
+                                                {f.url && (
+                                                  <div className="flex flex-shrink-0 items-center gap-1">
+                                                    <button
+                                                      type="button"
+                                                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                                                      onClick={() => handlePreviewFile(f)}
+                                                      title="View file"
+                                                      aria-label="View file"
+                                                    >
+                                                      <Eye className="h-3.5 w-3.5" />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="inline-flex items-center justify-center rounded-lg border border-tide/20 bg-tide/10 p-1 text-tide transition hover:border-tide/35 hover:bg-tide/15"
+                                                      onClick={() => handleDownloadFile(f)}
+                                                      title="Download file"
+                                                      aria-label="Download file"
+                                                    >
+                                                      <Download className="h-3.5 w-3.5" />
+                                                    </button>
+                                                  </div>
+                                                )}
                                               </li>
                                             ))}
                                           </ul>
@@ -7480,10 +7572,10 @@ export default function NewRfq() {
                         <div className="space-y-6">
                           <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
                             <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
-                              Required Templates
+                              Required Template
                             </h3>
                             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-                              Please download and complete these templates before uploading your final pricing analysis.
+                              Please download and complete this template before uploading your final pricing analysis.
                             </p>
                             <div className="mt-4">
                               <a
@@ -7648,27 +7740,7 @@ export default function NewRfq() {
                                       )}
                                     </div>
  
-                                    <div className="flex flex-wrap items-center gap-3">
-                                      {pricingFinalPriceUpload.file.url ? (
-                                        <button
-                                          type="button"
-                                          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                                          onClick={() => handlePreviewFile(pricingFinalPriceUpload.file)}
-                                        >
-                                          <Eye className="h-4 w-4" />
-                                          Preview
-                                        </button>
-                                      ) : null}
-                                      {pricingFinalPriceUpload.file.url ? (
-                                        <a
-                                          href={pricingFinalPriceUpload.file.url}
-                                          download={pricingFinalPriceUpload.file.name}
-                                          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
-                                        >
-                                          Download
-                                        </a>
-                                      ) : null}
-                                    </div>
+                                    {null}
                                   </div>
  
                                   <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
@@ -7697,15 +7769,37 @@ export default function NewRfq() {
                                           (f) => f.fileRole === "PRICING_FINAL_PRICE"
                                         );
                                         return pricingFiles.length > 0 ? (
-                                          <ul className="mt-2 flex flex-col gap-1">
+                                          <ul className="mt-2 flex flex-col gap-1.5">
                                             {pricingFiles.map((f) => (
-                                              <li key={f.id} className="flex min-w-0 items-center gap-1">
+                                              <li key={f.id} className="flex min-w-0 items-center justify-between gap-2">
                                                 <span
                                                   className="min-w-0 truncate text-sm font-semibold text-ink"
                                                   title={f.name}
                                                 >
                                                   {f.name}
                                                 </span>
+                                                {f.url && (
+                                                  <div className="flex flex-shrink-0 items-center gap-1">
+                                                    <button
+                                                      type="button"
+                                                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                                                      onClick={() => handlePreviewFile(f)}
+                                                      title="View file"
+                                                      aria-label="View file"
+                                                    >
+                                                      <Eye className="h-3.5 w-3.5" />
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="inline-flex items-center justify-center rounded-lg border border-tide/20 bg-tide/10 p-1 text-tide transition hover:border-tide/35 hover:bg-tide/15"
+                                                      onClick={() => handleDownloadFile(f)}
+                                                      title="Download file"
+                                                      aria-label="Download file"
+                                                    >
+                                                      <Download className="h-3.5 w-3.5" />
+                                                    </button>
+                                                  </div>
+                                                )}
                                               </li>
                                             ))}
                                           </ul>
@@ -10127,6 +10221,16 @@ export default function NewRfq() {
               </button>
             </div>
             <div className="chat-modal-body">{renderFilePreview(filePreview)}</div>
+            <div className="chat-modal-footer">
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                onClick={() => handleDownloadFile(filePreview)}
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -10268,6 +10372,148 @@ export default function NewRfq() {
                     disabled={fileActionId === fileDeleteTarget.id}
                   >
                     {fileActionId === fileDeleteTarget.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {fileUploadModalOpen ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => {
+            if (!fileUploadPending) {
+              setFileUploadModalOpen(false);
+              setPendingUploadFiles([]);
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Upload files"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <div>
+                <p className="chat-modal-title">Upload Files</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {pendingUploadFiles.length} file{pendingUploadFiles.length !== 1 ? "s" : ""} selected
+                </p>
+              </div>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={() => {
+                  if (!fileUploadPending) {
+                    setFileUploadModalOpen(false);
+                    setPendingUploadFiles([]);
+                  }
+                }}
+                aria-label="Close upload modal"
+                disabled={fileUploadPending}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <div className="chat-modal-fallback">
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    Update type
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 transition hover:border-tide/40 hover:bg-white">
+                      <input
+                        type="radio"
+                        name="fileUpdateType"
+                        value="simple"
+                        checked={fileUpdateType === "simple"}
+                        onChange={() => setFileUpdateType("simple")}
+                        className="mt-0.5 accent-tide"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-ink">Simple update</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Upload files without changing the {formalDocumentLabel} reference.
+                        </p>
+                      </div>
+                    </label>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${!rfqSnapshot?.rfq_data?.systematic_rfq_id ? "cursor-not-allowed border-slate-200 bg-slate-50/50 opacity-50" : "border-slate-200 bg-slate-50/80 hover:border-tide/40 hover:bg-white"}`}>
+                      <input
+                        type="radio"
+                        name="fileUpdateType"
+                        value="change_index"
+                        checked={fileUpdateType === "change_index"}
+                        onChange={() => setFileUpdateType("change_index")}
+                        disabled={!rfqSnapshot?.rfq_data?.systematic_rfq_id}
+                        className="mt-0.5 accent-tide"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-ink">Change Index update</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {rfqSnapshot?.rfq_data?.systematic_rfq_id
+                            ? "Increment the RFQ index by 1 along with the file upload."
+                            : "Not available — RFQ reference has not been assigned yet."}
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {fileUpdateType === "change_index" && rfqSnapshot?.rfq_data?.systematic_rfq_id ? (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <p className="font-semibold">Reference will change:</p>
+                    <p className="mt-1">
+                      <span className="font-mono">{rfqSnapshot.rfq_data.systematic_rfq_id}</span>
+                      {" → "}
+                      <span className="font-mono font-bold">
+                        {incrementRfqIndex(rfqSnapshot.rfq_data.systematic_rfq_id) ?? "—"}
+                      </span>
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    Files to upload
+                  </p>
+                  <ul className="space-y-1.5">
+                    {pendingUploadFiles.map((f, i) => (
+                      <li key={i} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                        <Upload className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{f.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="chat-modal-actions justify-end">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={() => {
+                      setFileUploadModalOpen(false);
+                      setPendingUploadFiles([]);
+                    }}
+                    disabled={fileUploadPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="gradient-button rounded-xl px-4 py-2 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleConfirmFileUpload}
+                    disabled={fileUploadPending}
+                  >
+                    {fileUploadPending ? "Uploading..." : "Upload and save"}
                   </button>
                 </div>
               </div>
