@@ -30,6 +30,7 @@ import {
   sendChat,
   sendOfferChat,
   sendPotentialChat,
+  deleteCostingFileEntry,
   submitCostingFileAction,
   submitCostingReview,
   submitCostingValidation,
@@ -2501,6 +2502,10 @@ export default function NewRfq() {
   const [costingFileActionNote, setCostingFileActionNote] = useState("");
   const [costingFeasibilityStatus, setCostingFeasibilityStatus] = useState("");
   const [costingFileActionDraft, setCostingFileActionDraft] = useState([]);
+  const [existingFeasibilityFilesInPopup, setExistingFeasibilityFilesInPopup] = useState([]);
+  const [removedExistingFeasibilityFileIds, setRemovedExistingFeasibilityFileIds] = useState([]);
+  const [existingPricingFilesInPopup, setExistingPricingFilesInPopup] = useState([]);
+  const [removedExistingPricingFileIds, setRemovedExistingPricingFileIds] = useState([]);
   const [costingFileActionPending, setCostingFileActionPending] = useState(false);
   const [pricingBomUpload, setPricingBomUpload] = useState(null);
   const [pricingBomModalOpen, setPricingBomModalOpen] = useState(false);
@@ -5311,6 +5316,10 @@ export default function NewRfq() {
     setCostingFileActionMode(mode);
     setCostingFileActionNote("");
     setCostingFileActionDraft([]);
+    setExistingFeasibilityFilesInPopup(
+      costingFiles.filter((f) => f.fileRole === "FEASIBILITY")
+    );
+    setRemovedExistingFeasibilityFileIds([]);
     setCostingFileActionModalOpen(true);
   };
 
@@ -5320,6 +5329,8 @@ export default function NewRfq() {
     setCostingFileActionMode("UPLOADED");
     setCostingFileActionNote("");
     setCostingFileActionDraft([]);
+    setExistingFeasibilityFilesInPopup([]);
+    setRemovedExistingFeasibilityFileIds([]);
   };
 
   const handleCostingFileDraftChange = (event) => {
@@ -5348,7 +5359,8 @@ export default function NewRfq() {
       setRfqError("Please select the feasibility status before submitting.");
       return;
     }
-    if (costingFileActionMode === "UPLOADED" && costingFileActionDraft.length === 0) {
+    const hasRemovals = removedExistingFeasibilityFileIds.length > 0;
+    if (costingFileActionMode === "UPLOADED" && costingFileActionDraft.length === 0 && !hasRemovals) {
       setRfqError("Please choose the completed feasibility file before submitting.");
       return;
     }
@@ -5357,17 +5369,24 @@ export default function NewRfq() {
     setRfqError("");
 
     try {
-      await submitCostingFileAction(rfqId, {
-        action: costingFileActionMode,
-        note: trimmedNote,
-        feasibilityStatus: costingFeasibilityStatus,
-        files: costingFileActionMode === "UPLOADED" ? costingFileActionDraft : []
-      });
+      for (const entryId of removedExistingFeasibilityFileIds) {
+        await deleteCostingFileEntry(rfqId, entryId);
+      }
+      if (costingFileActionDraft.length > 0 || costingFileActionMode === "NA") {
+        await submitCostingFileAction(rfqId, {
+          action: costingFileActionMode,
+          note: trimmedNote,
+          feasibilityStatus: costingFeasibilityStatus,
+          files: costingFileActionMode === "UPLOADED" ? costingFileActionDraft : []
+        });
+      }
       await syncRfq(rfqId);
       setCostingFileActionModalOpen(false);
       setCostingFileActionMode("UPLOADED");
       setCostingFileActionNote("");
       setCostingFileActionDraft([]);
+      setExistingFeasibilityFilesInPopup([]);
+      setRemovedExistingFeasibilityFileIds([]);
       showToast(
         costingFileActionMode === "NA"
           ? "Marked as not applicable with your note."
@@ -5451,16 +5470,19 @@ export default function NewRfq() {
     }
     setRfqError("");
     setPricingFinalPriceNote(pricingFinalPriceUpload?.note || "");
-    // Ne pas réinitialiser pricingFinalPriceDraft : les fichiers déjà sélectionnés
-    // doivent rester visibles lors de la réouverture de la popup.
+    setPricingFinalPriceDraft([]);
+    setExistingPricingFilesInPopup(
+      costingFiles.filter((f) => f.fileRole === "PRICING_FINAL_PRICE")
+    );
+    setRemovedExistingPricingFileIds([]);
     setPricingFinalPriceModalOpen(true);
   };
 
   const handleClosePricingFinalPriceModal = () => {
     if (pricingFinalPricePending) return;
     setPricingFinalPriceModalOpen(false);
-    // Ne pas effacer pricingFinalPriceDraft à la fermeture : les fichiers sont
-    // conservés pour être réaffichés si la popup est rouverte avant l'upload.
+    setExistingPricingFilesInPopup([]);
+    setRemovedExistingPricingFileIds([]);
   };
 
   const handlePricingFinalPriceDraftChange = (event) => {
@@ -5480,12 +5502,31 @@ export default function NewRfq() {
     );
   };
 
+  const handleRemoveExistingFeasibilityFileFromPopup = (fileToRemove) => {
+    setExistingFeasibilityFilesInPopup((prev) =>
+      (prev || []).filter((f) => f.id !== fileToRemove.id)
+    );
+    if (fileToRemove?.id) {
+      setRemovedExistingFeasibilityFileIds((prev) => [...prev, fileToRemove.id]);
+    }
+  };
+
+  const handleRemoveExistingPricingFileFromPopup = (fileToRemove) => {
+    setExistingPricingFilesInPopup((prev) =>
+      (prev || []).filter((f) => f.id !== fileToRemove.id)
+    );
+    if (fileToRemove?.id) {
+      setRemovedExistingPricingFileIds((prev) => [...prev, fileToRemove.id]);
+    }
+  };
+
   const handleSubmitPricingFinalPriceUpload = async (event) => {
     event.preventDefault();
     if (!rfqId || pricingFinalPricePending || !canManagePricingFinalPrice) return;
 
     const trimmedNote = String(pricingFinalPriceNote || "").trim();
-    if (pricingFinalPriceDraft.length === 0) {
+    const hasRemovals = removedExistingPricingFileIds.length > 0;
+    if (pricingFinalPriceDraft.length === 0 && !hasRemovals) {
       setRfqError("Please choose the costing file with final price before submitting.");
       return;
     }
@@ -5494,20 +5535,31 @@ export default function NewRfq() {
     setRfqError("");
 
     try {
-      const updatedRfq = await uploadPricingFinalPriceFile(rfqId, {
-        note: trimmedNote,
-        files: pricingFinalPriceDraft
-      });
-      applyRfq(updatedRfq, { preserveActiveTab: true });
+      for (const entryId of removedExistingPricingFileIds) {
+        await deleteCostingFileEntry(rfqId, entryId);
+      }
+      if (pricingFinalPriceDraft.length > 0) {
+        const updatedRfq = await uploadPricingFinalPriceFile(rfqId, {
+          note: trimmedNote,
+          files: pricingFinalPriceDraft
+        });
+        applyRfq(updatedRfq, { preserveActiveTab: true });
+      } else {
+        await syncRfq(rfqId);
+      }
       setSelectedStage("In costing");
       setSelectedSubPhase("Pricing");
       setPricingFinalPriceModalOpen(false);
       setPricingFinalPriceNote("");
       setPricingFinalPriceDraft([]);
+      setExistingPricingFilesInPopup([]);
+      setRemovedExistingPricingFileIds([]);
       showToast(
         pricingFinalPriceDraft.length > 1
           ? `${pricingFinalPriceDraft.length} costing files with final price uploaded successfully.`
-          : "Costing file with final price uploaded successfully.",
+          : hasRemovals && pricingFinalPriceDraft.length === 0
+            ? "Costing file(s) removed successfully."
+            : "Costing file with final price uploaded successfully.",
         { type: "success", title: "Pricing updated" }
       );
     } catch (error) {
@@ -6553,12 +6605,6 @@ export default function NewRfq() {
                       )}
                       {shouldShowSharePointButton && (
                         <div className="flex justify-end">
-                          {console.log("DEBUG SHAREPOINT BUTTON URL", {
-                            rfqData: rfqSnapshot?.rfq_data,
-                            sharepointData: rfqSnapshot?.rfq_data?.sharepoint,
-                            sharePointUrl,
-                            shouldShowSharePointButton,
-                          }) || null}
                           <button
                             type="button"
                             disabled={!sharePointUrl}
@@ -6829,7 +6875,7 @@ export default function NewRfq() {
                                   <a
                                     href={feasibilityTemplate}
                                     download="Avocarbon_Feasibility_Template.xlsm"
-                                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50"
+                                    className="inline-flex items-center justify-center rounded-2xl border border-tide/20 bg-tide/10 px-4 py-3 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
                                   >
                                     Download Feasibility
                                   </a>
@@ -9813,8 +9859,34 @@ export default function NewRfq() {
                       onChange={handleCostingFileDraftChange}
                       disabled={costingFileActionPending || !canManageCostingFeasibilityHandoff}
                     />
-                    {costingFileActionDraft.length > 0 ? (
+                    {(existingFeasibilityFilesInPopup.length > 0 || costingFileActionDraft.length > 0) ? (
                       <ul className="flex flex-col gap-1">
+                        {existingFeasibilityFilesInPopup.map((f) => (
+                          <li
+                            key={f.id || f.name}
+                            className="flex min-w-0 items-center gap-2"
+                          >
+                            <span
+                              className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] normal-case tracking-normal text-slate-500"
+                              title={f.name}
+                            >
+                              {f.name}
+                            </span>
+                            <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                              Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              className="shrink-0 rounded p-0.5 text-slate-400 hover:text-red-500 disabled:opacity-40"
+                              onClick={() => handleRemoveExistingFeasibilityFileFromPopup(f)}
+                              disabled={costingFileActionPending}
+                              title={`Remove ${f.name}`}
+                              aria-label={`Remove ${f.name}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </li>
+                        ))}
                         {costingFileActionDraft.map((f) => (
                           <li
                             key={`${f.name}-${f.size}-${f.lastModified}`}
@@ -9843,12 +9915,12 @@ export default function NewRfq() {
                   </label>
                 ) : null}
                 <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
-                  <span>Note</span>
+                  <span>Note <span className="normal-case tracking-normal font-normal text-slate-400">(optional)</span></span>
                   <textarea
                     className="textarea-field min-h-[140px]"
                     value={costingFileActionNote}
                     onChange={(event) => setCostingFileActionNote(event.target.value)}
-                    placeholder="Describe the file or explain why it is not applicable..."
+                    placeholder="Add a note about this file (optional)..."
                     disabled={costingFileActionPending || !canManageCostingFeasibilityHandoff}
                   />
                 </label>
@@ -10005,8 +10077,34 @@ export default function NewRfq() {
                     onChange={handlePricingFinalPriceDraftChange}
                     disabled={pricingFinalPricePending || !canManagePricingFinalPrice}
                   />
-                  {pricingFinalPriceDraft.length > 0 ? (
+                  {(existingPricingFilesInPopup.length > 0 || pricingFinalPriceDraft.length > 0) ? (
                     <ul className="flex flex-col gap-1">
+                      {existingPricingFilesInPopup.map((f) => (
+                        <li
+                          key={f.id || f.name}
+                          className="flex min-w-0 items-center gap-2"
+                        >
+                          <span
+                            className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] normal-case tracking-normal text-slate-500"
+                            title={f.name}
+                          >
+                            {f.name}
+                          </span>
+                          <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                            Uploaded
+                          </span>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded p-0.5 text-slate-400 hover:text-red-500 disabled:opacity-40"
+                            onClick={() => handleRemoveExistingPricingFileFromPopup(f)}
+                            disabled={pricingFinalPricePending}
+                            title={`Remove ${f.name}`}
+                            aria-label={`Remove ${f.name}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </li>
+                      ))}
                       {pricingFinalPriceDraft.map((f) => (
                         <li
                           key={`${f.name}-${f.size}-${f.lastModified}`}
@@ -10034,12 +10132,12 @@ export default function NewRfq() {
                   ) : null}
                 </label>
                 <label className="mt-4 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
-                  <span>Note</span>
+                  <span>Note <span className="normal-case tracking-normal font-normal text-slate-400">(optional)</span></span>
                   <textarea
                     className="textarea-field min-h-[140px]"
                     value={pricingFinalPriceNote}
                     onChange={(event) => setPricingFinalPriceNote(event.target.value)}
-                    placeholder="Describe the final pricing package..."
+                    placeholder="Add a note about the final pricing package (optional)..."
                     disabled={pricingFinalPricePending || !canManagePricingFinalPrice}
                   />
                 </label>

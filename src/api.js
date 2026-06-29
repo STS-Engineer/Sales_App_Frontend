@@ -546,6 +546,13 @@ export async function uploadPricingFinalPriceFile(rfqId, payload) {
   });
 }
 
+export async function deleteCostingFileEntry(rfqId, entryId) {
+  return request(
+    `/api/rfq/${encodeURIComponent(rfqId)}/costing-file/${encodeURIComponent(entryId)}`,
+    { method: "DELETE" }
+  );
+}
+
 export async function deleteRfqFile(rfqId, fileId, fileName) {
   if (fileId) {
     return request(

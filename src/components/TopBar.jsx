@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
-import { clearSession, getCurrentUserRole, getUserProfile } from "../utils/session.js";
+import { clearSession, getCurrentUserRole, getUserProfile, hasAnyRole, hasRole } from "../utils/session.js";
 
 export default function TopBar({ title, action }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -15,7 +15,7 @@ export default function TopBar({ title, action }) {
   const storedName = profile.name || storedEmail;
   const displayName = storedName || "User";
   const displayEmail = storedEmail && storedEmail !== displayName ? storedEmail : "";
-  const isOwner = storedRole === "OWNER";
+  const isOwner = hasRole("OWNER");
   const initials = displayName
     .split(" ")
     .filter(Boolean)
@@ -75,7 +75,7 @@ export default function TopBar({ title, action }) {
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           {action}
-          {["OWNER", "ZONE_MANAGER", "COMMERCIAL"].includes(storedRole) && (
+          {hasAnyRole(["OWNER", "ZONE_MANAGER", "COMMERCIAL"]) && (
             <Link
               to="/kpis"
               className={[

@@ -38,6 +38,13 @@ function formatRoleLabel(role) {
     .join(" ");
 }
 
+/** Returns true if the user has OWNER in any of their roles. */
+function userHasOwnerRole(user) {
+  const roles =
+    Array.isArray(user.roles) && user.roles.length ? user.roles : [user.role];
+  return roles.includes("OWNER");
+}
+
 function SummaryCard({
   accentClass,
   count,
@@ -84,13 +91,13 @@ export default function UserValidation() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [selectedRole, setSelectedRole] = useState(ROLE_OPTIONS[0].value);
+  const [selectedRoles, setSelectedRoles] = useState([ROLE_OPTIONS[0].value]);
   const [approveSelectedUser, setApproveSelectedUser] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const profile = getUserProfile();
-  const isOwner = profile.role === "OWNER";
+  const isOwner = (profile.roles || [profile.role]).includes("OWNER");
   const currentUserEmail = profile.email;
 
   const loadUsers = async () => {
@@ -116,7 +123,7 @@ export default function UserValidation() {
       return;
     }
     setSelectedUser(null);
-    setSelectedRole(ROLE_OPTIONS[0].value);
+    setSelectedRoles([ROLE_OPTIONS[0].value]);
     setApproveSelectedUser(true);
     setDeleteTarget(null);
   };
@@ -150,15 +157,23 @@ export default function UserValidation() {
 
   const formattedUsers = useMemo(
     () =>
-      users.map((user) => ({
-        ...user,
-        displayName: user.full_name || user.email,
-        roleLabel: formatRoleLabel(user.role),
-        statusLabel: user.is_approved ? "Approved" : "Pending",
-        requestedAtLabel: user.created_at
-          ? new Date(user.created_at).toLocaleString()
-          : "N/A"
-      })),
+      users.map((user) => {
+        const effectiveRoles =
+          Array.isArray(user.roles) && user.roles.length
+            ? user.roles
+            : [user.role];
+        return {
+          ...user,
+          displayName: user.full_name || user.email,
+          roleLabel: formatRoleLabel(user.role),
+          rolesLabel: effectiveRoles.map(formatRoleLabel).join(", "),
+          effectiveRoles,
+          statusLabel: user.is_approved ? "Approved" : "Pending",
+          requestedAtLabel: user.created_at
+            ? new Date(user.created_at).toLocaleString()
+            : "N/A"
+        };
+      }),
     [users]
   );
 
@@ -168,23 +183,26 @@ export default function UserValidation() {
   );
 
   const approvedCount = useMemo(
-    () => formattedUsers.filter((user) => user.is_approved && user.role !== "OWNER").length,
+    () =>
+      formattedUsers.filter(
+        (user) => user.is_approved && !userHasOwnerRole(user)
+      ).length,
     [formattedUsers]
   );
 
   const ownerCount = useMemo(
-    () => formattedUsers.filter((user) => user.role === "OWNER").length,
+    () => formattedUsers.filter(userHasOwnerRole).length,
     [formattedUsers]
   );
 
   const tabUsers = useMemo(() => {
     if (activeTab === "approved") {
       return formattedUsers.filter(
-        (user) => user.is_approved && user.role !== "OWNER"
+        (user) => user.is_approved && !userHasOwnerRole(user)
       );
     }
     if (activeTab === "owners") {
-      return formattedUsers.filter((user) => user.role === "OWNER");
+      return formattedUsers.filter(userHasOwnerRole);
     }
     return formattedUsers.filter((user) => !user.is_approved);
   }, [activeTab, formattedUsers]);
@@ -198,7 +216,7 @@ export default function UserValidation() {
       [
         user.displayName,
         user.email,
-        user.roleLabel,
+        user.rolesLabel,
         user.statusLabel,
         user.requestedAtLabel
       ].some((value) => String(value || "").toLowerCase().includes(term))
@@ -207,32 +225,32 @@ export default function UserValidation() {
 
   const openEditModal = (user) => {
     setSelectedUser(user);
-    setSelectedRole(
-      ROLE_OPTIONS.some((option) => option.value === user.role)
-        ? user.role
-        : ROLE_OPTIONS[0].value
-    );
-    setApproveSelectedUser(user.is_approved || user.role === "OWNER");
+    const existingRoles = (
+      Array.isArray(user.roles) && user.roles.length ? user.roles : [user.role]
+    ).filter((r) => ROLE_OPTIONS.some((opt) => opt.value === r));
+    setSelectedRoles(existingRoles.length ? existingRoles : [ROLE_OPTIONS[0].value]);
+    setApproveSelectedUser(user.is_approved || userHasOwnerRole(user));
     setDeleteTarget(null);
   };
 
   const handleSave = async (event) => {
     event.preventDefault();
-    if (!selectedUser) {
+    if (!selectedUser || selectedRoles.length === 0) {
       return;
     }
 
-    const nextRoleIsOwner = selectedRole === "OWNER";
+    const primaryRole = selectedRoles[0];
+    const nextRoleIsOwner = selectedRoles.includes("OWNER");
     const willApprove = selectedUser.is_approved || nextRoleIsOwner || approveSelectedUser;
+    const userWasOwner = userHasOwnerRole(selectedUser);
     const isSelfOwnerDemotion =
-      isCurrentUser(selectedUser) &&
-      selectedUser.role === "OWNER" &&
-      selectedRole !== "OWNER";
+      isCurrentUser(selectedUser) && userWasOwner && !selectedRoles.includes("OWNER");
 
     setIsSaving(true);
     try {
       const payload = {
-        role: selectedRole,
+        role: primaryRole,
+        roles: selectedRoles,
         ...(!selectedUser.is_approved
           ? { is_approved: nextRoleIsOwner ? true : approveSelectedUser }
           : {})
@@ -309,7 +327,7 @@ export default function UserValidation() {
     }
   };
 
-  const selectedRoleIsOwner = selectedRole === "OWNER";
+  const selectedRoleIsOwner = selectedRoles.includes("OWNER");
   const selectedUserIsCurrentUser = isCurrentUser(selectedUser);
   const showApprovalToggle =
     Boolean(selectedUser) && !selectedUser.is_approved && !selectedRoleIsOwner;
@@ -407,7 +425,7 @@ export default function UserValidation() {
                         ? `${filteredUsers.length} result${
                             filteredUsers.length === 1 ? "" : "s"
                           }`
-                        : "\u00A0"}
+                        : " "}
                     </p>
                   </div>
                 </div>
@@ -495,7 +513,7 @@ export default function UserValidation() {
                           <tr>
                             <th className="px-6 py-4">Name</th>
                             <th className="px-6 py-4">Email</th>
-                            <th className="px-6 py-4">Role</th>
+                            <th className="px-6 py-4">Roles</th>
                             <th className="px-6 py-4">Status</th>
                             <th className="px-6 py-4 text-right" aria-label="Actions" />
                           </tr>
@@ -523,9 +541,16 @@ export default function UserValidation() {
                                 {user.email}
                               </td>
                               <td className="px-6 py-4">
-                                <span className="badge border-slate-200 bg-slate-100 text-slate-700">
-                                  {user.roleLabel}
-                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {user.effectiveRoles.map((r) => (
+                                    <span
+                                      key={r}
+                                      className="badge border-slate-200 bg-slate-100 text-slate-700"
+                                    >
+                                      {formatRoleLabel(r)}
+                                    </span>
+                                  ))}
+                                </div>
                               </td>
                               <td className="px-6 py-4">
                                 <span
@@ -609,9 +634,11 @@ export default function UserValidation() {
                   </p>
                   <p className="mt-1 text-sm text-slate-500">{selectedUser.email}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="badge border-slate-200 bg-white text-slate-700">
-                      {selectedUser.roleLabel}
-                    </span>
+                    {(selectedUser.effectiveRoles || [selectedUser.role]).map((r) => (
+                      <span key={r} className="badge border-slate-200 bg-white text-slate-700">
+                        {formatRoleLabel(r)}
+                      </span>
+                    ))}
                     <span
                       className={`badge ${
                         selectedUser.is_approved
@@ -636,23 +663,53 @@ export default function UserValidation() {
                   </div>
                 ) : null}
 
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                    Role
+                <div className="block">
+                  <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                    Roles
                   </span>
-                  <select
-                    className="input-field w-full"
-                    value={selectedRole}
-                    onChange={(event) => setSelectedRole(event.target.value)}
-                    disabled={isSaving || isDeleting}
-                  >
-                    {ROLE_OPTIONS.map((role) => (
-                      <option key={role.value} value={role.value}>
-                        {role.label}
-                      </option>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ROLE_OPTIONS.map((option) => (
+                      <label
+                        key={option.value}
+                        className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition ${
+                          selectedRoles.includes(option.value)
+                            ? "border-tide/50 bg-tide/5 font-medium text-ink"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        } ${isSaving || isDeleting ? "cursor-not-allowed opacity-60" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          value={option.value}
+                          checked={selectedRoles.includes(option.value)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRoles((prev) => [...prev, option.value]);
+                            } else {
+                              setSelectedRoles((prev) =>
+                                prev.filter((r) => r !== option.value)
+                              );
+                            }
+                          }}
+                          disabled={isSaving || isDeleting}
+                          className="h-4 w-4 rounded border-slate-300 text-tide focus:ring-tide/30"
+                        />
+                        {option.label}
+                      </label>
                     ))}
-                  </select>
-                </label>
+                  </div>
+                  {selectedRoles.length === 0 ? (
+                    <p className="mt-2 text-xs text-red-500">
+                      Please select at least one role.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-400">
+                      Primary role:{" "}
+                      <span className="font-semibold text-slate-600">
+                        {formatRoleLabel(selectedRoles[0])}
+                      </span>
+                    </p>
+                  )}
+                </div>
 
                 {showApprovalToggle ? (
                   <label className="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-600">
@@ -710,7 +767,7 @@ export default function UserValidation() {
                   <button
                     type="submit"
                     className="gradient-button rounded-xl px-4 py-2.5 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={isSaving || isDeleting}
+                    disabled={isSaving || isDeleting || selectedRoles.length === 0}
                   >
                     {isSaving ? "Saving..." : "Save changes"}
                   </button>
@@ -773,7 +830,7 @@ export default function UserValidation() {
                   <strong className="text-ink">{deleteTarget.displayName}</strong>?
                 </p>
                 <p className="rounded-2xl border border-red-100 bg-white/80 p-4 text-xs leading-6 text-red-700">
-                  {deleteTarget.role === "OWNER"
+                  {userHasOwnerRole(deleteTarget)
                     ? "Owner accounts can only be deleted when another owner still exists."
                     : "This will remove the user and revoke their access immediately."}
                   {isCurrentUser(deleteTarget)
