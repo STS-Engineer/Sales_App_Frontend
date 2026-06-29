@@ -6,7 +6,7 @@ const statusStyles = {
   "New RFQ": "border-tide/30 bg-tide/10 text-tide",
   Validation: "border-tide/30 bg-tide/10 text-tide",
   "In costing": "border-sun/40 bg-sun/15 text-sun",
-  Feasability: "border-sun/40 bg-sun/15 text-sun",
+  feasibility: "border-sun/40 bg-sun/15 text-sun",
   Pricing: "border-sun/40 bg-sun/15 text-sun",
   "RFI completed": "border-emerald-200 bg-emerald-50 text-emerald-700",
   Offer: "border-ink/25 bg-ink/10 text-ink",

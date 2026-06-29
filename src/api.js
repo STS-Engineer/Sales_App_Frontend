@@ -343,6 +343,12 @@ export async function submitRfq(rfqId) {
   });
 }
 
+export async function assignValidator(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/assign-validator`, {
+    method: "POST"
+  });
+}
+
 export async function unlockChatForEdit(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/unlock-chat`, {
     method: "POST"

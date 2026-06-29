@@ -12,7 +12,8 @@ export default function FormField({
   readOnly = false,
   disabled = false,
   required = false,
-  optional = false
+  optional = false,
+  error = null
 }) {
   const isLocked = readOnly || disabled;
   const textareaRef = useRef(null);
@@ -76,7 +77,7 @@ export default function FormField({
         />
       ) : (
         <input
-          className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
+          className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
           name={name}
           type={type}
           value={normalizedValue}
@@ -87,6 +88,9 @@ export default function FormField({
           aria-readonly={readOnly}
         />
       )}
+      {error ? (
+        <span className="text-xs font-normal normal-case tracking-normal text-red-500">{error}</span>
+      ) : null}
     </label>
   );
 }

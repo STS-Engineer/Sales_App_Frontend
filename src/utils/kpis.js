@@ -28,7 +28,7 @@ export const KPI_STATUS_COLORS = {
   "New request": "#0284c7",
   Validation: "#0369a1",
   "Pending for validation": "#0369a1",
-  Feasability: "#f59e0b",
+  feasibility: "#f59e0b",
   Pricing: "#f97316",
   "RFI completed": "#1f9d6b",
   "Offer preparation": "#8b5cf6",
@@ -46,7 +46,7 @@ export const KPI_STATUS_COLORS = {
 const KPI_STATUS_ORDER = [
   "New request",
   "Pending for validation",
-  "Feasability",
+  "feasibility",
   "Pricing",
   "RFI completed",
   "Offer preparation",
@@ -115,7 +115,7 @@ const POSITIVE_OUTCOME_STATUSES = new Set([
 ]);
 const AT_RISK_STATUSES = new Set([
   "Validation",
-  "Feasability",
+  "feasibility",
   "Pricing",
   "Offer validation"
 ]);

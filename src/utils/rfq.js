@@ -7,9 +7,9 @@ const STATUS_MAP = {
   NEW_RFQ: "New RFQ",
   PENDING_FOR_VALIDATION: "Validation",
   REVISION_REQUESTED: "Validation",
-  IN_COSTING_FEASIBILITY: "Feasability",
+  IN_COSTING_FEASIBILITY: "feasibility",
   IN_COSTING_PRICING: "Pricing",
-  FEASIBILITY: "Feasability",
+  FEASIBILITY: "feasibility",
   PRICING: "Pricing",
   OFFER_PREPARATION: "Offer preparation",
   OFFER_VALIDATION: "Offer validation",
@@ -145,7 +145,7 @@ export const createEmptyProductItem = () => ({
   partNumber: "",
   productLine: "",
   costingData: "",
-  drawing: null,
+  drawing: [],
   poDate: "",
   ppapDate: "",
   sop: "",
@@ -202,6 +202,12 @@ export const getDeliveryZoneOptions = (currentValue = "") => {
   ];
 };
  
+const extractSopYear = (sop) => {
+  if (!sop && sop !== 0) return NaN;
+  const match = String(sop).match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? parseInt(match[1], 10) : NaN;
+};
+
 const pickNonEmptyValue = (...values) => {
   for (const value of values) {
     if (value === 0 || value === false) return value;
@@ -242,13 +248,13 @@ export const normalizeAutomotiveType = (value) => {
     .replace(/\s+/g, " ")
     .trim();
  
-  if (normalized === "1") return "Auto";
-  if (normalized === "2") return "Non Auto";
+  if (normalized === "1") return "Automotive";
+  if (normalized === "2") return "Non automotive";
   if (normalized.includes("non") && normalized.includes("auto")) {
-    return "Non Auto";
+    return "Non automotive";
   }
   if (normalized.includes("auto")) {
-    return "Auto";
+    return "Automotive";
   }
  
   return text;
@@ -349,21 +355,46 @@ const hasProductValue = (product = {}) =>
  
 export const normalizeProductsFromRfqData = (data = {}) => {
   const rawProducts = Array.isArray(data.products) ? data.products : [];
+  const rawVolumes = Array.isArray(data.volumes) ? data.volumes : [];
   const legacyTargetPriceIsEstimated = pickNonEmptyValue(
     data.target_price_is_estimated,
     data.targetPriceIsEstimated
   );
   const normalizedProducts = rawProducts
-    .map((item) =>
-      normalizeProductItem({
+    .map((item, i) => {
+      const vol = rawVolumes[i] || {};
+      const existingQty = pickNonEmptyValue(item?.quantity, item?.qty, item?.annual_volume, item?.annualVolume, item?.qty_per_year, item?.qtyPerYear);
+      let derivedQty = existingQty;
+      if (!existingQty) {
+        const sop = extractSopYear(item?.sop || item?.sop_year || item?.sopYear);
+        const volumeMap = (typeof vol.volumes === "object" && vol.volumes !== null) ? vol.volumes : {};
+        if (!Number.isNaN(sop) && sop > 1900) {
+          const total = Array.from({ length: 5 }, (_, j) => sop + j)
+            .reduce((sum, year) => sum + Number(volumeMap[year] || 0), 0);
+          if (total > 0) derivedQty = total;
+        } else {
+          const total = Object.values(volumeMap).reduce((sum, v) => sum + Number(v || 0), 0);
+          if (total > 0) derivedQty = total;
+        }
+      }
+      return normalizeProductItem({
         ...item,
+        quantity: derivedQty,
+        target_price: pickNonEmptyValue(
+          item?.target_price,
+          item?.targetPrice,
+          vol.target_price,
+          vol.targetPrice
+        ),
         target_price_is_estimated: pickNonEmptyValue(
           item?.target_price_is_estimated,
           item?.targetPriceIsEstimated,
-          legacyTargetPriceIsEstimated
+          legacyTargetPriceIsEstimated,
+          vol.price_source,
+          vol.priceSource
         )
-      })
-    )
+      });
+    })
     .filter(hasProductValue);
  
   if (normalizedProducts.length) {
@@ -511,18 +542,18 @@ export const mapRfqDataToForm = (rfq) => {
       pickFirst(data.automotive_type, data.automotiveType)
     ),
     customer: pickText(data.customer_name, data.customer, data.client),
-    application: pickText(data.application),
-    productName: pickText(data.product_name, data.product_line_acronym),
-    productLine: pickText(data.product_line_acronym) || "",
+    application: pickText(data.application, firstProduct.application),
+    productName: pickText(data.product_name, data.product_line_acronym, firstProduct.product),
+    productLine: pickText(data.product_line_acronym, firstProduct.productLine) || "",
     projectName: pickText(data.project_name, data.projectName),
     costingData: pickText(data.costing_data, data.costingData),
     products,
     volumes,
     customerPn: pickFirst(firstProduct.partNumber, data.customer_pn, data.customerPn),
     revisionLevel: pickFirst(firstProduct.revisionLevel, data.revision_level, data.revisionLevel),
-    deliveryZone: pickText(data.delivery_zone, data.deliveryZone),
-    plant: pickText(data.delivery_plant, data.plant),
-    country: pickText(data.country),
+    deliveryZone: pickText(data.delivery_zone, data.deliveryZone, volumes[0]?.deliveryZone),
+    plant: pickText(data.delivery_plant, data.plant, volumes[0]?.plant),
+    country: pickText(data.country, volumes[0]?.country),
     poDate: sanitizeDateForInput(
       pickFirst(data.po_date, data.poDate)
     ),
@@ -530,7 +561,7 @@ export const mapRfqDataToForm = (rfq) => {
       pickFirst(data.ppap_date, data.ppapDate)
     ),
     sop: sanitizeIntegerForInput(
-      pickFirst(data.sop_year, data.sop)
+      pickFirst(data.sop_year, data.sop, firstProduct.sop)
     ),
     qtyPerYear: sanitizeIntegerForInput(
       pickFirst(firstProduct.quantity, data.annual_volume, data.qty_per_year, data.qtyPerYear)

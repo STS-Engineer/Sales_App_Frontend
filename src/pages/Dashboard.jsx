@@ -41,8 +41,8 @@ const PHASES = [
   {
     key: "In costing",
     label: "In costing",
-    statuses: ["Feasability", "Pricing", "RFI completed", "Cancelled"],
-    subPhases: ["Feasability", "Pricing"]
+    statuses: ["feasibility", "Pricing", "RFI completed", "Cancelled"],
+    subPhases: ["feasibility", "Pricing"]
   },
   {
     key: "Offer",

@@ -11,6 +11,7 @@ import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import {
   advanceRfqStatus,
+  assignValidator,
   authorizedFetch,
   createRfq,
   downloadCostingTemplate,
@@ -27,6 +28,7 @@ import {
   postRfqDiscussion,
   proceedToFormalRfq,
   requestRevision,
+  listProducts,
   sendChat,
   sendOfferChat,
   sendPotentialChat,
@@ -34,6 +36,7 @@ import {
   submitCostingReview,
   submitCostingValidation,
   submitRevision,
+  submitRfq,
   unlockChatForEdit,
   updateRfqData,
   uploadPricingBomFile,
@@ -52,6 +55,7 @@ import {
   calculateTotalTargetTo,
   createEmptyProductItem,
   createEmptyVolumeItem,
+  DELIVERY_ZONE_OPTIONS,
   getDeliveryZoneOptions,
   normalizeAutomotiveType,
   normalizeProductsForPayload,
@@ -239,7 +243,7 @@ const RFQ_PRODUCT_FIELD_REQUIREMENTS = {
   sop: STEP_REQUIREMENT_REQUIRED,
   costingData: STEP_REQUIREMENT_OPTIONAL,
   revisionLevel: STEP_REQUIREMENT_OPTIONAL,
-  quantity: STEP_REQUIREMENT_REQUIRED,
+  quantity: STEP_REQUIREMENT_OPTIONAL,
   targetPrice: STEP_REQUIREMENT_REQUIRED,
   currency: STEP_REQUIREMENT_REQUIRED,
   targetPriceIsEstimated: STEP_REQUIREMENT_REQUIRED
@@ -317,6 +321,12 @@ const STEP_STYLES = {
   }
 };
 
+const extractSopYear = (sop) => {
+  if (!sop && sop !== 0) return NaN;
+  const match = String(sop).match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? parseInt(match[1], 10) : NaN;
+};
+
 const getRfqFieldRequirementProps = (fieldName) => ({
   required: RFQ_REQUIRED_FIELD_NAMES.has(fieldName),
   optional: RFQ_OPTIONAL_FIELD_NAMES.has(fieldName)
@@ -352,7 +362,7 @@ const PIPELINE_STAGES = [
   {
     key: "In costing",
     label: "In costing",
-    subPhases: ["Feasability", "Pricing"]
+    subPhases: ["feasibility", "Pricing"]
   },
   {
     key: "Offer",
@@ -694,9 +704,21 @@ const hasMeaningfulValue = (value) => {
   return String(value).trim().length > 0;
 };
 
+const isAvocarbonEmail = (value) =>
+  typeof value === "string" && value.trim().toLowerCase().endsWith("@avocarbon.com");
+
 const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => {
   if (fieldName === "rfqFiles") {
     return Array.isArray(mergedFiles) && mergedFiles.length > 0;
+  }
+  if (fieldName === "deliveryZone" || fieldName === "plant" || fieldName === "country") {
+    const vols = Array.isArray(form.volumes) ? form.volumes : [];
+    if (!vols.length) return hasMeaningfulValue(form?.[fieldName]);
+    const key = fieldName === "deliveryZone" ? "deliveryZone" : fieldName;
+    return vols.every((v) => hasMeaningfulValue(v?.[key]));
+  }
+  if (fieldName === "contactEmail") {
+    return hasMeaningfulValue(form?.contactEmail) && !isAvocarbonEmail(form?.contactEmail);
   }
   return hasMeaningfulValue(form?.[fieldName]);
 };
@@ -770,7 +792,7 @@ const getRfqDisplayStepCompletionMap = (
   strictCompletion = {}
 ) =>
   Object.fromEntries(
-    STEPS.map((step, index) => {
+    STEPS.map((step) => {
       const strictComplete = Boolean(strictCompletion[step.id]);
       if (strictComplete) {
         return [step.id, true];
@@ -779,23 +801,8 @@ const getRfqDisplayStepCompletionMap = (
       const requiredComplete = getRfqRequiredStepFields(step.id).every((fieldName) =>
         isRfqFieldComplete(form, fieldName, { mergedFiles })
       );
-      if (!requiredComplete) {
-        return [step.id, false];
-      }
 
-      const nextStep = STEPS[index + 1];
-      const nextStepHasAnyActivity = nextStep
-        ? getRfqWorkflowStepFields(nextStep.id).some(
-            (fieldName) =>
-              isRfqFieldComplete(form, fieldName, { mergedFiles }) ||
-              (
-                RFQ_OPTIONAL_FIELD_NAMES.has(fieldName) &&
-                isRawRfqFieldSkipped(rawRfqData, fieldName)
-              )
-          )
-        : false;
-
-      return [step.id, nextStepHasAnyActivity];
+      return [step.id, requiredComplete];
     })
   );
 
@@ -1944,9 +1951,13 @@ const buildProductMirrorFields = (products = []) => {
   const totalTargetTo = calculateTotalTargetTo(safeProducts);
 
   return {
+    application: firstProduct.application || "",
+    productName: firstProduct.product || "",
+    productLine: firstProduct.productLine || "",
     customerPn: firstProduct.partNumber || "",
     revisionLevel: firstProduct.revisionLevel || "",
     qtyPerYear: firstProduct.quantity || "",
+    sop: firstProduct.sop || "",
     targetPrice: firstProduct.targetPrice || "",
     targetPriceLocal: firstProduct.targetPrice || "",
     targetPriceCurrency: sanitizeProductCurrencyCode(firstProduct.currency),
@@ -2482,6 +2493,8 @@ export default function NewRfq() {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [chatWidth, setChatWidth] = useState(420);
+  const [productOptions, setProductOptions] = useState([]);
+  const [productDrawings, setProductDrawings] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
   const [costingFiles, setCostingFiles] = useState([]);
@@ -2565,7 +2578,7 @@ export default function NewRfq() {
   const [persistCostingReviewView, setPersistCostingReviewView] = useState(false);
   const [proceedingToFormalRfq, setProceedingToFormalRfq] = useState(false);
   const [costingSavePending, setCostingSavePending] = useState(false);
-  const [costingFeasabilitySaved, setCostingFeasabilitySaved] = useState(false);
+  const [costingfeasibilitySaved, setCostingfeasibilitySaved] = useState(false);
   const [pendingRfqAutofillReveal, setPendingRfqAutofillReveal] = useState(null);
   const [pendingPotentialAutofillReveal, setPendingPotentialAutofillReveal] = useState(null);
   const rfqFileInputRef = useRef(null);
@@ -2907,6 +2920,19 @@ export default function NewRfq() {
   );
 
   useEffect(() => {
+    listProducts().then((data) => {
+      const raw = Array.isArray(data?.products) ? data.products : [];
+      const seen = new Set();
+      setProductOptions(raw.filter((p) => {
+        const k = p.product_name || p.product_line || "";
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     rfqStepAutoFollowPausedRef.current = false;
   }, [rfqId]);
 
@@ -2976,8 +3002,8 @@ export default function NewRfq() {
     return Object.fromEntries(entries);
   }, [displayStepCompletion]);
   const allStepsComplete = useMemo(
-    () => STEPS.every((step) => stepCompletion[step.id]),
-    [stepCompletion]
+    () => STEPS.every((step) => displayStepCompletion[step.id]),
+    [displayStepCompletion]
   );
   const canOpenRfqValidation =
     hasValidationLock && !holdSelfValidationPrompt;
@@ -2987,10 +3013,10 @@ export default function NewRfq() {
     ["OWNER", "COSTING_TEAM", "RND", "PLM"].includes(currentUserRole)
   );
   const costingDisplaySubPhase = isCostingStage
-    ? selectedSubPhase || getActiveDisplaySubPhase("In costing") || "Feasability"
+    ? selectedSubPhase || getActiveDisplaySubPhase("In costing") || "feasibility"
     : "";
-  const isCostingFeasabilityView =
-    isCostingStage && costingDisplaySubPhase === "Feasability";
+  const isCostingfeasibilityView =
+    isCostingStage && costingDisplaySubPhase === "feasibility";
   const isCostingPricingView =
     isCostingStage && costingDisplaySubPhase === "Pricing";
 
@@ -2999,7 +3025,7 @@ export default function NewRfq() {
     rfqSnapshot?.rfq_data?.sharepoint?.folder_url ||
     rfqSnapshot?.rfq_data?.sharepoint_folder_url || // legacy fallback
     "";
-  const shouldShowSharePointButton = isCostingFeasabilityView || isCostingPricingView;
+  const shouldShowSharePointButton = isCostingfeasibilityView || isCostingPricingView;
   const handleOpenSharePoint = () => {
     if (!sharePointUrl) return;
     window.open(sharePointUrl, "_blank", "noopener,noreferrer");
@@ -3021,16 +3047,16 @@ export default function NewRfq() {
   const canOpenCostingPricing = Boolean(
     activeSubPhase === "Pricing" || hasCompletedCostingFileAction
   );
-  const canReviewCostingFeasability = Boolean(
+  const canReviewCostingfeasibility = Boolean(
     rfqId &&
     canUseCostingActions &&
-    isCostingFeasabilityView &&
+    isCostingfeasibilityView &&
     (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
   );
   const canManageCostingFeasibilityHandoff = Boolean(
     rfqId &&
     canUseCostingActions &&
-    isCostingFeasabilityView &&
+    isCostingfeasibilityView &&
     (
       currentUserRole === "OWNER" ||
       currentUserRole === "COSTING_TEAM" ||
@@ -3041,17 +3067,17 @@ export default function NewRfq() {
     String(costingFeasibilityStatus || "").trim()
   );
   const costingReviewButtonsDisabled = Boolean(
-    !canReviewCostingFeasability || costingReviewActionId
+    !canReviewCostingfeasibility || costingReviewActionId
   );
-  const canSaveCostingFeasability = Boolean(
-    canReviewCostingFeasability &&
+  const canSaveCostingfeasibility = Boolean(
+    canReviewCostingfeasibility &&
     hasRecordedCostingReviewDecision &&
     !isCostingReviewRejected &&
     ["UPLOADED", "NA"].includes(effectiveCostingFileState?.fileStatus || "") &&
     !costingSavePending
   );
-  const hasSavedCostingFeasability = Boolean(
-    feasibilitySaveAudit.completedAt || costingFeasabilitySaved
+  const hasSavedCostingfeasibility = Boolean(
+    feasibilitySaveAudit.completedAt || costingfeasibilitySaved
   );
   const feasibilitySavedAtDisplayValue =
     parseServerTimestamp(
@@ -3130,7 +3156,7 @@ export default function NewRfq() {
   ]);
   const isRfqFormReadOnly =
     (hasValidationLock && !rfqFormEditEnabled) || isRevisionLockedForNonCreator;
-  const lockNewRfqFields = true;
+  const lockNewRfqFields = false;
   const potentialFieldReadOnly = true;
   const isOfferChatReadOnly =
     !canUseOfferActions || isOfferValidationLocked;
@@ -3176,9 +3202,7 @@ export default function NewRfq() {
   );
   const showRfqStepNavigation =
     isFormalDocumentTab && isRfqStage && isRfqFormView;
-  const showChatPanel =
-    (isRfqStage && !isRfqValidationView && activeRfqTab !== "files") ||
-    isOfferStage;
+  const showChatPanel = false;
   const activeDiscussionPhase = useMemo(() => {
     if (activeRfqTab === "potential") return "NEW_RFQ";
     if (isFormalDocumentTab) return "NEW_RFQ";
@@ -3580,7 +3604,7 @@ export default function NewRfq() {
       return;
     }
     if (selectedSubPhase === "Pricing") {
-      setSelectedSubPhase("Feasability");
+      setSelectedSubPhase("feasibility");
     }
   }, [canOpenCostingPricing, isCostingStage, selectedSubPhase]);
 
@@ -3719,7 +3743,7 @@ export default function NewRfq() {
     setPricingFileValidationActionId("");
     setPricingFileRejectModalOpen(false);
     setPricingFileRejectReason("");
-    setCostingFeasabilitySaved(false);
+    setCostingfeasibilitySaved(false);
     setRfqSubStatus(subStatusValue || "");
     setDocumentType(nextDocumentType);
     const nextFormState = {
@@ -3778,7 +3802,20 @@ export default function NewRfq() {
       );
     const nextLocalFiles = filterRemainingLocalFiles(localFilesRef.current);
     const nextMergedFiles = [...normalizedFiles, ...nextLocalFiles];
-    setForm(nextFormState);
+    // Use a functional updater so we can read prev.products to preserve local
+    // File objects (drawings) that live only in client state and are never
+    // returned by the server. Without this, every syncRfq / applyRfq call
+    // would wipe product drawings that the user just selected.
+    setForm((prev) => {
+      if (!Array.isArray(nextFormState.products) || !nextFormState.products.length) {
+        return nextFormState;
+      }
+      const mergedProducts = nextFormState.products.map((product, i) => ({
+        ...product,
+        drawing: prev.products?.[i]?.drawing ?? product.drawing
+      }));
+      return { ...nextFormState, products: mergedProducts };
+    });
     setPendingPotentialAutofillReveal(
       revealUpdatedRfqFields && isPotentialRecord
         ? buildPotentialAutofillRevealTarget(form, nextFormState)
@@ -4006,7 +4043,7 @@ export default function NewRfq() {
           setPricingFileValidationActionId("");
           setPricingFileRejectModalOpen(false);
           setPricingFileRejectReason("");
-          setCostingFeasabilitySaved(false);
+          setCostingfeasibilitySaved(false);
           setDiscussionMessages([]);
           setDiscussionDraft("");
           setDiscussionSending(false);
@@ -4082,7 +4119,7 @@ export default function NewRfq() {
         setPricingFileValidationActionId("");
         setPricingFileRejectModalOpen(false);
         setPricingFileRejectReason("");
-        setCostingFeasabilitySaved(false);
+        setCostingfeasibilitySaved(false);
         setDiscussionMessages([]);
         setDiscussionError("");
         setCostingDiscussionMessages([]);
@@ -4322,6 +4359,8 @@ export default function NewRfq() {
         currentProducts[0]?.currency || prev.targetPriceCurrency
       );
       const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
+      const nextVolumes = [...currentVolumes, createEmptyVolumeItem()];
+      const firstVol = nextVolumes[0] || {};
       return {
         ...prev,
         products: [
@@ -4331,7 +4370,10 @@ export default function NewRfq() {
             currency: sharedCurrency
           }
         ],
-        volumes: [...currentVolumes, createEmptyVolumeItem()]
+        volumes: nextVolumes,
+        deliveryZone: nextVolumes.every((v) => v.deliveryZone) ? firstVol.deliveryZone : "",
+        plant: nextVolumes.every((v) => v.plant) ? firstVol.plant : "",
+        country: nextVolumes.every((v) => v.country) ? firstVol.country : "",
       };
     });
   };
@@ -4348,11 +4390,15 @@ export default function NewRfq() {
       const safeProducts = nextProducts.length ? nextProducts : [createEmptyProductItem()];
       const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
       const nextVolumes = currentVolumes.filter((_, volumeIndex) => volumeIndex !== index);
+      const firstVol = nextVolumes[0] || {};
       return {
         ...prev,
         products: safeProducts,
         volumes: nextVolumes,
-        ...buildProductMirrorFields(safeProducts)
+        ...buildProductMirrorFields(safeProducts),
+        deliveryZone: nextVolumes.every((v) => v.deliveryZone) ? firstVol.deliveryZone : "",
+        plant: nextVolumes.every((v) => v.plant) ? firstVol.plant : "",
+        country: nextVolumes.every((v) => v.country) ? firstVol.country : "",
       };
     });
   };
@@ -4371,7 +4417,48 @@ export default function NewRfq() {
         }
         return { ...volume, [fieldName]: value };
       });
-      return { ...prev, volumes: nextVolumes };
+      const firstVol = nextVolumes[0] || {};
+      // Mirror per-volume pricing and delivery fields back to the corresponding product
+      const currentProducts = Array.isArray(prev.products) && prev.products.length
+        ? prev.products : [createEmptyProductItem()];
+      const nextProducts = currentProducts.map((product, productIndex) => {
+        const vol = nextVolumes[productIndex] || {};
+        const isEstimated = vol.priceSource === "Estimated"
+          ? true
+          : vol.priceSource === "Official Customer Price"
+            ? false
+            : product.targetPriceIsEstimated ?? null;
+        const sop = extractSopYear(product.sop);
+        const volumeMap = vol.volumes || {};
+        let derivedQty;
+        if (!Number.isNaN(sop) && sop > 1900) {
+          const total = Array.from({ length: 5 }, (_, i) => sop + i)
+            .reduce((sum, year) => sum + Number(volumeMap[year] || 0), 0);
+          if (total > 0) derivedQty = total;
+        } else {
+          const total = Object.values(volumeMap).reduce((sum, v) => sum + Number(v || 0), 0);
+          if (total > 0) derivedQty = total;
+        }
+        const nextProduct = {
+          ...product,
+          targetPrice: vol.targetPrice !== undefined && vol.targetPrice !== ""
+            ? vol.targetPrice
+            : product.targetPrice,
+          targetPriceIsEstimated: isEstimated,
+          ...(derivedQty !== undefined ? { quantity: derivedQty } : {}),
+        };
+        nextProduct.targetTo = calculateProductTargetTo(nextProduct);
+        return nextProduct;
+      });
+      return {
+        ...prev,
+        volumes: nextVolumes,
+        products: nextProducts,
+        ...buildProductMirrorFields(nextProducts),
+        deliveryZone: nextVolumes.every((v) => v.deliveryZone) ? firstVol.deliveryZone : "",
+        plant: nextVolumes.every((v) => v.plant) ? firstVol.plant : "",
+        country: nextVolumes.every((v) => v.country) ? firstVol.country : "",
+      };
     });
   };
 
@@ -4419,6 +4506,45 @@ export default function NewRfq() {
       await syncRfq(currentRfqId);
     } catch {
       setRfqError("Unable to upload file. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleProductDrawingUpload = async (productIndex, files) => {
+    if (!files.length) return;
+    const localEntries = files.map((file) => ({
+      id: `local-drawing-${productIndex}-${file.name}-${file.size}-${file.lastModified}`,
+      name: file.name,
+      url: URL.createObjectURL(file),
+      file,
+      source: "local"
+    }));
+    setProductDrawings((prev) => ({
+      ...prev,
+      [productIndex]: [...(prev[productIndex] || []), ...localEntries]
+    }));
+    let currentRfqId = rfqId;
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      setRfqError(`Unable to create the ${activeFormalDocumentLabel} before uploading the drawing.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      for (const file of files) {
+        await uploadRfqFile(currentRfqId, file);
+      }
+      await syncRfq(currentRfqId);
+      setProductDrawings((prev) => {
+        const current = prev[productIndex] || [];
+        const uploadedIds = new Set(localEntries.map((e) => e.id));
+        const remaining = current.filter((e) => !uploadedIds.has(e.id));
+        return { ...prev, [productIndex]: remaining };
+      });
+    } catch {
+      setRfqError("Unable to upload drawing. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -4963,11 +5089,157 @@ export default function NewRfq() {
     }
   };
 
+  const handleProductSelect = (index, selectedName) => {
+    const selected = productOptions.find(
+      (p) => (p.product_name || p.product_line) === selectedName
+    );
+    setForm((prev) => {
+      const currentProducts = Array.isArray(prev.products) && prev.products.length
+        ? prev.products
+        : [createEmptyProductItem()];
+      const nextProducts = currentProducts.map((product, productIndex) => {
+        if (productIndex !== index) {
+          const p = { ...product };
+          p.targetTo = calculateProductTargetTo(p);
+          return p;
+        }
+        const nextProduct = {
+          ...product,
+          product: selectedName,
+          productLine: selected ? selected.acronym : product.productLine,
+        };
+        nextProduct.targetTo = calculateProductTargetTo(nextProduct);
+        return nextProduct;
+      });
+      return {
+        ...prev,
+        products: nextProducts,
+        ...buildProductMirrorFields(nextProducts),
+      };
+    });
+  };
+
+  const handleSaveForm = async () => {
+    if (!rfqId || !canUseRfqActions) return;
+    setSaving(true);
+    try {
+      const updatedRfq = await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      // Update snapshot from response without calling applyRfq — applyRfq resets
+      // the entire form (losing local file selections and the user's in-progress edits).
+      if (updatedRfq) setRfqSnapshot(updatedRfq);
+    } catch {
+      setRfqError("Unable to auto-save. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const _autoSaveTimerRef = useRef(null);
+  const _autoSaveInitRef = useRef(false);
+  const _autoCreateRef = useRef(false);
+  const _latestFormRef = useRef(form);
+  const _rfqIdRef = useRef(rfqId);
+  const _canUseRfqActionsRef = useRef(canUseRfqActions);
+  const _activeRfqTabRef = useRef(activeRfqTab);
+  useEffect(() => { _latestFormRef.current = form; }, [form]);
+  useEffect(() => { _rfqIdRef.current = rfqId; }, [rfqId]);
+  useEffect(() => { _canUseRfqActionsRef.current = canUseRfqActions; }, [canUseRfqActions]);
+  useEffect(() => { _activeRfqTabRef.current = activeRfqTab; }, [activeRfqTab]);
+  useEffect(() => {
+    if (!_autoSaveInitRef.current) {
+      _autoSaveInitRef.current = true;
+      return;
+    }
+    if (_autoSaveTimerRef.current) clearTimeout(_autoSaveTimerRef.current);
+    _autoSaveTimerRef.current = setTimeout(async () => {
+      if (!_canUseRfqActionsRef.current) return;
+      const currentRfqId = _rfqIdRef.current;
+      if (!currentRfqId) {
+        if (_autoCreateRef.current) return;
+        // Only create if the user has actually entered some data (prevents StrictMode ghost-fires)
+        const f = _latestFormRef.current;
+        const hasData = Boolean(
+          f.customer || f.projectName || f.rfqReceptionDate || f.expectedQuotationDate ||
+          f.automotiveType || f.contactName || f.contactEmail || f.deliveryZone || f.country ||
+          (Array.isArray(f.products) && f.products.some(p => p.product || p.partNumber || p.targetPrice))
+        );
+        if (!hasData) return;
+        _autoCreateRef.current = true;
+        try {
+          const tab = _activeRfqTabRef.current;
+          const mode = tab === "potential" ? "potential" : "rfq";
+          const docType = tab === "potential" ? "POTENTIAL" : tab === "rfi" ? "RFI" : "RFQ";
+          const created = await createRfq({ chat_mode: mode, document_type: docType });
+          const newId = created.rfq_id;
+          setRfqId(newId);
+          // Use replaceState instead of navigate() to update the URL without triggering
+          // React Router's init effect (which would applyRfq → reset form → cause a ghost save)
+          window.history.replaceState(null, "", `/rfqs/new?id=${encodeURIComponent(newId)}`);
+          await updateRfqData(newId, buildRfqDataPayloadFromForm(_latestFormRef.current));
+        } catch {
+          setRfqError("Unable to auto-save. Please try again.");
+        } finally {
+          _autoCreateRef.current = false;
+        }
+      } else {
+        handleSaveForm();
+      }
+    }, 1500);
+    return () => clearTimeout(_autoSaveTimerRef.current);
+  }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleAssignValidator = async () => {
+    if (!rfqId || !canUseRfqActions) return;
+    setSaving(true);
+    try {
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      const result = await assignValidator(rfqId);
+      setForm((prev) => ({ ...prev, validatorEmail: result.zone_manager_email || prev.validatorEmail }));
+      await syncRfq(rfqId);
+    } catch {
+      // silent — validator assignment is best-effort
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const _autoAssignedRfqIdsRef = useRef(new Set());
+  useEffect(() => {
+    if (!rfqId || !canUseRfqActions) return;
+    if (form.validatorEmail) return;
+    if (_autoAssignedRfqIdsRef.current.has(rfqId)) return;
+    const hasProductLine = (form.products || []).some((p) => String(p.productLine || "").trim() !== "");
+    const hasDeliveryZone = (form.volumes || []).some((v) => String(v.deliveryZone || "").trim() !== "");
+    if (!hasProductLine || !hasDeliveryZone) return;
+    _autoAssignedRfqIdsRef.current.add(rfqId);
+    handleAssignValidator();
+  }, [rfqId, canUseRfqActions, form.validatorEmail, form.products, form.volumes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSubmitToValidator = async () => {
+    if (!rfqId || !canUseRfqActions) return;
+    setSaving(true);
+    try {
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      if (!form.validatorEmail) {
+        const result = await assignValidator(rfqId);
+        setForm((prev) => ({ ...prev, validatorEmail: result.zone_manager_email || prev.validatorEmail }));
+      }
+      await submitRfq(rfqId);
+      await syncRfq(rfqId);
+      setValidationSuccess("RFQ submitted to validator successfully.");
+    } catch (error) {
+      setRfqError(error?.message || "Unable to submit. Please check all required fields.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!rfqId || !canUseRfqActions) return;
     setSaving(true);
     try {
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
       await syncRfq(rfqId);
     } finally {
       setSaving(false);
@@ -5228,7 +5500,7 @@ export default function NewRfq() {
   };
 
   const handleApproveCostingReview = async () => {
-    if (!rfqId || costingReviewActionId || !canReviewCostingFeasability) return;
+    if (!rfqId || costingReviewActionId || !canReviewCostingfeasibility) return;
     setCostingReviewActionId("approve");
     setValidationSuccess("");
     setRfqError("");
@@ -5237,7 +5509,7 @@ export default function NewRfq() {
       await syncRfq(rfqId);
       setPersistCostingReviewView(true);
       setSelectedStage("In costing");
-      setSelectedSubPhase("Feasability");
+      setSelectedSubPhase("feasibility");
       setValidationSuccess(
         "Reception Reviewed. Upload the file or mark it as not applicable, then click Save to move to pricing."
       );
@@ -5249,7 +5521,7 @@ export default function NewRfq() {
   };
 
   const handleRejectCostingReview = () => {
-    if (costingReviewActionId || !canReviewCostingFeasability) return;
+    if (costingReviewActionId || !canReviewCostingfeasibility) return;
     setValidationSuccess("");
     setRfqError("");
     setCostingRejectModalOpen(true);
@@ -5263,7 +5535,7 @@ export default function NewRfq() {
   };
 
   const handleConfirmCostingRejectReview = async () => {
-    if (!rfqId || !canReviewCostingFeasability) return;
+    if (!rfqId || !canReviewCostingfeasibility) return;
     if (!String(costingRejectReason || "").trim()) {
       setRfqError("Please provide a rejection reason.");
       return;
@@ -5279,7 +5551,7 @@ export default function NewRfq() {
       await syncRfq(rfqId);
       setPersistCostingReviewView(true);
       setSelectedStage("In costing");
-      setSelectedSubPhase("Feasability");
+      setSelectedSubPhase("feasibility");
       setCostingRejectModalOpen(false);
       setCostingRejectReason("");
       setValidationSuccess("Feasibility rejected successfully.");
@@ -5570,8 +5842,8 @@ export default function NewRfq() {
     }
   };
 
-  const handleSaveCostingFeasability = async () => {
-    if (!rfqId || costingSavePending || !canSaveCostingFeasability) return;
+  const handleSaveCostingfeasibility = async () => {
+    if (!rfqId || costingSavePending || !canSaveCostingfeasibility) return;
     if (!hasRecordedCostingReviewDecision || isCostingReviewRejected) {
       setRfqError("Only an approved feasibility review can be saved to pricing.");
       return;
@@ -5584,7 +5856,7 @@ export default function NewRfq() {
     }
 
     setCostingSavePending(true);
-    setCostingFeasabilitySaved(true);
+    setCostingfeasibilitySaved(true);
     setValidationSuccess("");
     setRfqError("");
 
@@ -5600,7 +5872,7 @@ export default function NewRfq() {
       setSelectedSubPhase("Pricing");
       setValidationSuccess("Costing moved to pricing successfully.");
     } catch (error) {
-      setCostingFeasabilitySaved(false);
+      setCostingfeasibilitySaved(false);
       setRfqError(error?.message || `Unable to move this ${formalDocumentLabel} to pricing.`);
     } finally {
       setCostingSavePending(false);
@@ -5727,26 +5999,13 @@ export default function NewRfq() {
   const volumeYearColumns = useMemo(() => {
     const allYears = new Set();
     productRows.forEach((product) => {
-      const sopYear = parseInt(product.sop, 10);
+      const sopYear = extractSopYear(product.sop);
       if (!Number.isNaN(sopYear) && sopYear > 1900) {
         for (let i = 0; i < 5; i++) allYears.add(sopYear + i);
       }
     });
     return Array.from(allYears).sort((a, b) => a - b);
   }, [productRows]);
-  const totalTargetToK = useMemo(() => {
-    return volumeRows.reduce((total, volume, idx) => {
-      const linkedProduct = productRows[idx] || createEmptyProductItem();
-      const rowSop = parseInt(linkedProduct.sop, 10);
-      const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
-        ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
-        : new Set();
-      const totalQty = volumeYearColumns.reduce((sum, year) => {
-        return sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0);
-      }, 0);
-      return total + totalQty * Number(volume.targetPrice || 0);
-    }, 0);
-  }, [volumeRows, productRows, volumeYearColumns]);
   const deliveryZoneOptions = useMemo(
     () => getDeliveryZoneOptions(form.deliveryZone),
     [form.deliveryZone]
@@ -5763,6 +6022,23 @@ export default function NewRfq() {
   const { ratesByCurrency, loadingByCurrency, fallbackByCurrency } = useEurFxRates(
     productRows.map((product) => product?.currency)
   );
+  const totalTargetToK = useMemo(() => {
+    return volumeRows.reduce((total, volume, idx) => {
+      const linkedProduct = productRows[idx] || createEmptyProductItem();
+      const rowSop = extractSopYear(linkedProduct.sop);
+      const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
+        ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
+        : new Set();
+      const totalQty = volumeYearColumns.reduce((sum, year) => {
+        return sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0);
+      }, 0);
+      const currency = sanitizeProductCurrencyCode(linkedProduct.currency || "");
+      const isEur = !currency || currency === "EUR";
+      const eurRate = isEur ? 1 : (ratesByCurrency[currency] ?? 1);
+      const rowNative = totalQty * Number(volume.targetPrice || 0);
+      return total + rowNative * eurRate;
+    }, 0);
+  }, [volumeRows, productRows, volumeYearColumns, ratesByCurrency]);
   const sharedCurrencyRate = ratesByCurrency[sharedProductCurrency];
   const sharedCurrencyRateLoading = loadingByCurrency[sharedProductCurrency];
   const sharedCurrencyFallbackUsed = fallbackByCurrency[sharedProductCurrency];
@@ -6495,10 +6771,9 @@ export default function NewRfq() {
               ) : null}
 
               <div
-                className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.32fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)_var(--chat-col)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-auto lg:overflow-hidden"
+                className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.22fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-auto lg:overflow-hidden"
                 style={{
-                  "--nav-col": navCollapsed ? "72px" : "0.35fr",
-                  "--chat-col": chatCollapsed ? "72px" : `${chatWidth}px`
+                  "--nav-col": navCollapsed ? "72px" : "0.24fr",
                 }}
               >
                 {!isRfqStage ? (
@@ -6631,7 +6906,7 @@ export default function NewRfq() {
                         </>
                       ) : null}
 
-                      {isCostingFeasabilityView ? (
+                      {isCostingfeasibilityView ? (
                         <>
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -6732,7 +7007,7 @@ export default function NewRfq() {
                                   onClick={handleRejectCostingReview}
                                   disabled={costingReviewButtonsDisabled}
                                   title={
-                                    canReviewCostingFeasability
+                                    canReviewCostingfeasibility
                                       ? "Reject feasibility"
                                       : "Only the owner or costing team can review feasibility."
                                   }
@@ -6746,7 +7021,7 @@ export default function NewRfq() {
                                   onClick={handleApproveCostingReview}
                                   disabled={costingReviewButtonsDisabled}
                                   title={
-                                    canReviewCostingFeasability
+                                    canReviewCostingfeasibility
                                       ? "Approve feasibility"
                                       : "Only the owner or costing team can review feasibility."
                                   }
@@ -7037,7 +7312,7 @@ export default function NewRfq() {
                                 </div>
                               )}
 
-                              {hasSavedCostingFeasability ? (
+                              {hasSavedCostingfeasibility ? (
                                 <div className="mt-5 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 shadow-sm">
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
@@ -7066,10 +7341,10 @@ export default function NewRfq() {
                                   <button
                                     type="button"
                                     className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={handleSaveCostingFeasability}
-                                    disabled={!canSaveCostingFeasability}
+                                    onClick={handleSaveCostingfeasibility}
+                                    disabled={!canSaveCostingfeasibility}
                                     title={
-                                      canSaveCostingFeasability
+                                      canSaveCostingfeasibility
                                         ? "Save feasibility and move to pricing"
                                         : "Approve reception and complete the file action before saving."
                                     }
@@ -7719,7 +7994,7 @@ export default function NewRfq() {
                           <FormField label="Contact name" name="potentialContactName" value={form.potentialContactName} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Contact function" name="potentialContactFunction" value={form.potentialContactFunction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Contact phone" name="potentialContactPhone" value={form.potentialContactPhone} onChange={handleChange} readOnly={potentialFieldReadOnly} />
-                          <FormField label="Contact email" name="potentialContactEmail" type="email" value={form.potentialContactEmail} onChange={handleChange} readOnly={potentialFieldReadOnly} />
+                          <FormField label="Contact email" name="potentialContactEmail" type="email" value={form.potentialContactEmail} onChange={handleChange} readOnly={potentialFieldReadOnly} error={String(form.potentialContactEmail || "").toLowerCase().endsWith("@avocarbon.com") ? "Internal Avocarbon emails are not allowed." : null} />
                         </div>
                       </section>
 
@@ -8235,8 +8510,8 @@ export default function NewRfq() {
                             </h2>
                             <p className="mt-2 max-w-2xl text-sm text-slate-500">
                               {isRevisionModeActive
-                                ? "Revision mode is active. Update the form directly or use the chat panel, then submit your updates."
-                                : `The ${activeFormalDocumentLabel} form is locked for direct editing and mirrors the chatbot. Use the chat panel to update these fields.`}
+                                ? "Revision mode is active. Update the form directly, then submit your updates."
+                                : `Fill in the ${activeFormalDocumentLabel} form directly. Changes are auto-saved. Submit to the validator when ready.`}
                             </p>
                           </div>
                         </div>
@@ -8251,6 +8526,12 @@ export default function NewRfq() {
                             >
                               {revisionActionId === "submit" ? "Submitting..." : "Submit Updates"}
                             </button>
+                          ) : null}
+                          {!isRevisionModeActive && canUseRfqActions && saving ? (
+                            <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-tide" />
+                              Saving…
+                            </span>
                           ) : null}
                           <button
                             type="button"
@@ -8284,7 +8565,23 @@ export default function NewRfq() {
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                                <FormField label="Automotive / Non automotive" name="automotiveType" value={form.automotiveType} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("automotiveType")} />
+                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                                  {renderRequirementLabel("Automotive / Non automotive", getRfqFieldRequirementProps("automotiveType"))}
+                                  {rfqFormFieldReadOnly ? (
+                                    <div className="input-field">{form.automotiveType || "—"}</div>
+                                  ) : (
+                                    <select
+                                      className="input-field"
+                                      name="automotiveType"
+                                      value={form.automotiveType || ""}
+                                      onChange={handleChange}
+                                    >
+                                      <option value="">— Select —</option>
+                                      <option value="Automotive">Automotive</option>
+                                      <option value="Non automotive">Non automotive</option>
+                                    </select>
+                                  )}
+                                </label>
                                 <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                               </div>
@@ -8323,17 +8620,22 @@ export default function NewRfq() {
                                           <tr key={`product-${productIndex}`} className="border-t border-slate-200/70 bg-white align-top">
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[120px]`}>
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[200px]`}>
                                                   {product.product || "—"}
                                                 </div>
                                               ) : (
-                                                <input
-                                                  className="input-field min-w-[120px]"
+                                                <select
+                                                  className="input-field min-w-[200px]"
                                                   value={product.product || ""}
-                                                  onChange={(e) => handleProductChange(productIndex, "product", e.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
+                                                  onChange={(e) => handleProductSelect(productIndex, e.target.value)}
                                                   aria-label={`Product ${productIndex + 1} product`}
-                                                />
+                                                >
+                                                  <option value="">— Select —</option>
+                                                  {productOptions.map((opt) => {
+                                                    const name = opt.product_name || opt.product_line || "";
+                                                    return <option key={name} value={name}>{name}</option>;
+                                                  })}
+                                                </select>
                                               )}
                                             </td>
                                             <td className="px-3 py-3">
@@ -8345,8 +8647,7 @@ export default function NewRfq() {
                                                 <input
                                                   className="input-field min-w-[120px]"
                                                   value={product.productLine || ""}
-                                                  onChange={(e) => handleProductChange(productIndex, "productLine", e.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
+                                                  readOnly
                                                   aria-label={`Product ${productIndex + 1} product line`}
                                                 />
                                               )}
@@ -8383,12 +8684,12 @@ export default function NewRfq() {
                                             </td>
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
                                                   {product.partNumber || "—"}
                                                 </div>
                                               ) : (
                                                 <input
-                                                  className="input-field min-w-[130px]"
+                                                  className="input-field min-w-[110px]"
                                                   value={product.partNumber || ""}
                                                   onChange={(e) => handleProductChange(productIndex, "partNumber", e.target.value)}
                                                   readOnly={rfqFormFieldReadOnly}
@@ -8397,49 +8698,131 @@ export default function NewRfq() {
                                               )}
                                             </td>
                                             <td className="px-3 py-3">
-                                              {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
-                                                  {product.drawing || "—"}
-                                                </div>
-                                              ) : (
-                                                <input
-                                                  className="input-field min-w-[130px]"
-                                                  value={product.drawing || ""}
-                                                  onChange={(e) => handleProductChange(productIndex, "drawing", e.target.value)}
-                                                  readOnly={rfqFormFieldReadOnly}
-                                                  aria-label={`Product ${productIndex + 1} drawing`}
-                                                />
-                                              )}
+                                              {(() => {
+                                                const numProducts = productRows.length || 1;
+                                                const serverDrawings = mergedFiles.filter((_, idx) => idx % numProducts === productIndex);
+                                                const localDrawings = productDrawings[productIndex] || [];
+                                                const hasAny = serverDrawings.length > 0 || localDrawings.length > 0;
+                                                return (
+                                                  <div className="flex flex-col gap-1.5 min-w-[150px]">
+                                                    {/* Server-side drawings */}
+                                                    {serverDrawings.map((serverDrawing) => {
+                                                      const isDeleting = fileActionId === serverDrawing.id;
+                                                      return (
+                                                      <div key={serverDrawing.id} className="flex items-center gap-1.5">
+                                                        <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold uppercase ${getFileAccentClasses(serverDrawing.name)}`}>
+                                                          {getFileExtension(serverDrawing.name).slice(0, 4)}
+                                                        </span>
+                                                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-600" title={serverDrawing.name}>
+                                                          {serverDrawing.name}
+                                                        </span>
+                                                        {!rfqFormFieldReadOnly && (
+                                                          <div className="flex shrink-0 gap-0.5">
+                                                            {serverDrawing.url && (
+                                                              <button type="button" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1 text-slate-600 transition hover:border-tide/40 hover:text-tide" onClick={() => handlePreviewFile(serverDrawing)} title="View">
+                                                                <Eye className="h-3 w-3" />
+                                                              </button>
+                                                            )}
+                                                            {allowFileDeletion && (
+                                                              <button type="button" className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-1 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60" onClick={() => setFileDeleteTarget(serverDrawing)} disabled={Boolean(isDeleting)} title="Delete">
+                                                                <Trash2 className="h-3 w-3" />
+                                                              </button>
+                                                            )}
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                      );
+                                                    })}
+                                                    {/* Local files (not yet uploaded) */}
+                                                    {localDrawings.map((file, fileIdx) => (
+                                                      <div key={fileIdx} className="flex items-center gap-1.5">
+                                                        <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold uppercase ${getFileAccentClasses(file.name)}`}>
+                                                          {getFileExtension(file.name).slice(0, 4)}
+                                                        </span>
+                                                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-600" title={file.name}>
+                                                          {file.name}
+                                                        </span>
+                                                        {!rfqFormFieldReadOnly && (
+                                                          <div className="flex shrink-0 gap-0.5">
+                                                            <button type="button" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1 text-slate-600 transition hover:border-tide/40 hover:text-tide" onClick={() => handlePreviewFile(file)} title="View">
+                                                              <Eye className="h-3 w-3" />
+                                                            </button>
+                                                            <button type="button" className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-1 text-red-600 transition hover:border-red-300 hover:bg-red-100" onClick={() => setProductDrawings((prev) => ({ ...prev, [productIndex]: (prev[productIndex] || []).filter((e) => e.id !== file.id) }))} title="Delete">
+                                                              <Trash2 className="h-3 w-3" />
+                                                            </button>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    ))}
+                                                    {/* Empty state */}
+                                                    {rfqFormFieldReadOnly && !hasAny && (
+                                                      <span className="text-slate-400">—</span>
+                                                    )}
+                                                    {/* Add file button */}
+                                                    {!rfqFormFieldReadOnly && (
+                                                      <div className="mt-0.5">
+                                                        <input
+                                                          id={`product-drawing-${productIndex}`}
+                                                          type="file"
+                                                          multiple
+                                                          className="hidden"
+                                                          onChange={(e) => {
+                                                            const files = Array.from(e.target.files || []);
+                                                            handleProductDrawingUpload(productIndex, files);
+                                                            e.target.value = "";
+                                                          }}
+                                                        />
+                                                        <label
+                                                          htmlFor={`product-drawing-${productIndex}`}
+                                                          className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-tide/40 hover:text-tide"
+                                                        >
+                                                          Add file
+                                                        </label>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })()}
                                             </td>
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[90px]`}>
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
                                                   {product.sop || "—"}
                                                 </div>
                                               ) : (
                                                 <input
-                                                  className="input-field min-w-[90px]"
-                                                  type="number"
+                                                  className="input-field min-w-[110px]"
+                                                  type="text"
                                                   value={product.sop ?? ""}
                                                   onChange={(e) => handleProductChange(productIndex, "sop", e.target.value)}
                                                   readOnly={rfqFormFieldReadOnly}
-                                                  placeholder="2026"
+
                                                   aria-label={`Product ${productIndex + 1} SOP`}
                                                 />
                                               )}
                                             </td>
                                             <td className="px-3 py-3 text-right">
                                               {rfqFormFieldReadOnly ? null : (
-                                                <button
-                                                  type="button"
-                                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                                  onClick={() => handleRemoveProduct(productIndex)}
-                                                  disabled={rfqFormFieldReadOnly}
-                                                  aria-label={`Delete product ${productIndex + 1}`}
-                                                  title="Delete product"
-                                                >
-                                                  <Trash2 className="h-4 w-4" />
-                                                </button>
+                                                <div className="flex items-center gap-1.5 justify-end">
+                                                  <button
+                                                    type="button"
+                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
+                                                    onClick={handleAddProduct}
+                                                    title="Add product row"
+                                                    aria-label="Add product row"
+                                                  >
+                                                    <Plus className="h-4 w-4" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    onClick={() => handleRemoveProduct(productIndex)}
+                                                    aria-label={`Delete product ${productIndex + 1}`}
+                                                    title="Delete product"
+                                                  >
+                                                    <Trash2 className="h-4 w-4" />
+                                                  </button>
+                                                </div>
                                               )}
                                             </td>
                                           </tr>
@@ -8468,15 +8851,21 @@ export default function NewRfq() {
                                   <tbody>
                                     {productRows.map((linkedProduct, volumeIndex) => {
                                       const volume = volumeRows[volumeIndex] || {};
-                                      const rowSop = parseInt(linkedProduct.sop, 10);
+                                      const rowSop = extractSopYear(linkedProduct.sop);
                                       const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
                                         ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
                                         : new Set();
                                       return (
                                         <tr key={`volume-${volumeIndex}`} id={`rfq-volume-row-${volumeIndex}`} className="border-t border-slate-200/70 bg-white">
                                           <td className="px-3 py-3">
-                                            <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
-                                              {linkedProduct.partNumber || "—"}
+                                            <div className="group relative inline-block min-w-[110px]">
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
+                                                {linkedProduct.partNumber || "—"}
+                                              </div>
+                                              <div className="pointer-events-none absolute bottom-full left-0 mb-2.5 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg group-hover:block">
+                                                Inherited from the products table above.
+                                                <div className="absolute left-5 top-full h-0 w-0 border-l-[5px] border-r-[5px] border-t-[5px] border-l-transparent border-r-transparent border-t-slate-800" />
+                                              </div>
                                             </div>
                                           </td>
                                           <td className="px-3 py-3">
@@ -8516,7 +8905,13 @@ export default function NewRfq() {
                                                   </div>
                                                 ))
                                               ) : (
-                                                <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>—</div>
+                                                <div className="group relative inline-block">
+                                                  <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>—</div>
+                                                  <div className="pointer-events-none absolute bottom-full left-0 mb-2.5 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg group-hover:block">
+                                                    Set the SOP in the products table to enter yearly volumes.
+                                                    <div className="absolute left-5 top-full h-0 w-0 border-l-[5px] border-r-[5px] border-t-[5px] border-l-transparent border-r-transparent border-t-slate-800" />
+                                                  </div>
+                                                </div>
                                               )}
                                             </div>
                                           </td>
@@ -8539,7 +8934,26 @@ export default function NewRfq() {
                                                 </div>
                                                 <div>
                                                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Currency <span className="text-red-400">*</span></p>
-                                                  <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>{linkedProduct.currency || "—"}</div>
+                                                  {rfqFormFieldReadOnly ? (
+                                                    <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>{linkedProduct.currency || "—"}</div>
+                                                  ) : (
+                                                    <select
+                                                      className="input-field w-full"
+                                                      value={linkedProduct.currency || ""}
+                                                      onChange={(e) => handleProductChange(volumeIndex, "currency", e.target.value)}
+                                                      aria-label={`Volume ${volumeIndex + 1} currency`}
+                                                    >
+                                                      <option value="">— Select —</option>
+                                                      <option value="EUR">EUR</option>
+                                                      <option value="USD">USD</option>
+                                                      <option value="GBP">GBP</option>
+                                                      <option value="CNY">CNY</option>
+                                                      <option value="MXN">MXN</option>
+                                                      <option value="JPY">JPY</option>
+                                                      <option value="BRL">BRL</option>
+                                                      <option value="INR">INR</option>
+                                                    </select>
+                                                  )}
                                                 </div>
                                               </div>
                                               <div>
@@ -8577,30 +8991,51 @@ export default function NewRfq() {
                                             {(() => {
                                               const totalQty = volumeYearColumns.reduce((sum, year) =>
                                                 sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0), 0);
-                                              const targetToK = totalQty * Number(volume.targetPrice || 0);
+                                              const price = Number(volume.targetPrice || 0);
+                                              const currency = sanitizeProductCurrencyCode(linkedProduct.currency || "");
+                                              const isEur = !currency || currency === "EUR";
+                                              const eurRate = isEur ? 1 : (ratesByCurrency[currency] ?? null);
+                                              const isLoading = !isEur && loadingByCurrency[currency];
+                                              const isFallback = !isEur && fallbackByCurrency[currency];
+                                              const targetToNative = totalQty * price;
+                                              const targetToEur = eurRate !== null ? targetToNative * eurRate : null;
+                                              const targetToKeur = targetToEur !== null ? targetToEur / 1000 : null;
+                                              const hasValue = volume.targetPrice && totalQty > 0;
                                               return (
-                                                <div className="flex min-w-[130px] items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm">
-                                                  <span className="flex-1 text-sm font-semibold text-ink">
-                                                    {volume.targetPrice ? targetToK.toLocaleString() : "—"}
-                                                  </span>
-                                                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-400">K</span>
+                                                <div className="flex min-w-[150px] flex-col gap-0.5 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-sm">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="flex-1 text-sm font-semibold text-ink">
+                                                      {!hasValue ? "—"
+                                                        : isLoading ? "…"
+                                                        : targetToKeur !== null
+                                                          ? targetToKeur.toLocaleString("en-US", { maximumFractionDigits: 5 })
+                                                          : (targetToNative / 1000).toLocaleString("en-US", { maximumFractionDigits: 5 })}
+                                                    </span>
+                                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-400">kEUR</span>
+                                                  </div>
+                                                  {hasValue && !isEur && eurRate !== null && !isLoading && (
+                                                    <span className="text-[10px] text-slate-400">
+                                                      1 {currency} = {Number(eurRate).toFixed(4)} EUR{isFallback ? " (est.)" : ""}
+                                                    </span>
+                                                  )}
                                                 </div>
                                               );
                                             })()}
                                           </td>
                                           <td className="px-3 py-3">
                                             {rfqFormFieldReadOnly ? (
-                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[175px]`}>
                                                 {volume.deliveryZone || "—"}
                                               </div>
                                             ) : (
                                               <select
-                                                className="input-field min-w-[130px]"
+                                                className="input-field min-w-[175px]"
                                                 value={volume.deliveryZone || ""}
                                                 onChange={(e) => handleVolumeChange(volumeIndex, "deliveryZone", e.target.value)}
                                                 aria-label={`Volume ${volumeIndex + 1} delivery zone`}
                                               >
-                                                {getDeliveryZoneOptions(volume.deliveryZone).map((opt) => (
+                                                <option value="">— Select —</option>
+                                                {DELIVERY_ZONE_OPTIONS.map((opt) => (
                                                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                                                 ))}
                                               </select>
@@ -8643,11 +9078,13 @@ export default function NewRfq() {
                               <div className="mt-4 flex justify-end">
                                 <div className="flex flex-col items-start gap-1.5">
                                   <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                                    Total Target To (K)
+                                    Total Target To
                                   </span>
                                   <div className="flex min-w-[400px] max-w-full items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-4 py-2.5 shadow-sm">
-                                    <span className="flex-1 text-sm font-semibold text-ink">{totalTargetToK.toLocaleString()}</span>
-                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-400">K</span>
+                                    <span className="flex-1 text-sm font-semibold text-ink">
+                                      {(totalTargetToK / 1000).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                                    </span>
+                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-400">kEUR</span>
                                   </div>
                                 </div>
                               </div>
@@ -8669,7 +9106,7 @@ export default function NewRfq() {
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
                                 <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} />
-                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} />
+                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} error={String(form.contactEmail || "").toLowerCase().endsWith("@avocarbon.com") ? "Internal Avocarbon emails are not allowed." : null} />
                               </div>
                             </div>
                           </div>
@@ -8684,7 +9121,24 @@ export default function NewRfq() {
                           <div className="grid gap-4 lg:grid-cols-2">
                             <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedDeliveryConditions")} />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedPaymentTerms")} />
-                            <FormField label="Type of Packaging" name="typeOfPackaging" value={form.typeOfPackaging} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("typeOfPackaging")} />
+                            <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                              {renderRequirementLabel("Type of Packaging", getRfqFieldRequirementProps("typeOfPackaging"))}
+                              {rfqFormFieldReadOnly ? (
+                                <div className="input-field">{form.typeOfPackaging || "—"}</div>
+                              ) : (
+                                <select
+                                  className="input-field"
+                                  name="typeOfPackaging"
+                                  value={form.typeOfPackaging || ""}
+                                  onChange={handleChange}
+                                >
+                                  <option value="">— Select —</option>
+                                  <option value="Carboard divider">Carboard divider</option>
+                                  <option value="One way tray">One way tray</option>
+                                  <option value="Returnable plastic tray">Returnable plastic tray</option>
+                                </select>
+                              )}
+                            </label>
                             <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("businessTrigger")} />
                             <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("customerToolingConditions")} />
                             <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("entryBarriers")} />
@@ -8723,27 +9177,51 @@ export default function NewRfq() {
                               <div className="space-y-2 rounded-[22px] border border-slate-200/80 bg-slate-50/60 p-3">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <div className="text-sm font-semibold text-ink">
-                                    {formatTurnoverInThousands(totalTargetTo) || "—"}
+                                    {sharedProductCurrency && sharedProductCurrency !== "EUR"
+                                      ? (sharedCurrencyFallbackUsed
+                                          ? "FX unavailable"
+                                          : sharedCurrencyRateLoading
+                                            ? "Loading FX..."
+                                            : totalTargetToEurPreview !== null
+                                              ? formatTurnoverInThousands(totalTargetToEurPreview)
+                                              : "—")
+                                      : (formatTurnoverInThousands(totalTargetTo) || "—")}
                                   </div>
                                   <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                    {sharedTurnoverUnit}
+                                    kEUR
                                   </span>
                                 </div>
                                 {sharedProductCurrency && sharedProductCurrency !== "EUR" && totalTargetToNumber !== null ? (
                                   <p className="text-[11px] font-medium text-slate-400">
-                                    {sharedCurrencyFallbackUsed
-                                      ? "FX unavailable"
-                                      : sharedCurrencyRateLoading
-                                        ? "Loading FX..."
-                                        : totalTargetToEurPreview !== null
-                                          ? `≈ ${formatTurnoverInThousands(totalTargetToEurPreview)} kEUR`
-                                          : ""}
+                                    {formatTurnoverInThousands(totalTargetTo)} {sharedTurnoverUnit}
                                   </p>
                                 ) : null}
                               </div>
                             </div>
-                            <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validatorEmail")} />
+                            <div className="space-y-2">
+                              <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validatorEmail")} />
+                            </div>
                           </div>
+                          {!rfqFormFieldReadOnly && canUseRfqActions ? (
+                            <div className="mt-4 flex justify-end">
+                              <div className="group relative">
+                                <button
+                                  type="button"
+                                  className="gradient-button rounded-xl px-6 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={handleSubmitToValidator}
+                                  disabled={saving || !rfqId || !allStepsComplete}
+                                >
+                                  {saving ? "Submitting..." : "Submit to Validator"}
+                                </button>
+                                {!allStepsComplete && (
+                                  <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg group-hover:block">
+                                    Please complete all steps before submitting.
+                                    <div className="absolute right-5 top-full h-0 w-0 border-l-[5px] border-r-[5px] border-t-[5px] border-l-transparent border-r-transparent border-t-slate-800" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
