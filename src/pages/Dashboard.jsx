@@ -5,7 +5,7 @@ import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
 import { listRfqs, getTeamView, getTeamMembers } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
-import { getUserProfile } from "../utils/session.js";
+import { getUserProfile, hasRole } from "../utils/session.js";
 
 const BASE_VIEW_OPTIONS = [
   { key: "detailed", label: "Detailed View" },
@@ -166,6 +166,16 @@ const normalizeSector = (value) => {
   return "";
 };
 
+const getAvailableProductLines = (rfqs = []) =>
+  Array.from(
+    new Set(rfqs.map((rfq) => String(rfq.productLine || "").trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+const applyProductLineFilter = (rfqs, selected) => {
+  if (!selected || selected === "ALL") return rfqs;
+  return rfqs.filter((rfq) => String(rfq.productLine || "").trim() === selected);
+};
+
 const buildPageItems = (currentPage, totalPages) => {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -188,7 +198,7 @@ const buildPageItems = (currentPage, totalPages) => {
 export default function Dashboard() {
   const { showToast } = useToast();
   const { role } = getUserProfile();
-  const canSeeTeamView = role === "ZONE_MANAGER";
+  const canSeeTeamView = hasRole("ZONE_MANAGER");
   const viewOptions = canSeeTeamView
     ? [...BASE_VIEW_OPTIONS, { key: "team", label: "Team View" }]
     : BASE_VIEW_OPTIONS;
@@ -204,6 +214,9 @@ export default function Dashboard() {
   const [detailedSectorFilter, setDetailedSectorFilter] = useState("all");
   const [globalSectorFilter, setGlobalSectorFilter] = useState("all");
   const [teamSectorFilter, setTeamSectorFilter] = useState("all");
+  const [selectedDetailedProductLine, setSelectedDetailedProductLine] = useState("ALL");
+  const [selectedGlobalProductLine, setSelectedGlobalProductLine] = useState("ALL");
+  const [selectedTeamProductLine, setSelectedTeamProductLine] = useState("ALL");
   const [teamMembers, setTeamMembers] = useState([]);
   const [teamData, setTeamData] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
@@ -254,11 +267,11 @@ export default function Dashboard() {
 
   // Load team members for Zone Manager's Team View Person filter
   useEffect(() => {
-    if (role !== "ZONE_MANAGER") return;
+    if (!canSeeTeamView) return;
     getTeamMembers()
       .then((data) => setTeamMembers(Array.isArray(data) ? data : []))
       .catch(() => setTeamMembers([]));
-  }, [role]);
+  }, [canSeeTeamView]);
 
 
   const rfqsWithPhase = useMemo(
@@ -351,12 +364,42 @@ export default function Dashboard() {
     [teamData, teamPersonFilter, teamSectorFilter, normalizedSearchTerm]
   );
 
+  const detailedProductLineOptions = useMemo(
+    () => getAvailableProductLines(filteredDetailedRfqs),
+    [filteredDetailedRfqs]
+  );
+  const globalProductLineOptions = useMemo(
+    () => getAvailableProductLines(filteredGlobalRfqs),
+    [filteredGlobalRfqs]
+  );
+  const teamProductLineOptions = useMemo(
+    () => getAvailableProductLines(filteredTeamData),
+    [filteredTeamData]
+  );
+
+  const shouldShowDetailedProductLineFilter = detailedProductLineOptions.length > 1;
+  const shouldShowGlobalProductLineFilter = globalProductLineOptions.length > 1;
+  const shouldShowTeamProductLineFilter = teamProductLineOptions.length > 1;
+
+  const finalDetailedRfqs = useMemo(
+    () => applyProductLineFilter(filteredDetailedRfqs, selectedDetailedProductLine),
+    [filteredDetailedRfqs, selectedDetailedProductLine]
+  );
+  const finalGlobalRfqs = useMemo(
+    () => applyProductLineFilter(filteredGlobalRfqs, selectedGlobalProductLine),
+    [filteredGlobalRfqs, selectedGlobalProductLine]
+  );
+  const finalTeamData = useMemo(
+    () => applyProductLineFilter(filteredTeamData, selectedTeamProductLine),
+    [filteredTeamData, selectedTeamProductLine]
+  );
+
   const activeRows =
     viewMode === "team"
-      ? filteredTeamData
+      ? finalTeamData
       : viewMode === "global"
-        ? filteredGlobalRfqs
-        : filteredDetailedRfqs;
+        ? finalGlobalRfqs
+        : finalDetailedRfqs;
   const totalRows = activeRows.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / rowsPerPage));
   const safePage = Math.min(page, pageCount);
@@ -392,7 +435,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, rowsPerPage, searchTerm, viewMode]);
+  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -405,6 +448,24 @@ export default function Dashboard() {
       setViewMode("detailed");
     }
   }, [canSeeTeamView, viewMode]);
+
+  useEffect(() => {
+    if (selectedDetailedProductLine !== "ALL" && !detailedProductLineOptions.includes(selectedDetailedProductLine)) {
+      setSelectedDetailedProductLine("ALL");
+    }
+  }, [selectedDetailedProductLine, detailedProductLineOptions]);
+
+  useEffect(() => {
+    if (selectedGlobalProductLine !== "ALL" && !globalProductLineOptions.includes(selectedGlobalProductLine)) {
+      setSelectedGlobalProductLine("ALL");
+    }
+  }, [selectedGlobalProductLine, globalProductLineOptions]);
+
+  useEffect(() => {
+    if (selectedTeamProductLine !== "ALL" && !teamProductLineOptions.includes(selectedTeamProductLine)) {
+      setSelectedTeamProductLine("ALL");
+    }
+  }, [selectedTeamProductLine, teamProductLineOptions]);
 
   const handleRowsPerPageChange = (event) => {
     setRowsPerPage(Number(event.target.value));
@@ -737,8 +798,36 @@ export default function Dashboard() {
                           </span>
                         </div>
                       </div>
+                      {shouldShowDetailedProductLineFilter && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label
+                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            htmlFor="detailedProductLineFilter"
+                          >
+                            Product Line
+                          </label>
+                          <div className="group relative">
+                            <select
+                              id="detailedProductLineFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={selectedDetailedProductLine}
+                              onChange={(event) => setSelectedDetailedProductLine(event.target.value)}
+                            >
+                              <option value="ALL">All Product Lines</option>
+                              {detailedProductLineOptions.map((pl) => (
+                                <option key={pl} value={pl}>{pl}</option>
+                              ))}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M6 9l6 6 6-6" />
+                              </svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {formatRequestCount(filteredDetailedRfqs.length)}
+                        {formatRequestCount(finalDetailedRfqs.length)}
                       </span>
                     </div>
                   </div>
@@ -883,8 +972,36 @@ export default function Dashboard() {
                           </span>
                         </div>
                       </div>
+                      {shouldShowGlobalProductLineFilter && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label
+                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            htmlFor="globalProductLineFilter"
+                          >
+                            Product Line
+                          </label>
+                          <div className="group relative">
+                            <select
+                              id="globalProductLineFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={selectedGlobalProductLine}
+                              onChange={(event) => setSelectedGlobalProductLine(event.target.value)}
+                            >
+                              <option value="ALL">All Product Lines</option>
+                              {globalProductLineOptions.map((pl) => (
+                                <option key={pl} value={pl}>{pl}</option>
+                              ))}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M6 9l6 6 6-6" />
+                              </svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {formatRequestCount(filteredGlobalRfqs.length)}
+                        {formatRequestCount(finalGlobalRfqs.length)}
                       </span>
                     </div>
                   </div>
@@ -994,8 +1111,36 @@ export default function Dashboard() {
                           </span>
                         </div>
                       </div>
+                      {shouldShowTeamProductLineFilter && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label
+                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            htmlFor="teamProductLineFilter"
+                          >
+                            Product Line
+                          </label>
+                          <div className="group relative">
+                            <select
+                              id="teamProductLineFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={selectedTeamProductLine}
+                              onChange={(event) => setSelectedTeamProductLine(event.target.value)}
+                            >
+                              <option value="ALL">All Product Lines</option>
+                              {teamProductLineOptions.map((pl) => (
+                                <option key={pl} value={pl}>{pl}</option>
+                              ))}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M6 9l6 6 6-6" />
+                              </svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {formatRequestCount(filteredTeamData.length)}
+                        {formatRequestCount(finalTeamData.length)}
                       </span>
                     </div>
                   </div>

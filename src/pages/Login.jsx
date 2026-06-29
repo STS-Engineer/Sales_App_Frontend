@@ -68,6 +68,7 @@ export default function Login() {
       setUserProfile({
         email: profile.email,
         role: profile.role,
+        roles: profile.roles || [profile.role].filter(Boolean),
         name: profile.email?.split("@")[0]
       });
       setCurrentUserRole(profile.role);

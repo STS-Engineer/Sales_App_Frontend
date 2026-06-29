@@ -518,11 +518,10 @@ export async function uploadCostingFile(rfqId, file) {
 export async function submitCostingFileAction(rfqId, payload) {
   const formData = new FormData();
   formData.append("action", payload.action);
-  formData.append("note", payload.note);
+  formData.append("note", payload.note ?? "");
   formData.append("feasibility_status", payload.feasibilityStatus);
-  if (payload.file) {
-    formData.append("file", payload.file);
-  }
+  const files = Array.isArray(payload.files) ? payload.files : [];
+  files.forEach((f) => formData.append("files", f));
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/costing-file-action`, {
     method: "POST",
     body: formData,
@@ -543,13 +542,21 @@ export async function uploadPricingBomFile(rfqId, payload) {
 
 export async function uploadPricingFinalPriceFile(rfqId, payload) {
   const formData = new FormData();
-  formData.append("note", payload.note);
-  formData.append("file", payload.file);
+  formData.append("note", payload.note ?? "");
+  const files = Array.isArray(payload.files) ? payload.files : [payload.files];
+  files.forEach((file) => formData.append("files", file));
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/pricing-final-price`, {
     method: "POST",
     body: formData,
     isForm: true
   });
+}
+
+export async function deleteCostingFileEntry(rfqId, entryId) {
+  return request(
+    `/api/rfq/${encodeURIComponent(rfqId)}/costing-file/${encodeURIComponent(entryId)}`,
+    { method: "DELETE" }
+  );
 }
 
 export async function deleteRfqFile(rfqId, fileId, fileName) {
@@ -617,6 +624,26 @@ export async function setRoutingAssignment(payload) {
   return request("/api/owner/routing-config/assign", {
     method: "PUT",
     body: payload
+  });
+}
+
+export async function listViewers(productLine = "") {
+  const query = productLine
+    ? `?product_line=${encodeURIComponent(productLine)}`
+    : "";
+  return request(`/api/owner/routing-config/viewers${query}`);
+}
+
+export async function setViewerAssignment(payload) {
+  return request("/api/owner/routing-config/assign-viewers", {
+    method: "PUT",
+    body: payload
+  });
+}
+
+export async function deleteViewer(viewerId) {
+  return request(`/api/owner/routing-config/viewers/${encodeURIComponent(viewerId)}`, {
+    method: "DELETE"
   });
 }
 
