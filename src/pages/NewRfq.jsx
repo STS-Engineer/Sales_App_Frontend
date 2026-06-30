@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-import { Check, Download, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
+import { Check, Download, ExternalLink, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
@@ -22,6 +22,7 @@ import {
   editRfqChatMessage,
   getCostingMessages,
   getRfqAuditLogs,
+  getRfqAiValidationStatus,
   getRfqDiscussion,
   getRfq,
   postCostingMessage,
@@ -68,6 +69,22 @@ import { useEurFxRates } from "../utils/useEurFxRates.js";
 
 const COSTING_READ_ONLY_ROLES = ["COSTING_TEAM", "RND", "PLM"];
 const RFQ_CREATOR_ROLES = ["OWNER", "COMMERCIAL", "ZONE_MANAGER"];
+const AI_CONVERSATION_URL_PATTERN = /(?:^|\n)\s*Conversation URL:\s*(https?:\/\/\S+)/i;
+
+function extractAiConversationMeta(aiValidation) {
+  const rawDiscussion = String(
+    aiValidation?.discussion || aiValidation?.message || ""
+  ).trim();
+  const explicitConversationUrl = String(aiValidation?.conversation_url || "").trim();
+  const matchedConversationUrl =
+    explicitConversationUrl ||
+    rawDiscussion.match(AI_CONVERSATION_URL_PATTERN)?.[1] ||
+    "";
+
+  return {
+    conversationUrl: matchedConversationUrl,
+  };
+}
 
 const initialForm = {
   id: "",
@@ -2547,6 +2564,33 @@ export default function NewRfq() {
   const currentUserRole = String(currentUserProfile?.role || "").trim();
   const normalizedCurrentUserEmail = normalizeEmailValue(currentUserEmail);
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
+
+  const openAgentConversationPopup = (conversationUrl) => {
+    const url = String(conversationUrl || "").trim();
+    if (!url) {
+      showToast("No Workspace Agent conversation link is available yet.", {
+        type: "info",
+        title: "Conversation unavailable",
+      });
+      return;
+    }
+
+    const popupWindow = window.open(
+      url,
+      "workspace-agent-conversation",
+      "popup=yes,width=1440,height=920,left=80,top=60,resizable=yes,scrollbars=yes"
+    );
+
+    if (!popupWindow) {
+      showToast("Popup blocked. Please allow popups for this site, then try again.", {
+        type: "error",
+        title: "Popup blocked",
+      });
+      return;
+    }
+
+    popupWindow.focus?.();
+  };
   const documentTypeParam = useMemo(
     () => normalizeDocumentType(searchParams.get("document_type")),
     [searchParams]
@@ -2554,6 +2598,7 @@ export default function NewRfq() {
   const [form, setForm] = useState(() => ({ ...initialForm }));
   const [documentType, setDocumentType] = useState(() => documentTypeParam);
   const [saving, setSaving] = useState(false);
+  const [isSubmittingToValidator, setIsSubmittingToValidator] = useState(false);
   const [rfqId, setRfqId] = useState("");
   const [rfqSnapshot, setRfqSnapshot] = useState(null);
   const [rfqAuditLogs, setRfqAuditLogs] = useState([]);
@@ -2679,6 +2724,47 @@ export default function NewRfq() {
   const resizeState = useRef({ startX: 0, startWidth: 420 });
   const rfqStepAutoFollowPausedRef = useRef(false);
   const rfqProductsViewportLockUntilRef = useRef(0);
+  useEffect(() => {
+    const aiValidation = rfqSnapshot?.rfq_data?.ai_validation;
+    const aiStatus = String(aiValidation?.status || "").trim().toLowerCase();
+    if (!rfqId || !aiValidation || !["queued", "processing"].includes(aiStatus)) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let intervalId = 0;
+
+    const refreshAiValidationStatus = async () => {
+      try {
+        const nextStatus = await getRfqAiValidationStatus(rfqId);
+        if (cancelled || !nextStatus) return;
+        setRfqSnapshot((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rfq_data: {
+              ...(prev.rfq_data || {}),
+              ai_validation: nextStatus,
+            },
+          };
+        });
+      } catch {
+        // Best effort polling only.
+      }
+    };
+
+    refreshAiValidationStatus();
+    intervalId = window.setInterval(refreshAiValidationStatus, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    rfqId,
+    rfqSnapshot?.rfq_data?.ai_validation?.status,
+    rfqSnapshot?.rfq_data?.ai_validation?.checked_at,
+  ]);
   const feasibilitySaveAudit = useMemo(
     () => (
       rfqSnapshot
@@ -5437,6 +5523,7 @@ export default function NewRfq() {
   const handleSubmitToValidator = async () => {
     if (!rfqId || !canUseRfqActions) return;
     setSaving(true);
+    setIsSubmittingToValidator(true);
     try {
       await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
       if (!form.validatorEmail) {
@@ -5445,11 +5532,18 @@ export default function NewRfq() {
       }
       await submitRfq(rfqId);
       await syncRfq(rfqId);
-      setValidationSuccess("RFQ submitted to validator successfully.");
+      setValidationSuccess("RFQ submitted successfully.");
     } catch (error) {
-      setRfqError(error?.message || "Unable to submit. Please check all required fields.");
+      // Sync the snapshot so the persistent AI section picks up rfq_data.ai_validation
+      // even after a rejection (backend saves it before raising 422).
+      await syncRfq(rfqId).catch(() => {});
+      const isAiBlock = error?.status === 422 && error?.data?.detail?.ai_blocked;
+      if (!isAiBlock) {
+        setRfqError(error?.message || "Unable to submit. Please check all required fields.");
+      }
     } finally {
       setSaving(false);
+      setIsSubmittingToValidator(false);
     }
   };
 
@@ -8947,6 +9041,7 @@ export default function NewRfq() {
                     </div>
 
                     <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 sm:px-4 sm:pb-4 md:px-5 md:pb-5 lg:overflow-y-auto">
+
                       {activeStep === "step-client" ? (
                         <div
                           id="step-client"
@@ -9626,7 +9721,7 @@ export default function NewRfq() {
                                   onClick={handleSubmitToValidator}
                                   disabled={saving || !rfqId || !allStepsComplete}
                                 >
-                                  {saving ? "Submitting..." : "Submit to Validator"}
+                                  {saving ? "Submitting..." : "Submit"}
                                 </button>
                                 {!allStepsComplete && (
                                   <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg group-hover:block">
@@ -9648,6 +9743,136 @@ export default function NewRfq() {
                     onSubmit={handleSubmit}
                     className={`card flex min-h-0 flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:p-8 lg:h-full lg:min-h-0 lg:overflow-y-auto ${showRfqStepNavigation ? "md:col-span-1 lg:col-span-2" : "col-span-full"}`}
                   >
+                    {(() => {
+                      const aiVal = rfqSnapshot?.rfq_data?.ai_validation;
+                      if (!aiVal) return null;
+                      const aiApproved = Boolean(aiVal.approved);
+                      const aiStatus = String(aiVal.status || "").toLowerCase();
+                      const { conversationUrl: aiConversationUrl } = extractAiConversationMeta(aiVal);
+                      const aiFields = Array.isArray(aiVal.fields_to_correct) ? aiVal.fields_to_correct : [];
+                      const checkedAt = aiVal.checked_at
+                        ? new Date(aiVal.checked_at).toLocaleString("fr-FR", {
+                            day: "2-digit", month: "short", year: "numeric",
+                            hour: "2-digit", minute: "2-digit",
+                          })
+                        : null;
+                      const isQueued = aiStatus === "queued";
+                      const isProcessing = aiStatus === "processing";
+                      const isSkipped = aiStatus === "skipped";
+                      const borderCls = isQueued
+                        ? "border-amber-200/80"
+                        : isProcessing
+                          ? "border-sky-200/80"
+                        : isSkipped
+                          ? "border-slate-200/80"
+                          : aiApproved
+                            ? "border-violet-200/80"
+                            : "border-red-200/80";
+                      const bgCls = isQueued
+                        ? "bg-gradient-to-br from-amber-50 via-white to-white"
+                        : isProcessing
+                          ? "bg-gradient-to-br from-sky-50 via-white to-white"
+                        : isSkipped
+                          ? "bg-gradient-to-br from-slate-50 via-white to-white"
+                          : aiApproved
+                            ? "bg-gradient-to-br from-violet-50 via-white to-white"
+                            : "bg-gradient-to-br from-red-50 via-white to-white";
+                      const innerBorderCls = isQueued
+                        ? "border-amber-100/80"
+                        : isProcessing
+                          ? "border-sky-100/80"
+                        : isSkipped
+                          ? "border-slate-100/80"
+                          : aiApproved
+                            ? "border-violet-100/80"
+                            : "border-red-100/80";
+                      const badgeCls = isQueued
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : isProcessing
+                          ? "border-sky-200 bg-sky-50 text-sky-700"
+                        : isSkipped
+                          ? "border-slate-200 bg-slate-50 text-slate-700"
+                          : aiApproved
+                            ? "border-violet-200 bg-violet-50 text-violet-700"
+                            : "border-red-200 bg-red-50 text-red-700";
+                      return (
+                        <section className={`shrink-0 overflow-hidden rounded-[28px] border ${borderCls} ${bgCls} p-5 shadow-soft`}>
+                          <div className={`flex flex-wrap items-start justify-between gap-4 border-b ${innerBorderCls} pb-4`}>
+                            <div className="space-y-1">
+                              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">AI pre-validation</p>
+                              <h4 className="text-lg font-semibold text-ink">Workspace Agent review</h4>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-end gap-3">
+                              <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${badgeCls}`}>
+                                {isQueued ? (
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                ) : isProcessing ? (
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                ) : isSkipped ? (
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                  </svg>
+                                ) : aiApproved ? (
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                  </svg>
+                                )}
+                                {isQueued ? "Queued in Workspace Agent" : isProcessing ? "Review in progress" : isSkipped ? "AI validation skipped" : aiApproved ? "Approved by AI" : "Rejected by AI"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid gap-4 md:grid-cols-2">
+                            {checkedAt && (
+                              <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm`}>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Checked at</p>
+                                <p className="mt-2 text-base font-semibold text-ink">{checkedAt}</p>
+                              </div>
+                            )}
+                            {aiConversationUrl ? (
+                              <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm`}>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Agent conversation</p>
+                                <p className="mt-2 text-sm leading-6 text-slate-700">
+                                  Open the live ChatGPT conversation in a popup window.
+                                </p>
+                                <button
+                                  type="button"
+                                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                  onClick={() => openAgentConversationPopup(aiConversationUrl)}
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                  Open conversation
+                                </button>
+                              </div>
+                            ) : null}
+                            {(aiVal.discussion || aiVal.message) && !isQueued && !isProcessing && (
+                              <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Agent discussion</p>
+                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                  {aiVal.discussion || aiVal.message}
+                                </p>
+                              </div>
+                            )}
+                            {!aiApproved && aiFields.length > 0 && (
+                              <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Fields to correct</p>
+                                <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-red-600">
+                                  {aiFields.map((f, i) => <li key={i}>{f}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </section>
+                      );
+                    })()}
+
                     <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                       <div className="flex items-center justify-between gap-3">
                         <div>

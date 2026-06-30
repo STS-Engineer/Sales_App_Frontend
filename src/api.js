@@ -19,15 +19,23 @@ function createHttpError(message, status) {
 async function createResponseError(response) {
   const text = await response.text();
   let message = text || "Request failed";
+  let parsedJson = null;
   try {
-    const json = JSON.parse(text);
-    if (json?.detail) {
-      message = json.detail;
+    parsedJson = JSON.parse(text);
+    if (parsedJson?.detail != null) {
+      message =
+        typeof parsedJson.detail === "string"
+          ? parsedJson.detail
+          : JSON.stringify(parsedJson.detail);
     }
   } catch (error) {
     // ignore JSON parse errors
   }
-  return createHttpError(message, response.status);
+  const err = createHttpError(message, response.status);
+  // Attach the full parsed body so callers can inspect structured error payloads
+  // (e.g. AI validation errors with ai_blocked, message, fields_to_correct).
+  if (parsedJson != null) err.data = parsedJson;
+  return err;
 }
 
 function redirectToLogin() {
@@ -312,6 +320,10 @@ export async function listRfqs(documentType = "") {
 
 export async function getRfq(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}`);
+}
+
+export async function getRfqAiValidationStatus(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/ai-validation-status`);
 }
 
 export async function getEurFxRate(currencyCode) {
