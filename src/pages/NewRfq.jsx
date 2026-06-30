@@ -1,10 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-<<<<<<< HEAD
-import { Check, ExternalLink, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
-=======
-import { Check, Download, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
->>>>>>> 1be44a277a6eaf6ef67e29ac9741c3288341166e
+import { Check, Download, ExternalLink, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
