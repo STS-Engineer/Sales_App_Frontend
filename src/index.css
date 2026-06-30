@@ -929,3 +929,56 @@ body {
 .chat-modal-body {
   height: 100%;
 }
+
+.old-rfqs-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  border-radius: 12px;
+}
+
+.old-rfqs-table {
+  min-width: 3200px;
+  width: max-content;
+  border-collapse: collapse;
+}
+
+.old-rfqs-table th,
+.old-rfqs-table td {
+  white-space: nowrap;
+  padding: 10px 12px;
+  vertical-align: top;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.old-rfqs-table th {
+  background: #f8fafc;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #94a3b8;
+}
+
+.old-rfq-project-row {
+  font-weight: 600;
+  background: #f8fafc;
+}
+
+.old-rfq-project-row:hover {
+  background: #f1f5f9;
+}
+
+.old-rfq-subitem-row {
+  background: #ffffff;
+}
+
+.old-rfq-subitem-row:hover {
+  background: #f8fafc;
+}
+
+.old-rfq-subitem-row td:first-child,
+.old-rfq-subitem-row td:nth-child(2),
+.old-rfq-subitem-row td:nth-child(3) {
+  padding-left: 24px;
+}

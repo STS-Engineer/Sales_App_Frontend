@@ -3,13 +3,14 @@ import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
-import { listRfqs, getTeamView, getTeamMembers } from "../api";
+import { listRfqs, getTeamView, getTeamMembers, getOldRfqs } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
 
 const BASE_VIEW_OPTIONS = [
   { key: "detailed", label: "Detailed View" },
-  { key: "global", label: "Global View" }
+  { key: "global", label: "Global View" },
+  { key: "history", label: "RFQ History View" }
 ];
 
 const TYPE_FILTER_OPTIONS = [
@@ -176,6 +177,169 @@ const applyProductLineFilter = (rfqs, selected) => {
   return rfqs.filter((rfq) => String(rfq.productLine || "").trim() === selected);
 };
 
+const OLD_RFQ_PROJECT_COLUMNS = [
+  { key: "name", label: "Name" },
+  { key: "project_name", label: "Project Name" },
+  { key: "cust_project_name", label: "Customer Project Name" },
+  { key: "customers", label: "Customer" },
+  { key: "cust_text", label: "Customer Text" },
+  { key: "kam", label: "KAM" },
+  { key: "requester", label: "Requester" },
+  { key: "sector", label: "Sector" },
+  { key: "application", label: "Application" },
+  { key: "cust_application", label: "Customer Application" },
+  { key: "type_business", label: "Business Type" },
+  { key: "importance", label: "Importance" },
+  { key: "status_name", label: "Status" },
+  { key: "old_new", label: "Old / New" },
+  { key: "sales_project", label: "Sales Project" },
+  { key: "project_sales_k", label: "Project Sales k" },
+  { key: "gmdc_project_k", label: "GMDC Project k" },
+  { key: "twc_k", label: "TWC k" },
+  { key: "authorization_required", label: "Authorization Required" },
+  { key: "assembly_location", label: "Assembly Location" },
+  { key: "plant_to_deliver", label: "Plant To Deliver" },
+  { key: "sop", label: "SOP" },
+  { key: "success_rate", label: "Success Rate" },
+  { key: "global_rating", label: "Global Rating" },
+  { key: "development_axis", label: "Development Axis" },
+  { key: "note", label: "Note" },
+  { key: "id_2", label: "ID 2" },
+  { key: "subitems_count", label: "Subitems" },
+  { key: "actions", label: "" },
+];
+
+const OLD_RFQ_SUBITEM_COLUMNS = [
+  { key: "name", label: "Name" },
+  { key: "sous_elements", label: "Sub Element" },
+  { key: "product_type", label: "Product Type" },
+  { key: "subitems_est_price", label: "Est. Price" },
+  { key: "sous_elements_sales_limit_3", label: "Sales Limit 3" },
+  { key: "sop_1", label: "SOP 1" },
+  { key: "sop_2", label: "SOP 2" },
+  { key: "sop_2_2", label: "SOP 2.2" },
+  { key: "sop_3", label: "SOP 3" },
+  { key: "sop_4", label: "SOP 4" },
+  { key: "sop_5", label: "SOP 5" },
+  { key: "sop_6", label: "SOP 6" },
+  { key: "sop_7", label: "SOP 7" },
+  { key: "sop_8", label: "SOP 8" },
+  { key: "sop_9", label: "SOP 9" },
+  { key: "total_qty", label: "Total Qty" },
+  { key: "avg_difficulty", label: "Avg Difficulty" },
+  { key: "development_axis", label: "Development Axis" },
+  { key: "readiness", label: "Readiness" },
+  { key: "project_condition", label: "Project Condition" },
+  { key: "note", label: "Note" },
+  { key: "id_2", label: "ID 2" },
+  { key: "identifiant_de_l_element", label: "Element ID" },
+];
+
+const formatOldRfqCell = (row, key) => {
+  const value = row?.[key];
+  if (value === null || value === undefined || value === "") return "-";
+  return String(value);
+};
+
+const OLD_RFQ_PARENT_FIELD_FALLBACKS = {
+  customers: "parent_customer",
+  kam: "parent_kam",
+  sector: "parent_sector",
+  application: "parent_application",
+  type_business: "parent_type_business",
+  status_name: "parent_status_name"
+};
+
+const getOldRfqFilterValue = (row, key) => {
+  const directValue = row?.[key];
+  if (directValue !== null && directValue !== undefined && directValue !== "") {
+    return String(directValue);
+  }
+
+  const fallbackKey = OLD_RFQ_PARENT_FIELD_FALLBACKS[key];
+  const fallbackValue = fallbackKey ? row?.[fallbackKey] : "";
+  if (fallbackValue === null || fallbackValue === undefined || fallbackValue === "") {
+    return "";
+  }
+
+  return String(fallbackValue);
+};
+
+const getOldRfqOptionValues = (projects, key) =>
+  Array.from(
+    new Set(projects.map((project) => getOldRfqFilterValue(project, key)).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+const getOldRfqSubitems = (project) =>
+  Array.isArray(project?.subitems) ? project.subitems : [];
+
+const getOldRfqSubitemsCount = (project) => {
+  const parsedValue = Number(project?.subitems_count);
+  if (Number.isFinite(parsedValue) && parsedValue >= 0) {
+    return parsedValue;
+  }
+  return getOldRfqSubitems(project).length;
+};
+
+const buildOldRfqProjectKey = (project, index) =>
+  String(
+    project?.import_id ||
+      project?.id_2 ||
+      project?.project_name ||
+      project?.cust_project_name ||
+      project?.name ||
+      `old-rfq-project-${index}`
+  );
+
+const normalizeOldRfqProjects = (rows = []) => {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  if (rows.some((row) => Array.isArray(row?.subitems))) {
+    return rows.map((row, index) => ({
+      ...row,
+      row_type: "project",
+      historyKey: buildOldRfqProjectKey(row, index),
+      subitems: getOldRfqSubitems(row),
+      subitems_count: getOldRfqSubitemsCount(row)
+    }));
+  }
+
+  const projects = [];
+  let currentProject = null;
+
+  rows.forEach((row, index) => {
+    if (!row || typeof row !== "object") return;
+
+    const rowType = String(row.row_type || "").trim().toLowerCase();
+    if (rowType === "subitem") {
+      if (currentProject) {
+        currentProject.subitems.push(row);
+      }
+      return;
+    }
+
+    currentProject = {
+      ...row,
+      row_type: "project",
+      historyKey: buildOldRfqProjectKey(row, index),
+      subitems: []
+    };
+    projects.push(currentProject);
+  });
+
+  return projects.map((project) => ({
+    ...project,
+    subitems_count: getOldRfqSubitemsCount(project)
+  }));
+};
+
+const buildOldRfqProjectSearchHaystack = (project) =>
+  [project, ...getOldRfqSubitems(project)]
+    .flatMap((row) => Object.values(row || {}))
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .join(" ")
+    .toLowerCase();
+
 const buildPageItems = (currentPage, totalPages) => {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -217,6 +381,17 @@ export default function Dashboard() {
   const [selectedDetailedProductLine, setSelectedDetailedProductLine] = useState("ALL");
   const [selectedGlobalProductLine, setSelectedGlobalProductLine] = useState("ALL");
   const [selectedTeamProductLine, setSelectedTeamProductLine] = useState("ALL");
+  const [oldRfqs, setOldRfqs] = useState([]);
+  const [oldRfqsLoading, setOldRfqsLoading] = useState(false);
+  const [oldRfqsError, setOldRfqsError] = useState("");
+  const [oldSearchTerm, setOldSearchTerm] = useState("");
+  const [oldCustomerFilter, setOldCustomerFilter] = useState("");
+  const [oldKamFilter, setOldKamFilter] = useState("");
+  const [oldSectorFilter, setOldSectorFilter] = useState("");
+  const [oldApplicationFilter, setOldApplicationFilter] = useState("");
+  const [oldBusinessTypeFilter, setOldBusinessTypeFilter] = useState("");
+  const [oldStatusFilter, setOldStatusFilter] = useState("");
+  const [selectedOldProject, setSelectedOldProject] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
   const [teamData, setTeamData] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
@@ -273,6 +448,42 @@ export default function Dashboard() {
       .catch(() => setTeamMembers([]));
   }, [canSeeTeamView]);
 
+  useEffect(() => {
+    if (viewMode !== "history") return;
+    const load = async () => {
+      setOldRfqsLoading(true);
+      setOldRfqsError("");
+      try {
+        const data = await getOldRfqs();
+        setOldRfqs(Array.isArray(data?.items) ? data.items : []);
+      } catch {
+        setOldRfqs([]);
+        setOldRfqsError("Unable to load historical data. Please refresh.");
+      } finally {
+        setOldRfqsLoading(false);
+      }
+    };
+    load();
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (!selectedOldProject) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setSelectedOldProject(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedOldProject]);
+
+  useEffect(() => {
+    if (viewMode !== "history") {
+      setSelectedOldProject(null);
+    }
+  }, [viewMode]);
 
   const rfqsWithPhase = useMemo(
     () => rfqs.map((rfq) => ({ ...rfq, phaseKey: resolvePhaseKey(rfq) })),
@@ -364,6 +575,91 @@ export default function Dashboard() {
     [teamData, teamPersonFilter, teamSectorFilter, normalizedSearchTerm]
   );
 
+  const oldRfqProjects = useMemo(() => normalizeOldRfqProjects(oldRfqs), [oldRfqs]);
+  const oldCustomerOptions = useMemo(
+    () => getOldRfqOptionValues(oldRfqProjects, "customers"),
+    [oldRfqProjects]
+  );
+  const oldKamOptions = useMemo(
+    () => getOldRfqOptionValues(oldRfqProjects, "kam"),
+    [oldRfqProjects]
+  );
+  const oldSectorOptions = useMemo(
+    () => getOldRfqOptionValues(oldRfqProjects, "sector"),
+    [oldRfqProjects]
+  );
+  const oldApplicationOptions = useMemo(
+    () => getOldRfqOptionValues(oldRfqProjects, "application"),
+    [oldRfqProjects]
+  );
+  const oldBusinessTypeOptions = useMemo(
+    () => getOldRfqOptionValues(oldRfqProjects, "type_business"),
+    [oldRfqProjects]
+  );
+  const oldStatusOptions = useMemo(
+    () => getOldRfqOptionValues(oldRfqProjects, "status_name"),
+    [oldRfqProjects]
+  );
+
+  const filteredOldProjects = useMemo(() => {
+    const search = oldSearchTerm.trim().toLowerCase();
+
+    return oldRfqProjects.filter((project) => {
+      if (
+        oldCustomerFilter &&
+        getOldRfqFilterValue(project, "customers") !== oldCustomerFilter
+      ) {
+        return false;
+      }
+      if (oldKamFilter && getOldRfqFilterValue(project, "kam") !== oldKamFilter) {
+        return false;
+      }
+      if (oldSectorFilter && getOldRfqFilterValue(project, "sector") !== oldSectorFilter) {
+        return false;
+      }
+      if (
+        oldApplicationFilter &&
+        getOldRfqFilterValue(project, "application") !== oldApplicationFilter
+      ) {
+        return false;
+      }
+      if (
+        oldBusinessTypeFilter &&
+        getOldRfqFilterValue(project, "type_business") !== oldBusinessTypeFilter
+      ) {
+        return false;
+      }
+      if (
+        oldStatusFilter &&
+        getOldRfqFilterValue(project, "status_name") !== oldStatusFilter
+      ) {
+        return false;
+      }
+      if (search && !buildOldRfqProjectSearchHaystack(project).includes(search)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    oldApplicationFilter,
+    oldBusinessTypeFilter,
+    oldCustomerFilter,
+    oldKamFilter,
+    oldRfqProjects,
+    oldSearchTerm,
+    oldSectorFilter,
+    oldStatusFilter
+  ]);
+
+  const handleOpenSubitemsModal = (project) => {
+    setSelectedOldProject(project);
+  };
+
+  const handleCloseSubitemsModal = () => {
+    setSelectedOldProject(null);
+  };
+
   const detailedProductLineOptions = useMemo(
     () => getAvailableProductLines(filteredDetailedRfqs),
     [filteredDetailedRfqs]
@@ -399,7 +695,9 @@ export default function Dashboard() {
       ? finalTeamData
       : viewMode === "global"
         ? finalGlobalRfqs
-        : finalDetailedRfqs;
+        : viewMode === "history"
+          ? filteredOldProjects
+          : finalDetailedRfqs;
   const totalRows = activeRows.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / rowsPerPage));
   const safePage = Math.min(page, pageCount);
@@ -435,7 +733,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode]);
+  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldApplicationFilter, oldBusinessTypeFilter, oldStatusFilter]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -1012,6 +1310,225 @@ export default function Dashboard() {
                     footer={tableFooter}
                   />
                 </>
+              ) : viewMode === "history" ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">RFQ History View</p>
+                      <h2 className="font-display text-2xl text-ink">Old projects</h2>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex w-full flex-col gap-1 sm:w-72">
+                        <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Search</span>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3">
+                              <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+                            </svg>
+                          </span>
+                          <input
+                            className="input-field w-full pl-10"
+                            type="search"
+                            placeholder="Search old projects…"
+                            value={oldSearchTerm}
+                            onChange={(event) => setOldSearchTerm(event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      {oldCustomerOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldCustomerFilter">Customer</label>
+                          <div className="group relative">
+                            <select
+                              id="oldCustomerFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={oldCustomerFilter}
+                              onChange={(event) => setOldCustomerFilter(event.target.value)}
+                            >
+                              <option value="">All Customers</option>
+                              {oldCustomerOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {oldKamOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldKamFilter">KAM</label>
+                          <div className="group relative">
+                            <select
+                              id="oldKamFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={oldKamFilter}
+                              onChange={(event) => setOldKamFilter(event.target.value)}
+                            >
+                              <option value="">All KAMs</option>
+                              {oldKamOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {oldSectorOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldSectorFilter">Sector</label>
+                          <div className="group relative">
+                            <select
+                              id="oldSectorFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={oldSectorFilter}
+                              onChange={(event) => setOldSectorFilter(event.target.value)}
+                            >
+                              <option value="">All Sectors</option>
+                              {oldSectorOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {oldApplicationOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldApplicationFilter">Application</label>
+                          <div className="group relative">
+                            <select
+                              id="oldApplicationFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={oldApplicationFilter}
+                              onChange={(event) => setOldApplicationFilter(event.target.value)}
+                            >
+                              <option value="">All Applications</option>
+                              {oldApplicationOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {oldBusinessTypeOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldBusinessTypeFilter">Business Type</label>
+                          <div className="group relative">
+                            <select
+                              id="oldBusinessTypeFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={oldBusinessTypeFilter}
+                              onChange={(event) => setOldBusinessTypeFilter(event.target.value)}
+                            >
+                              <option value="">All Business Types</option>
+                              {oldBusinessTypeOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {oldStatusOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldStatusFilter">Status</label>
+                          <div className="group relative">
+                            <select
+                              id="oldStatusFilter"
+                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
+                              value={oldStatusFilter}
+                              onChange={(event) => setOldStatusFilter(event.target.value)}
+                            >
+                              <option value="">All Statuses</option>
+                              {oldStatusOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                        {formatRequestCount(filteredOldProjects.length)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {oldRfqsLoading ? (
+                    <div className="card overflow-hidden">
+                      <div className="flex items-center justify-center py-16 text-sm text-slate-400">
+                        Loading historical data…
+                      </div>
+                    </div>
+                  ) : oldRfqsError ? (
+                    <div className="card overflow-hidden">
+                      <div className="flex items-center justify-center py-16 text-sm text-red-400">
+                        {oldRfqsError}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="card overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[3200px] text-left text-sm">
+                          <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
+                            <tr>
+                              {OLD_RFQ_PROJECT_COLUMNS.map((col) => (
+                                <th key={col.key} className="px-4 py-4 whitespace-nowrap">{col.label}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => {
+                              const subitems = getOldRfqSubitems(project);
+                              const subitemsCount = getOldRfqSubitemsCount(project);
+
+                              return (
+                                <tr
+                                  key={project.historyKey}
+                                  className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
+                                >
+                                  {OLD_RFQ_PROJECT_COLUMNS.map((col) => (
+                                    <td
+                                      key={col.key}
+                                      className={`px-4 py-4 align-top ${col.key === "actions" ? "text-right" : "whitespace-nowrap"}`}
+                                    >
+                                      {col.key === "subitems_count" ? (
+                                        <span className="font-semibold text-slate-700">{subitemsCount}</span>
+                                      ) : col.key === "actions" ? (
+                                        subitemsCount > 0 ? (
+                                          <button
+                                            type="button"
+                                            className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
+                                            style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
+                                            onClick={() => handleOpenSubitemsModal(project)}
+                                          >
+                                            View subitems ({subitemsCount})
+                                          </button>
+                                        ) : (
+                                          <span className="text-xs font-medium text-slate-400">No subitems</span>
+                                        )
+                                      ) : (
+                                        formatOldRfqCell(project, col.key)
+                                      )}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            }) : (
+                              <tr>
+                                <td colSpan={OLD_RFQ_PROJECT_COLUMNS.length} className="px-4 py-16 text-center text-sm text-slate-400">
+                                  No old projects found
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {tableFooter}
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1164,6 +1681,76 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      {selectedOldProject ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={handleCloseSubitemsModal}
+          role="presentation"
+        >
+          <div
+            className="chat-modal w-[min(96vw,1600px)] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-subitems-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">RFQ History View</p>
+                <p id="history-subitems-modal-title" className="chat-modal-title mt-1">
+                  {selectedOldProject.project_name || selectedOldProject.name || "Project subitems"}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {[getOldRfqFilterValue(selectedOldProject, "customers"), getOldRfqFilterValue(selectedOldProject, "kam"), `${getOldRfqSubitemsCount(selectedOldProject)} subitems`]
+                    .filter(Boolean)
+                    .join(" / ")}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={handleCloseSubitemsModal}
+                aria-label="Close subitems modal"
+              >
+                x
+              </button>
+            </div>
+            <div className="chat-modal-body bg-gradient-to-b from-slate-50/40 to-white">
+              {getOldRfqSubitems(selectedOldProject).length > 0 ? (
+                <div className="overflow-x-auto px-6 py-6">
+                  <table className="w-full min-w-[2200px] text-left text-sm">
+                    <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
+                      <tr>
+                        {OLD_RFQ_SUBITEM_COLUMNS.map((col) => (
+                          <th key={col.key} className="px-4 py-4 whitespace-nowrap">{col.label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getOldRfqSubitems(selectedOldProject).map((subitem, index) => (
+                        <tr
+                          key={`${selectedOldProject.historyKey}-subitem-${index}`}
+                          className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
+                        >
+                          {OLD_RFQ_SUBITEM_COLUMNS.map((col) => (
+                            <td key={col.key} className="px-4 py-4 whitespace-nowrap align-top">
+                              {formatOldRfqCell(subitem, col.key)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center px-6 py-16 text-sm text-slate-400">
+                  No subitems available for this project.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

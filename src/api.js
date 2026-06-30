@@ -292,6 +292,10 @@ export async function getTeamView(search = "") {
   return request(`/api/team-view${query}`);
 }
 
+export async function getOldRfqs() {
+  return request("/api/old-rfqs");
+}
+
 export async function getTeamMembers(includeSelf = false) {
   return request(`/api/team-view/members${includeSelf ? "?include_self=true" : ""}`);
 }
@@ -330,10 +334,10 @@ export async function createRfq(payload = {}) {
   return request("/api/rfq", { method: "POST", body: payload });
 }
 
-export async function updateRfqData(rfqId, rfqData) {
+export async function updateRfqData(rfqId, rfqData, updateType = "simple") {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/data`, {
     method: "PUT",
-    body: { rfq_data: rfqData }
+    body: { rfq_data: rfqData, update_type: updateType }
   });
 }
 
@@ -343,14 +347,14 @@ export async function submitRfq(rfqId) {
   });
 }
 
-export async function assignValidator(rfqId) {
-  return request(`/api/rfq/${encodeURIComponent(rfqId)}/assign-validator`, {
+export async function unlockChatForEdit(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/unlock-chat`, {
     method: "POST"
   });
 }
 
-export async function unlockChatForEdit(rfqId) {
-  return request(`/api/rfq/${encodeURIComponent(rfqId)}/unlock-chat`, {
+export async function assignValidator(rfqId) {
+  return request(`/api/rfq/${encodeURIComponent(rfqId)}/assign-validator`, {
     method: "POST"
   });
 }

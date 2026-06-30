@@ -2250,7 +2250,14 @@ const extractValidationAudit = (rfq, auditLogs = []) => {
       typeof entry?.action === "string" &&
       (entry.action.includes("Validator approved") || entry.action.includes("Validator rejected"))
   );
-  const rounds = decisionLogs.map((entry, idx) => {
+  const safeTimestamp = (value) => {
+    const t = new Date(value).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+  const sortedDecisionLogs = [...decisionLogs].sort(
+    (a, b) => safeTimestamp(a.timestamp) - safeTimestamp(b.timestamp)
+  );
+  const rounds = sortedDecisionLogs.map((entry, idx) => {
     const isApproved = entry.action.includes("Validator approved");
     return {
       roundNumber: idx + 1,
@@ -2280,13 +2287,37 @@ const extractAuditReasonFromAction = (action) => {
 };
 
 const extractCostingReviewAudit = (rfq, auditLogs = []) => {
+  // Ignore costing review decisions from before the most recent owner-update reset.
+  // When a creator updates an RFQ, costing data is cleared; the reception audit must
+  // restart from scratch rather than inheriting the previous cycle's decision.
+  const lastResetLog = [...auditLogs]
+    .reverse()
+    .find((entry) =>
+      normalizeAuditValue(entry?.action)
+        .toLowerCase()
+        .includes("reset to pending validation, costing data cleared")
+    );
+  const lastResetTime = lastResetLog
+    ? (() => { const t = new Date(lastResetLog.timestamp).getTime(); return Number.isNaN(t) ? 0 : t; })()
+    : 0;
+
+  const isAfterReset = (entry) => {
+    if (lastResetTime === 0) return true;
+    const t = new Date(entry?.timestamp).getTime();
+    return !Number.isNaN(t) && t > lastResetTime;
+  };
+
   const approvedLog = auditLogs.find(
     (entry) =>
-      typeof entry?.action === "string" && entry.action.includes("Costing review approved")
+      typeof entry?.action === "string" &&
+      entry.action.includes("Costing review approved") &&
+      isAfterReset(entry)
   );
   const rejectedLog = auditLogs.find(
     (entry) =>
-      typeof entry?.action === "string" && entry.action.includes("Costing review rejected")
+      typeof entry?.action === "string" &&
+      entry.action.includes("Costing review rejected") &&
+      isAfterReset(entry)
   );
 
   return {
@@ -2303,14 +2334,38 @@ const extractCostingReviewAudit = (rfq, auditLogs = []) => {
 const extractFeasibilitySaveAudit = (rfq, auditLogs = []) => {
   const phaseValue = normalizeAuditValue(rfq?.phase).toUpperCase();
   const subStatusValue = normalizeAuditValue(rfq?.sub_status).toUpperCase();
+
+  // Find the most recent owner-update reset log.
+  // A "status advanced to costing/pricing" log from before this reset belongs to a
+  // previous costing cycle and must not be shown after the data was cleared.
+  const lastResetLog = [...auditLogs]
+    .reverse()
+    .find((entry) =>
+      normalizeAuditValue(entry?.action)
+        .toLowerCase()
+        .includes("reset to pending validation, costing data cleared")
+    );
+  const lastResetTime = lastResetLog
+    ? (() => { const t = new Date(lastResetLog.timestamp).getTime(); return Number.isNaN(t) ? 0 : t; })()
+    : 0;
+
   const saveLog = [...auditLogs]
     .reverse()
-    .find(
-      (entry) =>
-        normalizeAuditValue(entry?.action)
+    .find((entry) => {
+      if (
+        !normalizeAuditValue(entry?.action)
           .toLowerCase()
           .includes("status advanced to costing/pricing")
-    );
+      ) {
+        return false;
+      }
+      if (lastResetTime > 0) {
+        const entryTime = new Date(entry.timestamp).getTime();
+        if (Number.isNaN(entryTime) || entryTime <= lastResetTime) return false;
+      }
+      return true;
+    });
+
   const groupedStage = GROUPED_PIPELINE_STAGE_MAP[mapBackendStatusToPipelineStage(rfq)] || "";
   const isCurrentPricingStep =
     phaseValue === "COSTING" && subStatusValue === "PRICING";
@@ -2602,6 +2657,7 @@ export default function NewRfq() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rfqFormEditEnabled, setRfqFormEditEnabled] = useState(false);
+  const [isRfqUpdateModeActive, setIsRfqUpdateModeActive] = useState(false);
   const [rfqPostValidationUnlocked, setRfqPostValidationUnlocked] = useState(false);
   const [rfqValidationReached, setRfqValidationReached] = useState(false);
   const [validationAudit, setValidationAudit] = useState(createEmptyValidationAudit);
@@ -2775,12 +2831,28 @@ export default function NewRfq() {
     Boolean(assignedValidatorEmail) &&
     Boolean(normalizedRfqCreatorEmail) &&
     assignedValidatorEmail === normalizedRfqCreatorEmail;
-  // When the validator (≠ creator) has requested a revision, only the creator can edit.
   const isRevisionLockedForNonCreator =
     isRevisionModeActive &&
     !validatorIsCreator &&
     !isRfqCreatorUser &&
     currentUserRole !== "OWNER";
+  const rfqSnapshotCreatorEmail = normalizeEmailValue(
+    rfqSnapshot?.created_by_email ||
+    rfqSnapshot?.createdByEmail ||
+    rfqSnapshot?.creator_email ||
+    rfqSnapshot?.creatorEmail ||
+    rfqSnapshot?.created_by?.email ||
+    rfqSnapshot?.createdBy?.email ||
+    rfqSnapshot?.creator?.email ||
+    rfqSnapshot?.rfq_data?.created_by_email ||
+    rfqSnapshot?.rfq_data?.creator_email ||
+    rfqCreatorEmail
+  );
+  const isRfqCreator = Boolean(
+    normalizedCurrentUserEmail &&
+    rfqSnapshotCreatorEmail &&
+    normalizedCurrentUserEmail === rfqSnapshotCreatorEmail
+  );
   const isCostingReadOnlyRole = COSTING_READ_ONLY_ROLES.includes(currentUserRole);
   const canCreateRfqDraft = RFQ_CREATOR_ROLES.includes(currentUserRole);
   const canEditRfqPhase = Boolean(
@@ -3191,7 +3263,7 @@ export default function NewRfq() {
     rfqCreatorEmail
   ]);
   const isRfqFormReadOnly =
-    (hasValidationLock && !rfqFormEditEnabled) || isRevisionLockedForNonCreator;
+    (hasValidationLock && !rfqFormEditEnabled && !isRfqUpdateModeActive) || isRevisionLockedForNonCreator;
   const lockNewRfqFields = false;
   const potentialFieldReadOnly = true;
   const isOfferChatReadOnly =
@@ -3349,6 +3421,7 @@ export default function NewRfq() {
 
   useEffect(() => {
     setRfqFormEditEnabled(false);
+    setIsRfqUpdateModeActive(false);
     setRfqValidationReached(false);
     setPersistValidationView(false);
     setPersistCostingReviewView(false);
@@ -4603,33 +4676,15 @@ export default function NewRfq() {
     }
   };
 
-  const handlePreviewFile = async (file) => {
+  const handlePreviewFile = (file) => {
     if (!file?.url) return;
     if (file.source === "local") {
       setFilePreview(file);
       return;
     }
     const resolvedUrl = resolveFileUrl(file.url);
-    if (!resolvedUrl) return;
-    if (/^https?:\/\//i.test(resolvedUrl)) {
-      setFilePreview({ ...file, previewUrl: resolvedUrl });
-      return;
-    }
-    setFilePreviewLoadingId(file.id);
-    try {
-      const response = await authorizedFetch(resolvedUrl, {
-        prependApiBase: false
-      });
-      if (!response.ok) {
-        throw new Error("Preview failed");
-      }
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      setFilePreview({ ...file, previewUrl: blobUrl });
-    } catch {
-      setRfqError("Unable to preview this file. Please try again.");
-    } finally {
-      setFilePreviewLoadingId("");
+    if (resolvedUrl) {
+      setFilePreview({ ...file, url: resolvedUrl });
     }
   };
 
@@ -5239,6 +5294,60 @@ export default function NewRfq() {
       if (updatedRfq) setRfqSnapshot(updatedRfq);
     } catch {
       setRfqError("Unable to auto-save. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateRFQ = () => {
+    if (!rfqId || !canUseRfqActions) return;
+    setIsRfqUpdateModeActive(true);
+  };
+
+  const handleSaveRfqUpdate = async () => {
+    if (!rfqId || !canUseRfqActions) return;
+    setSaving(true);
+    try {
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), "owner_update");
+      // Force a full server-side reload so the UI reflects the real DB state
+      // (phase reset to RFQ/PENDING_FOR_VALIDATION, costing data cleared).
+      await syncRfq(rfqId);
+      showToast("RFQ updated successfully.", { type: "success", title: "RFQ updated" });
+      setIsRfqUpdateModeActive(false);
+    } catch {
+      setRfqError("Unable to save. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelRfqUpdate = () => {
+    setIsRfqUpdateModeActive(false);
+  };
+
+  const handleChangeIndexRFQ = async () => {
+    if (!rfqId || !canUseRfqActions) return;
+    const currentRef = rfqSnapshot?.rfq_data?.systematic_rfq_id || "";
+    if (!currentRef) {
+      setRfqError("Cannot change index: RFQ reference has not been assigned yet.");
+      return;
+    }
+    const nextRef = incrementRfqIndex(currentRef);
+    if (!nextRef) {
+      setRfqError("Cannot change index: RFQ reference format is not valid.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `This action will change the RFQ reference from "${currentRef}" to "${nextRef}". Do you want to continue?`
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      const updatedRfq = await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), "change_index");
+      if (updatedRfq) setRfqSnapshot(updatedRfq);
+      showToast("RFQ index updated successfully.", { type: "success", title: "RFQ index updated" });
+    } catch (err) {
+      setRfqError(err?.message || "Unable to change RFQ index. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -8726,60 +8835,114 @@ export default function NewRfq() {
                     className="card flex flex-col min-h-0 overflow-auto lg:overflow-hidden lg:h-full lg:min-h-0"
                   >
                     <div className="flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:p-3 md:p-4 pb-5 mb-4">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-start gap-3 sm:items-center sm:gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-tide text-base font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-lg">
-                            {stepIndex + 1}
+                      <div className="flex flex-col gap-1.5">
+                        {/* Grid 3 colonnes : [1fr step] [auto Update/CI] [auto Prev/Next]
+                            col1=1fr garantit que Update/CI commence toujours au même x,
+                            indépendamment de la longueur du titre du step. */}
+                        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 sm:gap-x-6">
+                          {/* Col 1 — indicateur de step (1fr : largeur fixée par le grid, pas par le contenu) */}
+                          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-tide text-base font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-lg">
+                              {stepIndex + 1}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Step</p>
+                              <h2 className="font-display text-xl text-ink sm:text-2xl">
+                                Step {stepIndex + 1}: {getStepDisplayLabel(activeStepData)}
+                              </h2>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Step</p>
-                            <h2 className="font-display text-xl text-ink sm:text-2xl">
-                              Step {stepIndex + 1}: {getStepDisplayLabel(activeStepData)}
-                            </h2>
-                            <p className="mt-2 max-w-2xl text-sm text-slate-500">
-                              {isRevisionModeActive
-                                ? "Revision mode is active. Update the form directly, then submit your updates."
-                                : `Fill in the ${activeFormalDocumentLabel} form directly. Changes are auto-saved. Submit to the validator when ready.`}
-                            </p>
+
+                          {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
+                          <div className="flex items-center gap-2">
+                            {rfqId && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
+                              isRfqUpdateModeActive ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/60 bg-tide/20 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/80 hover:bg-tide/30 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    onClick={handleSaveRfqUpdate}
+                                    disabled={saving}
+                                  >
+                                    {saving ? "Saving…" : "Save Changes"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    onClick={handleCancelRfqUpdate}
+                                    disabled={saving}
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/40 bg-tide/10 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/60 hover:bg-tide/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    onClick={handleUpdateRFQ}
+                                    disabled={saving}
+                                  >
+                                    Update
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sun/40 bg-sun/10 px-4 py-2 text-sm font-semibold text-sun shadow-sm transition hover:-translate-y-0.5 hover:border-sun/60 hover:bg-sun/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    onClick={handleChangeIndexRFQ}
+                                    disabled={saving}
+                                  >
+                                    Change Index
+                                  </button>
+                                </>
+                              )
+                            ) : null}
+                          </div>
+
+                          {/* Col 3 — Previous / Next, ml-8 pour espace fixe avec Change Index */}
+                          <div className="ml-8 flex items-center gap-2">
+                            {isRevisionModeActive ? (
+                              <button
+                                type="button"
+                                className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={handleSubmitRevisionUpdates}
+                                disabled={!rfqId || Boolean(revisionActionId)}
+                              >
+                                {revisionActionId === "submit" ? "Submitting..." : "Submit Updates"}
+                              </button>
+                            ) : null}
+                            {!isRevisionModeActive && canUseRfqActions && saving ? (
+                              <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-tide" />
+                                Saving…
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="prev-button disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => handleStepViewChange(stepIds[stepIndex - 1])}
+                              disabled={isFirstStep || !canGoPrev}
+                            >
+                              <span className="text-base">←</span>
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              className="next-button disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => handleStepViewChange(stepIds[stepIndex + 1])}
+                              disabled={isLastStep || !canGoNext}
+                            >
+                              Next
+                              <span className="text-base">→</span>
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                          {isRevisionModeActive ? (
-                            <button
-                              type="button"
-                              className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleSubmitRevisionUpdates}
-                              disabled={!rfqId || Boolean(revisionActionId)}
-                            >
-                              {revisionActionId === "submit" ? "Submitting..." : "Submit Updates"}
-                            </button>
-                          ) : null}
-                          {!isRevisionModeActive && canUseRfqActions && saving ? (
-                            <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-tide" />
-                              Saving…
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="prev-button disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => handleStepViewChange(stepIds[stepIndex - 1])}
-                            disabled={isFirstStep || !canGoPrev}
-                          >
-                            <span className="text-base">←</span>
-                            Previous
-                          </button>
-                          <button
-                            type="button"
-                            className="next-button disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => handleStepViewChange(stepIds[stepIndex + 1])}
-                            disabled={isLastStep || !canGoNext}
-                          >
-                            Next
-                            <span className="text-base">→</span>
-                          </button>
-                        </div>
+                        {/* Description — en dessous, alignée avec le titre */}
+                        <p className="pl-[3.75rem] text-sm text-slate-500 sm:pl-[4.5rem]">
+                          {isRevisionModeActive
+                            ? "Revision mode is active. Update the form directly, then submit your updates."
+                            : `Fill in the ${activeFormalDocumentLabel} form directly. Changes are auto-saved. Submit to the validator when ready.`}
+                        </p>
                       </div>
                     </div>
 
@@ -8835,6 +8998,9 @@ export default function NewRfq() {
                                         <tr>
                                           <th className="px-3 py-3">{renderRequirementLabel("Product", getProductFieldRequirementProps("product"))}</th>
                                           <th className="px-3 py-3">{renderRequirementLabel("Product Line", getProductFieldRequirementProps("productLine"))}</th>
+                                          {productRows.some((p) => { const v = String(p.productLine || "").trim().toLowerCase(); return v === "ass" || v === "assembly"; }) && (
+                                            <th className="px-3 py-3 min-w-[150px]">{renderRequirementLabel("Components", getProductFieldRequirementProps("components"))}</th>
+                                          )}
                                           <th className={`px-3 py-3 ${productRows.some((p) => p.costingData) ? "min-w-[220px]" : ""}`}>{renderRequirementLabel("Costing Data", getProductFieldRequirementProps("costingData"))}</th>
                                           <th className={`px-3 py-3 ${productRows.some((p) => p.application) ? "min-w-[160px]" : ""}`}>{renderRequirementLabel("Application", getProductFieldRequirementProps("application"))}</th>
                                           <th className="px-3 py-3">{renderRequirementLabel("Part Number", getProductFieldRequirementProps("partNumber"))}</th>
@@ -8880,6 +9046,27 @@ export default function NewRfq() {
                                                 />
                                               )}
                                             </td>
+                                            {productRows.some((p) => { const v = String(p.productLine || "").trim().toLowerCase(); return v === "ass" || v === "assembly"; }) && (
+                                              <td className="px-3 py-3">
+                                                {(() => {
+                                                  const pl = String(product.productLine || "").trim().toLowerCase();
+                                                  if (pl !== "ass" && pl !== "assembly") return null;
+                                                  return rfqFormFieldReadOnly ? (
+                                                    <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[150px]`}>
+                                                      {product.components || "—"}
+                                                    </div>
+                                                  ) : (
+                                                    <input
+                                                      className="input-field min-w-[150px]"
+                                                      value={product.components || ""}
+                                                      onChange={(e) => handleProductChange(productIndex, "components", e.target.value)}
+                                                      readOnly={rfqFormFieldReadOnly}
+                                                      aria-label={`Product ${productIndex + 1} components`}
+                                                    />
+                                                  );
+                                                })()}
+                                              </td>
+                                            )}
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
                                                 <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} ${productRows.some((p) => p.costingData) ? "min-w-[220px]" : "min-w-[120px]"}`}>
