@@ -353,6 +353,15 @@ body {
   height: 100%;
 }
 
+.chat-modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.3);
+}
+
 .chat-modal-actions {
   display: flex;
   gap: 12px;

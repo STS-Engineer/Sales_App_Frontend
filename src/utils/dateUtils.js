@@ -3,7 +3,8 @@ const TIMESTAMP_FORMAT_OPTIONS = {
   month: "short",
   year: "numeric",
   hour: "2-digit",
-  minute: "2-digit"
+  minute: "2-digit",
+  timeZone: "Africa/Tunis"
 };
 
 const normalizeNumericTimestamp = (value) => {
@@ -35,7 +36,11 @@ const normalizeTimestampInput = (dateInput) => {
     return normalizeNumericTimestamp(Number(text));
   }
 
-  const parsed = new Date(text);
+  // If the string has no timezone info the backend stored it in UTC.
+  // Append Z so the Date constructor treats it as UTC, not local time.
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(text);
+  const normalized = hasTimezone ? text : `${text}Z`;
+  const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
