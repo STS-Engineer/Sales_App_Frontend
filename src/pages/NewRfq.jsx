@@ -702,13 +702,19 @@ const isProductCollection = (value) =>
 const hasCompleteProductCollection = (products = [], { includeOptional = false } = {}) =>
   Array.isArray(products) &&
   products.length > 0 &&
-  products.every((product) =>
-    Object.keys(RFQ_PRODUCT_FIELD_REQUIREMENTS)
+  products.every((product) => {
+    const baseFieldsOk = Object.keys(RFQ_PRODUCT_FIELD_REQUIREMENTS)
       .filter((fieldName) => fieldName !== "drawing")
       .every((fieldName) =>
         isProductFieldFilled(product, fieldName, { includeOptional })
-      )
-  );
+      );
+    if (!baseFieldsOk) return false;
+    const pl = String(product?.productLine || "").trim().toLowerCase();
+    if (pl === "ass" || pl === "assembly") {
+      return String(product?.components || "").trim().length > 0;
+    }
+    return true;
+  });
 
 const hasMeaningfulValue = (value) => {
   if (value === 0) return true;
@@ -5619,6 +5625,16 @@ export default function NewRfq() {
 
   const handleSubmitToValidator = async () => {
     if (!rfqId || !canUseRfqActions) return;
+
+    const assemblyMissingComponent = (form.products || []).some((p) => {
+      const pl = String(p.productLine || "").trim().toLowerCase();
+      return (pl === "ass" || pl === "assembly") && !String(p.components || "").trim();
+    });
+    if (assemblyMissingComponent) {
+      setRfqError("Component is required for Assembly product lines.");
+      return;
+    }
+
     setSaving(true);
     setIsSubmittingToValidator(true);
     try {

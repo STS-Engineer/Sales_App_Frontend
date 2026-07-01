@@ -32,8 +32,6 @@ async function createResponseError(response) {
     // ignore JSON parse errors
   }
   const err = createHttpError(message, response.status);
-  // Attach the full parsed body so callers can inspect structured error payloads
-  // (e.g. AI validation errors with ai_blocked, message, fields_to_correct).
   if (parsedJson != null) err.data = parsedJson;
   return err;
 }
