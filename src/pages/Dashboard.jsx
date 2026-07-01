@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
@@ -207,9 +208,11 @@ const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
   "excel_row_number",
   "creation_journal",
   "creation_log",
+  "monday_id",
 ]);
 
 const OLD_RFQ_PROJECT_COLUMN_ORDER = [
+  "costing_number",
   "name",
   "product_type",
   "customers",
@@ -250,8 +253,6 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "year_to_sop",
   "lifetime_index",
   "lifetime_year",
-  "monday_id",
-  "costing_number",
   "plant_to_deliver",
   "element_identifier",
   "chiffres_id",
@@ -326,7 +327,7 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
   lifetime_index: "Lifetime Index",
   lifetime_year: "Lifetime Year",
   monday_id: "Monday ID",
-  costing_number: "Costing Number",
+  costing_number: "Chiffrage Number",
   plant_to_deliver: "Plant To Deliver",
   element_identifier: "Element Identifier",
   chiffres_id: "Chiffres ID",
@@ -490,6 +491,75 @@ const buildOrderedOldRfqSubitemColumns = (apiColumns = []) => {
 
 const getOldRfqSubitemColumnLabel = (columnName) =>
   OLD_RFQ_SUBITEM_COLUMN_LABELS[columnName] || columnName;
+
+const TruncatedCell = ({ value }) => {
+  const textRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState(null);
+
+  const displayValue =
+    value === null || value === undefined || String(value).trim() === ""
+      ? "-"
+      : String(value);
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      const element = textRef.current;
+      if (!element) { setIsOverflowing(false); return; }
+      setIsOverflowing(element.scrollWidth > element.clientWidth);
+    };
+
+    checkOverflow();
+
+    const element = textRef.current;
+    if (!element) return;
+
+    const resizeObserver = new ResizeObserver(checkOverflow);
+    resizeObserver.observe(element);
+    window.addEventListener("resize", checkOverflow);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", checkOverflow);
+    };
+  }, [displayValue]);
+
+  const handleMouseEnter = () => {
+    if (!isOverflowing || !wrapperRef.current) return;
+    const rect = wrapperRef.current.getBoundingClientRect();
+    setTooltipPos({
+      bottom: window.innerHeight - rect.top + 12,
+      left: rect.left,
+    });
+  };
+
+  const handleMouseLeave = () => setTooltipPos(null);
+
+  return (
+    <>
+      <div
+        ref={wrapperRef}
+        className="history-truncated-cell"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <span ref={textRef} className="history-truncated-text">
+          {displayValue}
+        </span>
+      </div>
+      {tooltipPos && createPortal(
+        <div
+          className="history-tooltip-portal"
+          style={{ bottom: `${tooltipPos.bottom}px`, left: `${tooltipPos.left}px` }}
+        >
+          {displayValue}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
 
 export default function Dashboard() {
   const { showToast } = useToast();
@@ -731,28 +801,35 @@ export default function Dashboard() {
     [oldRfqs]
   );
 
+  const filterOldOpts = (vals) =>
+    Array.from(new Set(vals.filter((v) => {
+      if (v === null || v === undefined) return false;
+      const s = String(v).trim();
+      return s !== "" && s !== "-" && s.toLowerCase() !== "empty";
+    }))).sort((a, b) => String(a).localeCompare(String(b)));
+
   const oldCustomerOptions = useMemo(
-    () => Array.from(new Set(oldRfqProjects.map((p) => p.customers).filter(Boolean))).sort(),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.customers)),
     [oldRfqProjects]
   );
   const oldKamOptions = useMemo(
-    () => Array.from(new Set(oldRfqProjects.map((p) => p.kam).filter(Boolean))).sort(),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.kam)),
     [oldRfqProjects]
   );
   const oldSectorOptions = useMemo(
-    () => Array.from(new Set(oldRfqProjects.map((p) => p.sector).filter(Boolean))).sort(),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.sector)),
     [oldRfqProjects]
   );
   const oldApplicationOptions = useMemo(
-    () => Array.from(new Set(oldRfqProjects.map((p) => p.application).filter(Boolean))).sort(),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.application)),
     [oldRfqProjects]
   );
   const oldBusinessTypeOptions = useMemo(
-    () => Array.from(new Set(oldRfqProjects.map((p) => p.type_business).filter(Boolean))).sort(),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.type_business)),
     [oldRfqProjects]
   );
   const oldStatusOptions = useMemo(
-    () => Array.from(new Set(oldRfqProjects.map((p) => p.status_name).filter(Boolean))).sort(),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.status_name)),
     [oldRfqProjects]
   );
 
@@ -1454,7 +1531,7 @@ export default function Dashboard() {
                       <h2 className="font-display text-2xl text-ink">Old projects</h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex w-full flex-col gap-1 sm:w-72">
+                      <div className="flex w-full flex-col gap-1 sm:w-56">
                         <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Search</span>
                         <div className="relative">
                           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
@@ -1472,7 +1549,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       {oldCustomerOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldCustomerFilter">Customer</label>
                           <div className="group relative">
                             <select
@@ -1491,7 +1568,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldKamOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldKamFilter">KAM</label>
                           <div className="group relative">
                             <select
@@ -1510,7 +1587,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldSectorOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldSectorFilter">Sector</label>
                           <div className="group relative">
                             <select
@@ -1529,7 +1606,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldApplicationOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-52">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldApplicationFilter">Application</label>
                           <div className="group relative">
                             <select
@@ -1548,7 +1625,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldBusinessTypeOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-52">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldBusinessTypeFilter">Business Type</label>
                           <div className="group relative">
                             <select
@@ -1567,7 +1644,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldStatusOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldStatusFilter">Status</label>
                           <div className="group relative">
                             <select
@@ -1623,7 +1700,7 @@ export default function Dashboard() {
                               >
                                 {oldRfqProjectColumns.map((colName) => (
                                   <td key={colName}>
-                                    {formatOldRfqCell(project[colName])}
+                                    <TruncatedCell value={project[colName]} />
                                   </td>
                                 ))}
                                 <td className="history-action-cell">
@@ -1862,7 +1939,7 @@ export default function Dashboard() {
                         >
                           {oldRfqSubitemColumns.map((colName) => (
                             <td key={colName}>
-                              {formatOldRfqCell(subitem[colName])}
+                              <TruncatedCell value={subitem[colName]} />
                             </td>
                           ))}
                         </tr>

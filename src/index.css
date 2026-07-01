@@ -945,14 +945,11 @@ body {
 
 .history-table th,
 .history-table td {
-  min-width: 280px;
-  max-width: 420px;
-  padding: 12px 16px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  vertical-align: top;
-  line-height: 1.4;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 14px 16px;
+  vertical-align: middle;
+  line-height: 1.45;
 }
 
 .history-table th:first-child,
@@ -960,16 +957,16 @@ body {
   min-width: 220px;
 }
 
+.history-table th:nth-child(7),
+.history-table td:nth-child(7) {
+  min-width: 300px;
+}
+
 .history-table th {
   position: sticky;
   top: 0;
   z-index: 2;
   background: #f1f5f9;
-}
-
-.history-table td {
-  font-size: 13px;
-  color: #475569;
 }
 
 .history-subitems-scroll {
@@ -987,19 +984,16 @@ body {
 
 .history-subitems-table th,
 .history-subitems-table td {
-  min-width: 280px;
-  max-width: 420px;
-  padding: 12px 16px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  vertical-align: top;
-  line-height: 1.4;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 14px 16px;
+  vertical-align: middle;
+  line-height: 1.45;
 }
 
 .history-subitems-table th:first-child,
 .history-subitems-table td:first-child {
-  min-width: 220px;
+  min-width: 180px;
 }
 
 .history-subitems-table th {
@@ -1009,19 +1003,63 @@ body {
   background: #f1f5f9;
 }
 
-.history-subitems-table td {
-  font-size: 13px;
-  color: #475569;
-}
-
 .history-action-cell {
   white-space: nowrap;
-  min-width: 180px;
-  max-width: 220px;
+  min-width: 160px;
+  max-width: 200px;
+  vertical-align: middle;
 }
 
 .history-subitems-btn {
   white-space: nowrap;
+}
+
+/* ── TruncatedCell — History View ── */
+.history-truncated-cell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.history-truncated-text {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: #334155;
+  cursor: default;
+}
+
+.history-tooltip-portal {
+  position: fixed;
+  min-width: 360px;
+  max-width: 520px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #046eaf, #0e4e78);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.75;
+  box-shadow: 0 20px 50px rgba(4, 110, 175, 0.35);
+  z-index: 99999;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.history-tooltip-portal::after {
+  content: "";
+  position: absolute;
+  left: 24px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  background: #0e4e78;
+  transform: rotate(45deg);
+  border-radius: 2px;
 }
 
 .old-rfqs-table-scroll {
