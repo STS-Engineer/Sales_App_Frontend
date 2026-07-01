@@ -930,6 +930,138 @@ body {
   height: 100%;
 }
 
+.history-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.history-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.history-table th,
+.history-table td {
+  min-width: 200px;
+  max-width: 320px;
+  padding: 14px 16px;
+  vertical-align: middle;
+  line-height: 1.45;
+}
+
+.history-table th:first-child,
+.history-table td:first-child {
+  min-width: 220px;
+}
+
+.history-table th:nth-child(7),
+.history-table td:nth-child(7) {
+  min-width: 300px;
+}
+
+.history-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+}
+
+.history-subitems-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.history-subitems-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.history-subitems-table th,
+.history-subitems-table td {
+  min-width: 200px;
+  max-width: 320px;
+  padding: 14px 16px;
+  vertical-align: middle;
+  line-height: 1.45;
+}
+
+.history-subitems-table th:first-child,
+.history-subitems-table td:first-child {
+  min-width: 180px;
+}
+
+.history-subitems-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+}
+
+.history-action-cell {
+  white-space: nowrap;
+  min-width: 160px;
+  max-width: 200px;
+  vertical-align: middle;
+}
+
+.history-subitems-btn {
+  white-space: nowrap;
+}
+
+/* ── TruncatedCell — History View ── */
+.history-truncated-cell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.history-truncated-text {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: #334155;
+  cursor: default;
+}
+
+.history-tooltip-portal {
+  position: fixed;
+  min-width: 360px;
+  max-width: 520px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: #0e4e78;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.75;
+  box-shadow: 0 20px 50px rgba(14, 78, 120, 0.35);
+  z-index: 99999;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.history-tooltip-portal::after {
+  content: "";
+  position: absolute;
+  left: 24px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  background: #0e4e78;
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
 .old-rfqs-table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -941,6 +1073,84 @@ body {
   min-width: 3200px;
   width: max-content;
   border-collapse: collapse;
+}
+
+.qty-year-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.qty-year-add-btn {
+  min-width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: #475569;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.qty-year-add-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+/* ── Offer phase — temporarily under construction ── */
+.offer-construction-wrapper {
+  min-height: 280px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 16px 24px;
+}
+
+.offer-construction-card {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 22px 20px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.offer-construction-icon {
+  width: 38px;
+  height: 38px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.offer-construction-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+}
+
+.offer-construction-card p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: #64748b;
+  line-height: 1.45;
 }
 
 .old-rfqs-table th,

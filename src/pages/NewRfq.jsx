@@ -2553,6 +2553,73 @@ const incrementRfqIndex = (ref) => {
   return `${prefix}-${String(Number(cur) + 1).padStart(cur.length, "0")}`;
 };
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * OFFER PHASE — TEMPORARILY DISABLED
+ * The original Offer phase content (section below) is preserved here.
+ * To re-enable it, restore the ternary in the render (search "OfferUnderConstruction")
+ * and remove / unwrap this comment block.
+ *
+ * <section className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-3 sm:p-4 md:p-5 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+ *   <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
+ *     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+ *       <div className="max-w-3xl">
+ *         <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Offer</p>
+ *         <h2 className="mt-2 font-display text-2xl text-ink sm:text-3xl">Offer preparation</h2>
+ *         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+ *           This is the exact filled DOCX rendered from your Word file offer_preparation_template.docx.
+ *         </p>
+ *       </div>
+ *       <div className="flex flex-wrap items-center gap-3">
+ *         <button type="button"
+ *           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+ *           onClick={loadOfferTemplatePreview} disabled={!rfqId || offerTemplatePreviewPending}>
+ *           <Eye className="h-4 w-4" />
+ *           {offerTemplatePreviewPending ? "Refreshing..." : "Refresh preview"}
+ *         </button>
+ *         <button type="button"
+ *           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+ *           onClick={handleDownloadOfferPreparationTemplate} disabled={!rfqId || offerTemplateDownloadPending}>
+ *           <Files className="h-4 w-4" />
+ *           {offerTemplateDownloadPending ? "Preparing DOCX..." : "Download DOCX"}
+ *         </button>
+ *       </div>
+ *     </div>
+ *   </div>
+ *   <div className="flex min-h-[520px] flex-1 flex-col rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-soft">
+ *     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-2 pb-4">
+ *       <div>
+ *         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Template viewer</p>
+ *         <p className="mt-2 text-sm text-slate-500">{offerTemplateFilename || "offer_preparation_template.docx"}</p>
+ *       </div>
+ *       <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+ *         {isOfferValidationLocked ? "Read-only" : "Preparation mode"}
+ *       </span>
+ *     </div>
+ *     <div className="relative mt-4 flex-1 overflow-hidden rounded-[24px] border border-slate-200/80 bg-slate-50/70">
+ *       <div ref={offerTemplateViewerRef} className="h-full min-h-[720px] overflow-auto bg-slate-100 p-4" />
+ *       {!offerTemplateReady ? (
+ *         <div className="absolute inset-0 flex min-h-[420px] items-center justify-center bg-slate-50/80 px-6 text-center text-sm font-medium text-slate-500">
+ *           {offerTemplatePreviewPending
+ *             ? "Preparing the offer template preview..."
+ *             : "Open the Offer stage on a saved RFQ to generate the preview."}
+ *         </div>
+ *       ) : null}
+ *     </div>
+ *   </div>
+ * </section>
+ * ───────────────────────────────────────────────────────────────────────────── */
+const OfferUnderConstruction = () => (
+  <section className="card relative md:col-span-2 lg:col-span-2">
+    <div className="offer-construction-wrapper">
+      <div className="offer-construction-card">
+        <div className="offer-construction-icon">⚙️</div>
+        <h3>This phase is under construction</h3>
+        <p>The Offer phase will be available soon.</p>
+      </div>
+    </div>
+  </section>
+);
+
 export default function NewRfq() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -2600,6 +2667,7 @@ export default function NewRfq() {
   const [saving, setSaving] = useState(false);
   const [isSubmittingToValidator, setIsSubmittingToValidator] = useState(false);
   const [rfqId, setRfqId] = useState("");
+  const [rfqCreatedInThisSession, setRfqCreatedInThisSession] = useState(false);
   const [rfqSnapshot, setRfqSnapshot] = useState(null);
   const [rfqAuditLogs, setRfqAuditLogs] = useState([]);
   const [rfqCreatorEmail, setRfqCreatorEmail] = useState("");
@@ -4170,6 +4238,7 @@ export default function NewRfq() {
     })
       .then((created) => {
         setRfqId(created.rfq_id);
+        setRfqCreatedInThisSession(true);
         applyRfq(created, { syncChat: false });
         navigate(`/rfqs/new?id=${encodeURIComponent(created.rfq_id)}`, {
           replace: true
@@ -4196,6 +4265,7 @@ export default function NewRfq() {
           setRfqAuditLogs([]);
           rfqAuditLogsRef.current = [];
           setRfqId("");
+          setRfqCreatedInThisSession(false);
           setDocumentType(documentTypeParam);
           setForm({ ...initialForm });
           setPendingPotentialAutofillReveal(null);
@@ -4284,6 +4354,7 @@ export default function NewRfq() {
 
         if (!alive) return;
         setRfqId(rfq.rfq_id);
+        setRfqCreatedInThisSession(false);
         applyRfq(rfq, { auditLogs });
       } catch {
         if (!alive) return;
@@ -4632,11 +4703,7 @@ export default function NewRfq() {
         const sop = extractSopYear(product.sop);
         const volumeMap = vol.volumes || {};
         let derivedQty;
-        if (!Number.isNaN(sop) && sop > 1900) {
-          const total = Array.from({ length: 5 }, (_, i) => sop + i)
-            .reduce((sum, year) => sum + Number(volumeMap[year] || 0), 0);
-          if (total > 0) derivedQty = total;
-        } else {
+        {
           const total = Object.values(volumeMap).reduce((sum, v) => sum + Number(v || 0), 0);
           if (total > 0) derivedQty = total;
         }
@@ -4660,6 +4727,35 @@ export default function NewRfq() {
         plant: nextVolumes.every((v) => v.plant) ? firstVol.plant : "",
         country: nextVolumes.every((v) => v.country) ? firstVol.country : "",
       };
+    });
+  };
+
+  const handleAddQtyYear = (volumeIndex) => {
+    if (isFormalDocumentTab && rfqFormFieldReadOnly) return;
+    setForm((prev) => {
+      const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
+      const nextVolumes = currentVolumes.map((vol, idx) => {
+        if (idx !== volumeIndex) return vol;
+        const volumeMap = { ...(vol.volumes || {}) };
+        const linkedProduct = (Array.isArray(prev.products) ? prev.products : [])[idx] || {};
+        const rowSop = extractSopYear(linkedProduct.sop);
+        const initialYears = (!Number.isNaN(rowSop) && rowSop > 1900)
+          ? Array.from({ length: 5 }, (_, i) => rowSop + i)
+          : [];
+        const allCurrentYears = [
+          ...new Set([
+            ...initialYears,
+            ...Object.keys(volumeMap).map(Number).filter((y) => !Number.isNaN(y)),
+          ]),
+        ].sort((a, b) => a - b);
+        if (!allCurrentYears.length) return vol;
+        const nextYear = allCurrentYears[allCurrentYears.length - 1] + 1;
+        if (!Object.prototype.hasOwnProperty.call(volumeMap, String(nextYear))) {
+          volumeMap[String(nextYear)] = "";
+        }
+        return { ...vol, volumes: volumeMap };
+      });
+      return { ...prev, volumes: nextVolumes };
     });
   };
 
@@ -5488,6 +5584,7 @@ export default function NewRfq() {
           const created = await createRfq({ chat_mode: mode, document_type: docType });
           const newId = created.rfq_id;
           setRfqId(newId);
+          setRfqCreatedInThisSession(true);
           // Use replaceState instead of navigate() to update the URL without triggering
           // React Router's init effect (which would applyRfq → reset form → cause a ghost save)
           window.history.replaceState(null, "", `/rfqs/new?id=${encodeURIComponent(newId)}`);
@@ -6396,14 +6493,16 @@ export default function NewRfq() {
   const volumeRows = Array.isArray(form.volumes) ? form.volumes : [];
   const volumeYearColumns = useMemo(() => {
     const allYears = new Set();
-    productRows.forEach((product) => {
+    productRows.forEach((product, i) => {
       const sopYear = extractSopYear(product.sop);
       if (!Number.isNaN(sopYear) && sopYear > 1900) {
-        for (let i = 0; i < 5; i++) allYears.add(sopYear + i);
+        for (let j = 0; j < 5; j++) allYears.add(sopYear + j);
       }
+      const volMap = volumeRows[i]?.volumes || {};
+      Object.keys(volMap).map(Number).filter((y) => !Number.isNaN(y)).forEach((y) => allYears.add(y));
     });
     return Array.from(allYears).sort((a, b) => a - b);
-  }, [productRows]);
+  }, [productRows, volumeRows]);
   const deliveryZoneOptions = useMemo(
     () => getDeliveryZoneOptions(form.deliveryZone),
     [form.deliveryZone]
@@ -6424,11 +6523,8 @@ export default function NewRfq() {
     return volumeRows.reduce((total, volume, idx) => {
       const linkedProduct = productRows[idx] || createEmptyProductItem();
       const rowSop = extractSopYear(linkedProduct.sop);
-      const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
-        ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
-        : new Set();
       const totalQty = volumeYearColumns.reduce((sum, year) => {
-        return sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0);
+        return sum + Number(volume.volumes?.[year] || 0);
       }, 0);
       const currency = sanitizeProductCurrencyCode(linkedProduct.currency || "");
       const isEur = !currency || currency === "EUR";
@@ -8182,71 +8278,7 @@ export default function NewRfq() {
 
                     </section>
                   ) : isOfferStage ? (
-                    <section className="card relative min-h-0 overflow-y-auto overflow-x-hidden space-y-6 p-3 sm:p-4 md:p-5 md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
-                      <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="max-w-3xl">
-                            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Offer</p>
-                            <h2 className="mt-2 font-display text-2xl text-ink sm:text-3xl">
-                              Offer preparation
-                            </h2>
-                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                              This is the exact filled DOCX rendered from your Word file offer_preparation_template.docx.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={loadOfferTemplatePreview}
-                              disabled={!rfqId || offerTemplatePreviewPending}
-                            >
-                              <Eye className="h-4 w-4" />
-                              {offerTemplatePreviewPending ? "Refreshing..." : "Refresh preview"}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={handleDownloadOfferPreparationTemplate}
-                              disabled={!rfqId || offerTemplateDownloadPending}
-                            >
-                              <Files className="h-4 w-4" />
-                              {offerTemplateDownloadPending ? "Preparing DOCX..." : "Download DOCX"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex min-h-[520px] flex-1 flex-col rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-soft">
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-2 pb-4">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                              Template viewer
-                            </p>
-                            <p className="mt-2 text-sm text-slate-500">
-                              {offerTemplateFilename || "offer_preparation_template.docx"}
-                            </p>
-                          </div>
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
-                            {isOfferValidationLocked ? "Read-only" : "Preparation mode"}
-                          </span>
-                        </div>
-
-                        <div className="relative mt-4 flex-1 overflow-hidden rounded-[24px] border border-slate-200/80 bg-slate-50/70">
-                          <div
-                            ref={offerTemplateViewerRef}
-                            className="h-full min-h-[720px] overflow-auto bg-slate-100 p-4"
-                          />
-                          {!offerTemplateReady ? (
-                            <div className="absolute inset-0 flex min-h-[420px] items-center justify-center bg-slate-50/80 px-6 text-center text-sm font-medium text-slate-500">
-                              {offerTemplatePreviewPending
-                                ? "Preparing the offer template preview..."
-                                : "Open the Offer stage on a saved RFQ to generate the preview."}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </section>
+                    <OfferUnderConstruction />
                   ) : (
                     <div className="col-span-full flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200/80 bg-white/70 text-sm font-medium text-slate-500">
                       Empty stage
@@ -8964,7 +8996,7 @@ export default function NewRfq() {
 
                           {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
                           <div className="flex items-center gap-2">
-                            {rfqId && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
+                            {rfqId && !rfqCreatedInThisSession && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
                               isRfqUpdateModeActive ? (
                                 <>
                                   <button
@@ -9411,24 +9443,45 @@ export default function NewRfq() {
                                           <td className="px-3 py-3">
                                             <div className="flex min-w-[170px] flex-col gap-1.5">
                                               {!Number.isNaN(rowSop) && rowSop > 1900 ? (
-                                                Array.from({ length: 5 }, (_, i) => rowSop + i).map((year) => (
-                                                  <div key={year} className="flex items-center gap-2">
-                                                    <span className="w-9 shrink-0 text-[10px] font-semibold text-slate-400">{year}</span>
-                                                    {rfqFormFieldReadOnly ? (
-                                                      <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} flex-1`}>
-                                                        {volume.volumes?.[year] ?? "—"}
-                                                      </div>
-                                                    ) : (
-                                                      <input
-                                                        className="input-field min-w-[60px] flex-1"
-                                                        type="number"
-                                                        value={volume.volumes?.[year] ?? ""}
-                                                        onChange={(e) => handleVolumeChange(volumeIndex, `volumes.${year}`, e.target.value)}
-                                                        aria-label={`Volume ${volumeIndex + 1} year ${year}`}
-                                                      />
-                                                    )}
-                                                  </div>
-                                                ))
+                                                <>
+                                                  {(() => {
+                                                    const initialYears = Array.from({ length: 5 }, (_, i) => rowSop + i);
+                                                    const extraYears = Object.keys(volume.volumes || {})
+                                                      .map(Number)
+                                                      .filter((y) => !Number.isNaN(y) && !initialYears.includes(y));
+                                                    return [...new Set([...initialYears, ...extraYears])].sort((a, b) => a - b);
+                                                  })().map((year) => (
+                                                    <div key={year} className="flex items-center gap-2">
+                                                      <span className="w-9 shrink-0 text-[10px] font-semibold text-slate-400">{year}</span>
+                                                      {rfqFormFieldReadOnly ? (
+                                                        <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} flex-1`}>
+                                                          {volume.volumes?.[year] ?? "—"}
+                                                        </div>
+                                                      ) : (
+                                                        <input
+                                                          className="input-field min-w-[60px] flex-1"
+                                                          type="number"
+                                                          value={volume.volumes?.[year] ?? ""}
+                                                          onChange={(e) => handleVolumeChange(volumeIndex, `volumes.${year}`, e.target.value)}
+                                                          aria-label={`Volume ${volumeIndex + 1} year ${year}`}
+                                                        />
+                                                      )}
+                                                    </div>
+                                                  ))}
+                                                  {!rfqFormFieldReadOnly && (
+                                                    <div className="qty-year-actions">
+                                                      <button
+                                                        type="button"
+                                                        className="qty-year-add-btn"
+                                                        onClick={() => handleAddQtyYear(volumeIndex)}
+                                                        title="Add next year"
+                                                        aria-label={`Add year to volume ${volumeIndex + 1}`}
+                                                      >
+                                                        +
+                                                      </button>
+                                                    </div>
+                                                  )}
+                                                </>
                                               ) : (
                                                 <div className="group relative inline-block">
                                                   <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>—</div>
