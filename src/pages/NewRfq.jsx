@@ -9012,7 +9012,7 @@ export default function NewRfq() {
 
                           {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
                           <div className="flex items-center gap-2">
-                            {rfqId && !rfqCreatedInThisSession && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
+                            {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
                               isRfqUpdateModeActive ? (
                                 <>
                                   <button
