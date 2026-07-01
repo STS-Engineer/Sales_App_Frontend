@@ -177,168 +177,11 @@ const applyProductLineFilter = (rfqs, selected) => {
   return rfqs.filter((rfq) => String(rfq.productLine || "").trim() === selected);
 };
 
-const OLD_RFQ_PROJECT_COLUMNS = [
-  { key: "name", label: "Name" },
-  { key: "project_name", label: "Project Name" },
-  { key: "cust_project_name", label: "Customer Project Name" },
-  { key: "customers", label: "Customer" },
-  { key: "cust_text", label: "Customer Text" },
-  { key: "kam", label: "KAM" },
-  { key: "requester", label: "Requester" },
-  { key: "sector", label: "Sector" },
-  { key: "application", label: "Application" },
-  { key: "cust_application", label: "Customer Application" },
-  { key: "type_business", label: "Business Type" },
-  { key: "importance", label: "Importance" },
-  { key: "status_name", label: "Status" },
-  { key: "old_new", label: "Old / New" },
-  { key: "sales_project", label: "Sales Project" },
-  { key: "project_sales_k", label: "Project Sales k" },
-  { key: "gmdc_project_k", label: "GMDC Project k" },
-  { key: "twc_k", label: "TWC k" },
-  { key: "authorization_required", label: "Authorization Required" },
-  { key: "assembly_location", label: "Assembly Location" },
-  { key: "plant_to_deliver", label: "Plant To Deliver" },
-  { key: "sop", label: "SOP" },
-  { key: "success_rate", label: "Success Rate" },
-  { key: "global_rating", label: "Global Rating" },
-  { key: "development_axis", label: "Development Axis" },
-  { key: "note", label: "Note" },
-  { key: "id_2", label: "ID 2" },
-  { key: "subitems_count", label: "Subitems" },
-  { key: "actions", label: "" },
-];
-
-const OLD_RFQ_SUBITEM_COLUMNS = [
-  { key: "name", label: "Name" },
-  { key: "sous_elements", label: "Sub Element" },
-  { key: "product_type", label: "Product Type" },
-  { key: "subitems_est_price", label: "Est. Price" },
-  { key: "sous_elements_sales_limit_3", label: "Sales Limit 3" },
-  { key: "sop_1", label: "SOP 1" },
-  { key: "sop_2", label: "SOP 2" },
-  { key: "sop_2_2", label: "SOP 2.2" },
-  { key: "sop_3", label: "SOP 3" },
-  { key: "sop_4", label: "SOP 4" },
-  { key: "sop_5", label: "SOP 5" },
-  { key: "sop_6", label: "SOP 6" },
-  { key: "sop_7", label: "SOP 7" },
-  { key: "sop_8", label: "SOP 8" },
-  { key: "sop_9", label: "SOP 9" },
-  { key: "total_qty", label: "Total Qty" },
-  { key: "avg_difficulty", label: "Avg Difficulty" },
-  { key: "development_axis", label: "Development Axis" },
-  { key: "readiness", label: "Readiness" },
-  { key: "project_condition", label: "Project Condition" },
-  { key: "note", label: "Note" },
-  { key: "id_2", label: "ID 2" },
-  { key: "identifiant_de_l_element", label: "Element ID" },
-];
-
-const formatOldRfqCell = (row, key) => {
-  const value = row?.[key];
-  if (value === null || value === undefined || value === "") return "-";
+const formatOldRfqCell = (value) => {
+  if (value === null || value === undefined || String(value).trim() === "") return "-";
   return String(value);
 };
 
-const OLD_RFQ_PARENT_FIELD_FALLBACKS = {
-  customers: "parent_customer",
-  kam: "parent_kam",
-  sector: "parent_sector",
-  application: "parent_application",
-  type_business: "parent_type_business",
-  status_name: "parent_status_name"
-};
-
-const getOldRfqFilterValue = (row, key) => {
-  const directValue = row?.[key];
-  if (directValue !== null && directValue !== undefined && directValue !== "") {
-    return String(directValue);
-  }
-
-  const fallbackKey = OLD_RFQ_PARENT_FIELD_FALLBACKS[key];
-  const fallbackValue = fallbackKey ? row?.[fallbackKey] : "";
-  if (fallbackValue === null || fallbackValue === undefined || fallbackValue === "") {
-    return "";
-  }
-
-  return String(fallbackValue);
-};
-
-const getOldRfqOptionValues = (projects, key) =>
-  Array.from(
-    new Set(projects.map((project) => getOldRfqFilterValue(project, key)).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
-
-const getOldRfqSubitems = (project) =>
-  Array.isArray(project?.subitems) ? project.subitems : [];
-
-const getOldRfqSubitemsCount = (project) => {
-  const parsedValue = Number(project?.subitems_count);
-  if (Number.isFinite(parsedValue) && parsedValue >= 0) {
-    return parsedValue;
-  }
-  return getOldRfqSubitems(project).length;
-};
-
-const buildOldRfqProjectKey = (project, index) =>
-  String(
-    project?.import_id ||
-      project?.id_2 ||
-      project?.project_name ||
-      project?.cust_project_name ||
-      project?.name ||
-      `old-rfq-project-${index}`
-  );
-
-const normalizeOldRfqProjects = (rows = []) => {
-  if (!Array.isArray(rows) || rows.length === 0) return [];
-
-  if (rows.some((row) => Array.isArray(row?.subitems))) {
-    return rows.map((row, index) => ({
-      ...row,
-      row_type: "project",
-      historyKey: buildOldRfqProjectKey(row, index),
-      subitems: getOldRfqSubitems(row),
-      subitems_count: getOldRfqSubitemsCount(row)
-    }));
-  }
-
-  const projects = [];
-  let currentProject = null;
-
-  rows.forEach((row, index) => {
-    if (!row || typeof row !== "object") return;
-
-    const rowType = String(row.row_type || "").trim().toLowerCase();
-    if (rowType === "subitem") {
-      if (currentProject) {
-        currentProject.subitems.push(row);
-      }
-      return;
-    }
-
-    currentProject = {
-      ...row,
-      row_type: "project",
-      historyKey: buildOldRfqProjectKey(row, index),
-      subitems: []
-    };
-    projects.push(currentProject);
-  });
-
-  return projects.map((project) => ({
-    ...project,
-    subitems_count: getOldRfqSubitemsCount(project)
-  }));
-};
-
-const buildOldRfqProjectSearchHaystack = (project) =>
-  [project, ...getOldRfqSubitems(project)]
-    .flatMap((row) => Object.values(row || {}))
-    .filter((value) => value !== null && value !== undefined && value !== "")
-    .join(" ")
-    .toLowerCase();
 
 const buildPageItems = (currentPage, totalPages) => {
   if (totalPages <= 7) {
@@ -358,6 +201,295 @@ const buildPageItems = (currentPage, totalPages) => {
 
   return items;
 };
+
+const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
+  "old_rfq_id",
+  "excel_row_number",
+  "creation_journal",
+  "creation_log",
+]);
+
+const OLD_RFQ_PROJECT_COLUMN_ORDER = [
+  "name",
+  "product_type",
+  "customers",
+  "kam",
+  "project_name",
+  "customer_project_name",
+  "application",
+  "customer_application",
+  "type_business",
+  "subitems_est_price_eur",
+  "subelements_sales_limit_3",
+  "twc_keur",
+  "mirror_gmdc_k",
+  "authorization_required",
+  "capex_keur",
+  "capital_keur",
+  "gmdc_project_keur",
+  "sales_project",
+  "requester",
+  "project_sales_keur",
+  "gmdc_proj_percent",
+  "old_new",
+  "duplicate_of_old_new",
+  "customer_text",
+  "importance",
+  "sector",
+  "pre_sales_project_manager",
+  "gmdc_proj",
+  "sop",
+  "success_rate",
+  "volume_profile",
+  "button",
+  "interest_index",
+  "sop_speed_index",
+  "confidence_index",
+  "gmdc_percent_index",
+  "gmdc_value_index",
+  "year_to_sop",
+  "lifetime_index",
+  "lifetime_year",
+  "monday_id",
+  "costing_number",
+  "plant_to_deliver",
+  "element_identifier",
+  "chiffres_id",
+  "text_volume_profile",
+  "sop_percent",
+  "sop_percent_1",
+  "sop_percent_2",
+  "sop_percent_3",
+  "sop_percent_4",
+  "sop_percent_5",
+  "sop_percent_6",
+  "sop_percent_7",
+  "sop_percent_8",
+  "sop_percent_9",
+  "readiness",
+  "project_condition",
+  "product_testing",
+  "plant_audited",
+  "iteration",
+  "integration",
+  "final_delivery",
+  "duplicate_of_pipeline",
+  "duplicate_of_pipeline_record_change",
+  "id_test",
+  "status_name",
+  "duplicate_of_development_axis",
+  "total_qty",
+  "note",
+  "mirror",
+  "subitems_count",
+];
+
+const OLD_RFQ_PROJECT_COLUMN_LABELS = {
+  name: "Name",
+  product_type: "Product Type",
+  customers: "Customer",
+  kam: "KAM",
+  project_name: "Project Name",
+  customer_project_name: "Customer Project Name",
+  application: "Application",
+  customer_application: "Customer Application",
+  type_business: "Business Type",
+  subitems_est_price_eur: "Subitems Est. Price (€)",
+  subelements_sales_limit_3: "Subitems Sales Limit 3",
+  twc_keur: "TWC (k€)",
+  mirror_gmdc_k: "Mirror GMDC (k€)",
+  authorization_required: "Authorization Required",
+  capex_keur: "CAPEX (k€)",
+  capital_keur: "Capital (k€)",
+  gmdc_project_keur: "GMDC Project (k€)",
+  sales_project: "Sales Project",
+  requester: "Requester",
+  project_sales_keur: "Project Sales (k€)",
+  gmdc_proj_percent: "GMDC Project (%)",
+  old_new: "Old / New",
+  duplicate_of_old_new: "Duplicate Of Old/New",
+  customer_text: "Customer Text",
+  importance: "Importance",
+  sector: "Sector",
+  pre_sales_project_manager: "Pre-Sales Project Manager",
+  gmdc_proj: "GMDC Project",
+  sop: "SOP",
+  success_rate: "Success Rate",
+  volume_profile: "Volume Profile",
+  button: "Button",
+  interest_index: "Interest Index",
+  sop_speed_index: "SOP Speed Index",
+  confidence_index: "Confidence Index",
+  gmdc_percent_index: "GMDC Percent Index",
+  gmdc_value_index: "GMDC Value Index",
+  year_to_sop: "Year To SOP",
+  lifetime_index: "Lifetime Index",
+  lifetime_year: "Lifetime Year",
+  monday_id: "Monday ID",
+  costing_number: "Costing Number",
+  plant_to_deliver: "Plant To Deliver",
+  element_identifier: "Element Identifier",
+  chiffres_id: "Chiffres ID",
+  text_volume_profile: "Text Volume Profile",
+  sop_percent: "SOP %",
+  sop_percent_1: "SOP % 1",
+  sop_percent_2: "SOP % 2",
+  sop_percent_3: "SOP % 3",
+  sop_percent_4: "SOP % 4",
+  sop_percent_5: "SOP % 5",
+  sop_percent_6: "SOP % 6",
+  sop_percent_7: "SOP % 7",
+  sop_percent_8: "SOP % 8",
+  sop_percent_9: "SOP % 9",
+  readiness: "Readiness",
+  project_condition: "Project Condition",
+  product_testing: "Product Testing",
+  plant_audited: "Plant Audited",
+  iteration: "Iteration",
+  integration: "Integration",
+  final_delivery: "Final Delivery",
+  duplicate_of_pipeline: "Duplicate Of Pipeline",
+  duplicate_of_pipeline_record_change: "Duplicate Of Pipeline Record Change",
+  id_test: "ID Test",
+  status_name: "Status",
+  duplicate_of_development_axis: "Duplicate Of Development Axis",
+  total_qty: "Total Quantity",
+  note: "Note",
+  mirror: "Mirror",
+  subitems_count: "Subitems",
+};
+
+const buildOrderedOldRfqProjectColumns = (apiColumns = []) => {
+  const visibleColumns = apiColumns.filter(
+    (col) => !HIDDEN_OLD_RFQ_PROJECT_COLUMNS.has(col)
+  );
+  const orderedColumns = OLD_RFQ_PROJECT_COLUMN_ORDER.filter((col) =>
+    visibleColumns.includes(col)
+  );
+  const remainingColumns = visibleColumns.filter(
+    (col) => !OLD_RFQ_PROJECT_COLUMN_ORDER.includes(col)
+  );
+  return [...orderedColumns, ...remainingColumns];
+};
+
+const getOldRfqProjectColumnLabel = (columnName) =>
+  OLD_RFQ_PROJECT_COLUMN_LABELS[columnName] || columnName;
+
+const HIDDEN_OLD_RFQ_SUBITEM_COLUMNS = new Set([
+  "old_rfq_subitem_id",
+  "old_rfq_id",
+  "excel_row_number",
+  "subitem_order",
+  "parent_id",
+]);
+
+const OLD_RFQ_SUBITEM_COLUMN_ORDER = [
+  "name",
+  "product_types",
+  "application",
+  "product_line_labels",
+  "product_line_labels_text",
+  "est_price_eur",
+  "type_sales",
+  "delivery_to",
+  "final_delivery",
+  "plant",
+  "qty_kp",
+  "std_gmdc_percent",
+  "std_gmdc_percent_2",
+  "difficulty",
+  "capacity_steps_mp",
+  "capacity_steps_mp_2",
+  "capex_per_mp",
+  "capex_per_mp_2",
+  "development_axis",
+  "twc_percent",
+  "twc_percent_2",
+  "success_rate",
+  "sales_ke",
+  "gmdc_keur",
+  "roce_ro_cap",
+  "roce_gmdc_cap",
+  "twc",
+  "capex_keur",
+  "capital",
+  "status",
+  "importance",
+  "project_name",
+  "customer",
+  "pipeline",
+  "iteration",
+  "safe_sales_keur",
+  "product_line_description",
+  "authorization_required",
+  "product_types_2",
+  "subitem_id",
+  "chiffre_subitem_id",
+  "sales_limit_1",
+  "sales_limit_3",
+];
+
+const OLD_RFQ_SUBITEM_COLUMN_LABELS = {
+  name: "Name",
+  product_types: "Product Type",
+  application: "Application",
+  product_line_labels: "Product Line Labels",
+  product_line_labels_text: "Product Line Labels Text",
+  est_price_eur: "Estimated Price (€)",
+  type_sales: "Sales Type",
+  delivery_to: "Delivery To",
+  final_delivery: "Final Delivery",
+  plant: "Plant",
+  qty_kp: "Quantity (kp)",
+  std_gmdc_percent: "Standard GMDC (%)",
+  std_gmdc_percent_2: "Standard GMDC (%) 2",
+  difficulty: "Difficulty",
+  capacity_steps_mp: "Capacity Steps (Mp)",
+  capacity_steps_mp_2: "Capacity Steps (Mp) 2",
+  capex_per_mp: "CAPEX / MP",
+  capex_per_mp_2: "CAPEX / MP 2",
+  development_axis: "Development Axis",
+  twc_percent: "TWC (%)",
+  twc_percent_2: "TWC (%) 2",
+  success_rate: "Success Rate",
+  sales_ke: "Sales (k€)",
+  gmdc_keur: "GMDC (k€)",
+  roce_ro_cap: "ROCE (RO / CAP)",
+  roce_gmdc_cap: "ROCE (GMDC / CAP)",
+  twc: "TWC",
+  capex_keur: "CAPEX (k€)",
+  capital: "Capital",
+  status: "Status",
+  importance: "Importance",
+  project_name: "Project Name",
+  customer: "Customer",
+  pipeline: "Pipeline",
+  iteration: "Iteration",
+  safe_sales_keur: "Safe Sales (k€)",
+  product_line_description: "Product Line Description",
+  authorization_required: "Authorization Required",
+  product_types_2: "Product Type 2",
+  subitem_id: "Subitem ID",
+  chiffre_subitem_id: "Chiffre Subitem ID",
+  sales_limit_1: "Sales Limit 1",
+  sales_limit_3: "Sales Limit 3",
+};
+
+const buildOrderedOldRfqSubitemColumns = (apiColumns = []) => {
+  const visibleColumns = apiColumns.filter(
+    (col) => !HIDDEN_OLD_RFQ_SUBITEM_COLUMNS.has(col)
+  );
+  const orderedColumns = OLD_RFQ_SUBITEM_COLUMN_ORDER.filter((col) =>
+    visibleColumns.includes(col)
+  );
+  const remainingColumns = visibleColumns.filter(
+    (col) => !OLD_RFQ_SUBITEM_COLUMN_ORDER.includes(col)
+  );
+  return [...orderedColumns, ...remainingColumns];
+};
+
+const getOldRfqSubitemColumnLabel = (columnName) =>
+  OLD_RFQ_SUBITEM_COLUMN_LABELS[columnName] || columnName;
 
 export default function Dashboard() {
   const { showToast } = useToast();
@@ -382,6 +514,8 @@ export default function Dashboard() {
   const [selectedGlobalProductLine, setSelectedGlobalProductLine] = useState("ALL");
   const [selectedTeamProductLine, setSelectedTeamProductLine] = useState("ALL");
   const [oldRfqs, setOldRfqs] = useState([]);
+  const [oldRfqProjectColumns, setOldRfqProjectColumns] = useState([]);
+  const [oldRfqSubitemColumns, setOldRfqSubitemColumns] = useState([]);
   const [oldRfqsLoading, setOldRfqsLoading] = useState(false);
   const [oldRfqsError, setOldRfqsError] = useState("");
   const [oldSearchTerm, setOldSearchTerm] = useState("");
@@ -456,8 +590,20 @@ export default function Dashboard() {
       try {
         const data = await getOldRfqs();
         setOldRfqs(Array.isArray(data?.items) ? data.items : []);
+        setOldRfqProjectColumns(
+          buildOrderedOldRfqProjectColumns(
+            Array.isArray(data?.project_columns) ? data.project_columns : []
+          )
+        );
+        setOldRfqSubitemColumns(
+          buildOrderedOldRfqSubitemColumns(
+            Array.isArray(data?.subitem_columns) ? data.subitem_columns : []
+          )
+        );
       } catch {
         setOldRfqs([]);
+        setOldRfqProjectColumns([]);
+        setOldRfqSubitemColumns([]);
         setOldRfqsError("Unable to load historical data. Please refresh.");
       } finally {
         setOldRfqsLoading(false);
@@ -575,71 +721,61 @@ export default function Dashboard() {
     [teamData, teamPersonFilter, teamSectorFilter, normalizedSearchTerm]
   );
 
-  const oldRfqProjects = useMemo(() => normalizeOldRfqProjects(oldRfqs), [oldRfqs]);
+  const oldRfqProjects = useMemo(
+    () => (Array.isArray(oldRfqs) ? oldRfqs : []).map((project, index) => ({
+      ...project,
+      historyKey: String(project.old_rfq_id ?? project.name ?? `old-rfq-${index}`),
+      subitems: Array.isArray(project.subitems) ? project.subitems : [],
+      subitems_count: project.subitems_count ?? (Array.isArray(project.subitems) ? project.subitems.length : 0),
+    })),
+    [oldRfqs]
+  );
+
   const oldCustomerOptions = useMemo(
-    () => getOldRfqOptionValues(oldRfqProjects, "customers"),
+    () => Array.from(new Set(oldRfqProjects.map((p) => p.customers).filter(Boolean))).sort(),
     [oldRfqProjects]
   );
   const oldKamOptions = useMemo(
-    () => getOldRfqOptionValues(oldRfqProjects, "kam"),
+    () => Array.from(new Set(oldRfqProjects.map((p) => p.kam).filter(Boolean))).sort(),
     [oldRfqProjects]
   );
   const oldSectorOptions = useMemo(
-    () => getOldRfqOptionValues(oldRfqProjects, "sector"),
+    () => Array.from(new Set(oldRfqProjects.map((p) => p.sector).filter(Boolean))).sort(),
     [oldRfqProjects]
   );
   const oldApplicationOptions = useMemo(
-    () => getOldRfqOptionValues(oldRfqProjects, "application"),
+    () => Array.from(new Set(oldRfqProjects.map((p) => p.application).filter(Boolean))).sort(),
     [oldRfqProjects]
   );
   const oldBusinessTypeOptions = useMemo(
-    () => getOldRfqOptionValues(oldRfqProjects, "type_business"),
+    () => Array.from(new Set(oldRfqProjects.map((p) => p.type_business).filter(Boolean))).sort(),
     [oldRfqProjects]
   );
   const oldStatusOptions = useMemo(
-    () => getOldRfqOptionValues(oldRfqProjects, "status_name"),
+    () => Array.from(new Set(oldRfqProjects.map((p) => p.status_name).filter(Boolean))).sort(),
     [oldRfqProjects]
   );
 
-  const filteredOldProjects = useMemo(() => {
+  const filteredOldRfqs = useMemo(() => {
     const search = oldSearchTerm.trim().toLowerCase();
 
     return oldRfqProjects.filter((project) => {
-      if (
-        oldCustomerFilter &&
-        getOldRfqFilterValue(project, "customers") !== oldCustomerFilter
-      ) {
-        return false;
-      }
-      if (oldKamFilter && getOldRfqFilterValue(project, "kam") !== oldKamFilter) {
-        return false;
-      }
-      if (oldSectorFilter && getOldRfqFilterValue(project, "sector") !== oldSectorFilter) {
-        return false;
-      }
-      if (
-        oldApplicationFilter &&
-        getOldRfqFilterValue(project, "application") !== oldApplicationFilter
-      ) {
-        return false;
-      }
-      if (
-        oldBusinessTypeFilter &&
-        getOldRfqFilterValue(project, "type_business") !== oldBusinessTypeFilter
-      ) {
-        return false;
-      }
-      if (
-        oldStatusFilter &&
-        getOldRfqFilterValue(project, "status_name") !== oldStatusFilter
-      ) {
-        return false;
-      }
-      if (search && !buildOldRfqProjectSearchHaystack(project).includes(search)) {
-        return false;
-      }
-
-      return true;
+      if (oldCustomerFilter && project.customers !== oldCustomerFilter) return false;
+      if (oldKamFilter && project.kam !== oldKamFilter) return false;
+      if (oldSectorFilter && project.sector !== oldSectorFilter) return false;
+      if (oldApplicationFilter && project.application !== oldApplicationFilter) return false;
+      if (oldBusinessTypeFilter && project.type_business !== oldBusinessTypeFilter) return false;
+      if (oldStatusFilter && project.status_name !== oldStatusFilter) return false;
+      if (!search) return true;
+      const projectText = Object.values(project)
+        .filter((v) => v !== null && v !== undefined && !Array.isArray(v) && typeof v !== "object")
+        .join(" ")
+        .toLowerCase();
+      const subitemsText = (project.subitems || [])
+        .map((s) => Object.values(s).filter(Boolean).join(" "))
+        .join(" ")
+        .toLowerCase();
+      return projectText.includes(search) || subitemsText.includes(search);
     });
   }, [
     oldApplicationFilter,
@@ -696,7 +832,7 @@ export default function Dashboard() {
       : viewMode === "global"
         ? finalGlobalRfqs
         : viewMode === "history"
-          ? filteredOldProjects
+          ? filteredOldRfqs
           : finalDetailedRfqs;
   const totalRows = activeRows.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / rowsPerPage));
@@ -1450,7 +1586,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
-                        {formatRequestCount(filteredOldProjects.length)}
+                        {formatRequestCount(filteredOldRfqs.length)}
                       </span>
                     </div>
                   </div>
@@ -1469,63 +1605,55 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <div className="card overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[3200px] text-left text-sm">
+                      <div className="history-table-scroll">
+                        <table className="history-table text-left text-sm">
                           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
                             <tr>
-                              {OLD_RFQ_PROJECT_COLUMNS.map((col) => (
-                                <th key={col.key} className="px-4 py-4 whitespace-nowrap">{col.label}</th>
+                              {oldRfqProjectColumns.map((colName) => (
+                                <th key={colName}>{getOldRfqProjectColumnLabel(colName)}</th>
                               ))}
+                              <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => {
-                              const subitems = getOldRfqSubitems(project);
-                              const subitemsCount = getOldRfqSubitemsCount(project);
-
-                              return (
-                                <tr
-                                  key={project.historyKey}
-                                  className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
-                                >
-                                  {OLD_RFQ_PROJECT_COLUMNS.map((col) => (
-                                    <td
-                                      key={col.key}
-                                      className={`px-4 py-4 align-top ${col.key === "actions" ? "text-right" : "whitespace-nowrap"}`}
+                            {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => (
+                              <tr
+                                key={project.old_rfq_id ?? project.name}
+                                className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
+                              >
+                                {oldRfqProjectColumns.map((colName) => (
+                                  <td key={colName}>
+                                    {formatOldRfqCell(project[colName])}
+                                  </td>
+                                ))}
+                                <td className="history-action-cell">
+                                  {(project.subitems?.length ?? 0) > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="history-subitems-btn inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
+                                      style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
+                                      onClick={() => handleOpenSubitemsModal(project)}
                                     >
-                                      {col.key === "subitems_count" ? (
-                                        <span className="font-semibold text-slate-700">{subitemsCount}</span>
-                                      ) : col.key === "actions" ? (
-                                        subitemsCount > 0 ? (
-                                          <button
-                                            type="button"
-                                            className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
-                                            style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
-                                            onClick={() => handleOpenSubitemsModal(project)}
-                                          >
-                                            View subitems ({subitemsCount})
-                                          </button>
-                                        ) : (
-                                          <span className="text-xs font-medium text-slate-400">No subitems</span>
-                                        )
-                                      ) : (
-                                        formatOldRfqCell(project, col.key)
-                                      )}
-                                    </td>
-                                  ))}
-                                </tr>
-                              );
-                            }) : (
+                                      View subitems ({project.subitems.length})
+                                    </button>
+                                  ) : (
+                                    <span className="history-muted text-xs font-medium text-slate-400">No subitems</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )) : (
                               <tr>
-                                <td colSpan={OLD_RFQ_PROJECT_COLUMNS.length} className="px-4 py-16 text-center text-sm text-slate-400">
-                                  No old projects found
+                                <td colSpan={oldRfqProjectColumns.length + 1} className="px-4 py-16 text-center text-sm text-slate-400">
+                                  No old RFQs found
                                 </td>
                               </tr>
                             )}
                           </tbody>
                         </table>
                       </div>
-                      {tableFooter}
+                      <div className="border-t border-slate-200/70 bg-slate-50/70 px-4 py-3">
+                        {tableFooter}
+                      </div>
                     </div>
                   )}
                 </>
@@ -1701,7 +1829,7 @@ export default function Dashboard() {
                   {selectedOldProject.project_name || selectedOldProject.name || "Project subitems"}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  {[getOldRfqFilterValue(selectedOldProject, "customers"), getOldRfqFilterValue(selectedOldProject, "kam"), `${getOldRfqSubitemsCount(selectedOldProject)} subitems`]
+                  {[selectedOldProject.customers, selectedOldProject.kam, `${selectedOldProject.subitems_count} subitems`]
                     .filter(Boolean)
                     .join(" / ")}
                 </p>
@@ -1716,25 +1844,25 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="chat-modal-body bg-gradient-to-b from-slate-50/40 to-white">
-              {getOldRfqSubitems(selectedOldProject).length > 0 ? (
-                <div className="overflow-x-auto px-6 py-6">
-                  <table className="w-full min-w-[2200px] text-left text-sm">
+              {(selectedOldProject.subitems || []).length > 0 ? (
+                <div className="history-subitems-scroll px-6 py-6">
+                  <table className="history-subitems-table text-left text-sm">
                     <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
                       <tr>
-                        {OLD_RFQ_SUBITEM_COLUMNS.map((col) => (
-                          <th key={col.key} className="px-4 py-4 whitespace-nowrap">{col.label}</th>
+                        {oldRfqSubitemColumns.map((colName) => (
+                          <th key={colName}>{getOldRfqSubitemColumnLabel(colName)}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {getOldRfqSubitems(selectedOldProject).map((subitem, index) => (
+                      {(selectedOldProject.subitems || []).map((subitem, index) => (
                         <tr
-                          key={`${selectedOldProject.historyKey}-subitem-${index}`}
+                          key={`${selectedOldProject.old_rfq_id}-subitem-${index}`}
                           className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
                         >
-                          {OLD_RFQ_SUBITEM_COLUMNS.map((col) => (
-                            <td key={col.key} className="px-4 py-4 whitespace-nowrap align-top">
-                              {formatOldRfqCell(subitem, col.key)}
+                          {oldRfqSubitemColumns.map((colName) => (
+                            <td key={colName}>
+                              {formatOldRfqCell(subitem[colName])}
                             </td>
                           ))}
                         </tr>

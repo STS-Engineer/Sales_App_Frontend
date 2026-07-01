@@ -930,6 +930,100 @@ body {
   height: 100%;
 }
 
+.history-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.history-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.history-table th,
+.history-table td {
+  min-width: 280px;
+  max-width: 420px;
+  padding: 12px 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+.history-table th:first-child,
+.history-table td:first-child {
+  min-width: 220px;
+}
+
+.history-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+}
+
+.history-table td {
+  font-size: 13px;
+  color: #475569;
+}
+
+.history-subitems-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.history-subitems-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.history-subitems-table th,
+.history-subitems-table td {
+  min-width: 280px;
+  max-width: 420px;
+  padding: 12px 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+.history-subitems-table th:first-child,
+.history-subitems-table td:first-child {
+  min-width: 220px;
+}
+
+.history-subitems-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+}
+
+.history-subitems-table td {
+  font-size: 13px;
+  color: #475569;
+}
+
+.history-action-cell {
+  white-space: nowrap;
+  min-width: 180px;
+  max-width: 220px;
+}
+
+.history-subitems-btn {
+  white-space: nowrap;
+}
+
 .old-rfqs-table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -941,6 +1035,34 @@ body {
   min-width: 3200px;
   width: max-content;
   border-collapse: collapse;
+}
+
+.qty-year-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.qty-year-add-btn {
+  min-width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: #475569;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.qty-year-add-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
 }
 
 .old-rfqs-table th,

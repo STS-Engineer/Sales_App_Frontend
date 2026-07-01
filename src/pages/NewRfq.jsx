@@ -2600,6 +2600,7 @@ export default function NewRfq() {
   const [saving, setSaving] = useState(false);
   const [isSubmittingToValidator, setIsSubmittingToValidator] = useState(false);
   const [rfqId, setRfqId] = useState("");
+  const [rfqCreatedInThisSession, setRfqCreatedInThisSession] = useState(false);
   const [rfqSnapshot, setRfqSnapshot] = useState(null);
   const [rfqAuditLogs, setRfqAuditLogs] = useState([]);
   const [rfqCreatorEmail, setRfqCreatorEmail] = useState("");
@@ -4164,6 +4165,7 @@ export default function NewRfq() {
     })
       .then((created) => {
         setRfqId(created.rfq_id);
+        setRfqCreatedInThisSession(true);
         applyRfq(created, { syncChat: false });
         navigate(`/rfqs/new?id=${encodeURIComponent(created.rfq_id)}`, {
           replace: true
@@ -4190,6 +4192,7 @@ export default function NewRfq() {
           setRfqAuditLogs([]);
           rfqAuditLogsRef.current = [];
           setRfqId("");
+          setRfqCreatedInThisSession(false);
           setDocumentType(documentTypeParam);
           setForm({ ...initialForm });
           setPendingPotentialAutofillReveal(null);
@@ -4278,6 +4281,7 @@ export default function NewRfq() {
 
         if (!alive) return;
         setRfqId(rfq.rfq_id);
+        setRfqCreatedInThisSession(false);
         applyRfq(rfq, { auditLogs });
       } catch {
         if (!alive) return;
@@ -4626,11 +4630,7 @@ export default function NewRfq() {
         const sop = extractSopYear(product.sop);
         const volumeMap = vol.volumes || {};
         let derivedQty;
-        if (!Number.isNaN(sop) && sop > 1900) {
-          const total = Array.from({ length: 5 }, (_, i) => sop + i)
-            .reduce((sum, year) => sum + Number(volumeMap[year] || 0), 0);
-          if (total > 0) derivedQty = total;
-        } else {
+        {
           const total = Object.values(volumeMap).reduce((sum, v) => sum + Number(v || 0), 0);
           if (total > 0) derivedQty = total;
         }
@@ -4654,6 +4654,35 @@ export default function NewRfq() {
         plant: nextVolumes.every((v) => v.plant) ? firstVol.plant : "",
         country: nextVolumes.every((v) => v.country) ? firstVol.country : "",
       };
+    });
+  };
+
+  const handleAddQtyYear = (volumeIndex) => {
+    if (isFormalDocumentTab && rfqFormFieldReadOnly) return;
+    setForm((prev) => {
+      const currentVolumes = Array.isArray(prev.volumes) ? prev.volumes : [];
+      const nextVolumes = currentVolumes.map((vol, idx) => {
+        if (idx !== volumeIndex) return vol;
+        const volumeMap = { ...(vol.volumes || {}) };
+        const linkedProduct = (Array.isArray(prev.products) ? prev.products : [])[idx] || {};
+        const rowSop = extractSopYear(linkedProduct.sop);
+        const initialYears = (!Number.isNaN(rowSop) && rowSop > 1900)
+          ? Array.from({ length: 5 }, (_, i) => rowSop + i)
+          : [];
+        const allCurrentYears = [
+          ...new Set([
+            ...initialYears,
+            ...Object.keys(volumeMap).map(Number).filter((y) => !Number.isNaN(y)),
+          ]),
+        ].sort((a, b) => a - b);
+        if (!allCurrentYears.length) return vol;
+        const nextYear = allCurrentYears[allCurrentYears.length - 1] + 1;
+        if (!Object.prototype.hasOwnProperty.call(volumeMap, String(nextYear))) {
+          volumeMap[String(nextYear)] = "";
+        }
+        return { ...vol, volumes: volumeMap };
+      });
+      return { ...prev, volumes: nextVolumes };
     });
   };
 
@@ -5477,6 +5506,7 @@ export default function NewRfq() {
           const created = await createRfq({ chat_mode: mode, document_type: docType });
           const newId = created.rfq_id;
           setRfqId(newId);
+          setRfqCreatedInThisSession(true);
           // Use replaceState instead of navigate() to update the URL without triggering
           // React Router's init effect (which would applyRfq → reset form → cause a ghost save)
           window.history.replaceState(null, "", `/rfqs/new?id=${encodeURIComponent(newId)}`);
@@ -6381,14 +6411,16 @@ export default function NewRfq() {
   const volumeRows = Array.isArray(form.volumes) ? form.volumes : [];
   const volumeYearColumns = useMemo(() => {
     const allYears = new Set();
-    productRows.forEach((product) => {
+    productRows.forEach((product, i) => {
       const sopYear = extractSopYear(product.sop);
       if (!Number.isNaN(sopYear) && sopYear > 1900) {
-        for (let i = 0; i < 5; i++) allYears.add(sopYear + i);
+        for (let j = 0; j < 5; j++) allYears.add(sopYear + j);
       }
+      const volMap = volumeRows[i]?.volumes || {};
+      Object.keys(volMap).map(Number).filter((y) => !Number.isNaN(y)).forEach((y) => allYears.add(y));
     });
     return Array.from(allYears).sort((a, b) => a - b);
-  }, [productRows]);
+  }, [productRows, volumeRows]);
   const deliveryZoneOptions = useMemo(
     () => getDeliveryZoneOptions(form.deliveryZone),
     [form.deliveryZone]
@@ -6409,11 +6441,8 @@ export default function NewRfq() {
     return volumeRows.reduce((total, volume, idx) => {
       const linkedProduct = productRows[idx] || createEmptyProductItem();
       const rowSop = extractSopYear(linkedProduct.sop);
-      const productYears = (!Number.isNaN(rowSop) && rowSop > 1900)
-        ? new Set(Array.from({ length: 5 }, (_, i) => rowSop + i))
-        : new Set();
       const totalQty = volumeYearColumns.reduce((sum, year) => {
-        return sum + (productYears.has(year) ? Number(volume.volumes?.[year] || 0) : 0);
+        return sum + Number(volume.volumes?.[year] || 0);
       }, 0);
       const currency = sanitizeProductCurrencyCode(linkedProduct.currency || "");
       const isEur = !currency || currency === "EUR";
@@ -8949,7 +8978,7 @@ export default function NewRfq() {
 
                           {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
                           <div className="flex items-center gap-2">
-                            {rfqId && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
+                            {rfqId && !rfqCreatedInThisSession && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
                               isRfqUpdateModeActive ? (
                                 <>
                                   <button
@@ -9396,24 +9425,45 @@ export default function NewRfq() {
                                           <td className="px-3 py-3">
                                             <div className="flex min-w-[170px] flex-col gap-1.5">
                                               {!Number.isNaN(rowSop) && rowSop > 1900 ? (
-                                                Array.from({ length: 5 }, (_, i) => rowSop + i).map((year) => (
-                                                  <div key={year} className="flex items-center gap-2">
-                                                    <span className="w-9 shrink-0 text-[10px] font-semibold text-slate-400">{year}</span>
-                                                    {rfqFormFieldReadOnly ? (
-                                                      <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} flex-1`}>
-                                                        {volume.volumes?.[year] ?? "—"}
-                                                      </div>
-                                                    ) : (
-                                                      <input
-                                                        className="input-field min-w-[60px] flex-1"
-                                                        type="number"
-                                                        value={volume.volumes?.[year] ?? ""}
-                                                        onChange={(e) => handleVolumeChange(volumeIndex, `volumes.${year}`, e.target.value)}
-                                                        aria-label={`Volume ${volumeIndex + 1} year ${year}`}
-                                                      />
-                                                    )}
-                                                  </div>
-                                                ))
+                                                <>
+                                                  {(() => {
+                                                    const initialYears = Array.from({ length: 5 }, (_, i) => rowSop + i);
+                                                    const extraYears = Object.keys(volume.volumes || {})
+                                                      .map(Number)
+                                                      .filter((y) => !Number.isNaN(y) && !initialYears.includes(y));
+                                                    return [...new Set([...initialYears, ...extraYears])].sort((a, b) => a - b);
+                                                  })().map((year) => (
+                                                    <div key={year} className="flex items-center gap-2">
+                                                      <span className="w-9 shrink-0 text-[10px] font-semibold text-slate-400">{year}</span>
+                                                      {rfqFormFieldReadOnly ? (
+                                                        <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} flex-1`}>
+                                                          {volume.volumes?.[year] ?? "—"}
+                                                        </div>
+                                                      ) : (
+                                                        <input
+                                                          className="input-field min-w-[60px] flex-1"
+                                                          type="number"
+                                                          value={volume.volumes?.[year] ?? ""}
+                                                          onChange={(e) => handleVolumeChange(volumeIndex, `volumes.${year}`, e.target.value)}
+                                                          aria-label={`Volume ${volumeIndex + 1} year ${year}`}
+                                                        />
+                                                      )}
+                                                    </div>
+                                                  ))}
+                                                  {!rfqFormFieldReadOnly && (
+                                                    <div className="qty-year-actions">
+                                                      <button
+                                                        type="button"
+                                                        className="qty-year-add-btn"
+                                                        onClick={() => handleAddQtyYear(volumeIndex)}
+                                                        title="Add next year"
+                                                        aria-label={`Add year to volume ${volumeIndex + 1}`}
+                                                      >
+                                                        +
+                                                      </button>
+                                                    </div>
+                                                  )}
+                                                </>
                                               ) : (
                                                 <div className="group relative inline-block">
                                                   <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>—</div>
