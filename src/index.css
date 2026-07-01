@@ -1038,12 +1038,12 @@ body {
   max-width: 520px;
   padding: 18px 22px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #046eaf, #0e4e78);
+  background: #0e4e78;
   color: #ffffff;
   font-size: 14px;
   font-weight: 400;
   line-height: 1.75;
-  box-shadow: 0 20px 50px rgba(4, 110, 175, 0.35);
+  box-shadow: 0 20px 50px rgba(14, 78, 120, 0.35);
   z-index: 99999;
   white-space: normal;
   word-break: break-word;

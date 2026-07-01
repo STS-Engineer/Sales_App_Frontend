@@ -212,7 +212,6 @@ const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
 ]);
 
 const OLD_RFQ_PROJECT_COLUMN_ORDER = [
-  "costing_number",
   "name",
   "product_type",
   "customers",
@@ -230,6 +229,7 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "capex_keur",
   "capital_keur",
   "gmdc_project_keur",
+  "costing_number",
   "sales_project",
   "requester",
   "project_sales_keur",
@@ -330,7 +330,7 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
   costing_number: "Chiffrage Number",
   plant_to_deliver: "Plant To Deliver",
   element_identifier: "Element Identifier",
-  chiffres_id: "Chiffres ID",
+  chiffres_id: "RFQ ID",
   text_volume_profile: "Text Volume Profile",
   sop_percent: "SOP %",
   sop_percent_1: "SOP % 1",
@@ -559,6 +559,43 @@ const TruncatedCell = ({ value }) => {
       )}
     </>
   );
+};
+
+const HISTORY_BADGE_COLUMNS = new Set(["old_new", "sector", "type_business"]);
+
+const getHistoryBadgeClass = (columnName, value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "-") return null;
+
+  if (columnName === "old_new") {
+    if (normalized.includes("new")) return "badge border-green-300 bg-green-50 text-green-700";
+    if (normalized.includes("old")) return "badge border-amber-300 bg-amber-50 text-amber-700";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "sector") {
+    if (normalized.includes("non")) return "badge whitespace-nowrap border-orange-300 bg-orange-50 text-orange-600";
+    return "badge whitespace-nowrap border-tide/30 bg-tide/10 text-tide";
+  }
+
+  if (columnName === "type_business") {
+    if (normalized.includes("new")) return "badge border-green-300 bg-green-50 text-green-700";
+    if (normalized.includes("replacement")) return "badge border-rose-300 bg-rose-50 text-rose-600";
+    if (normalized.includes("serial")) return "badge border-sky-300 bg-sky-50 text-sky-600";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  return "badge border-slate-300 bg-slate-100 text-slate-600";
+};
+
+const HistoryValueBadge = ({ columnName, value }) => {
+  const displayValue =
+    value === null || value === undefined || String(value).trim() === ""
+      ? "-"
+      : String(value);
+  const badgeClass = getHistoryBadgeClass(columnName, displayValue);
+  if (!badgeClass) return <span className="text-slate-400">-</span>;
+  return <span className={badgeClass}>{displayValue}</span>;
 };
 
 export default function Dashboard() {
@@ -1606,7 +1643,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldApplicationOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-52">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-44">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldApplicationFilter">Application</label>
                           <div className="group relative">
                             <select
@@ -1625,7 +1662,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldBusinessTypeOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-52">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-44">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldBusinessTypeFilter">Business Type</label>
                           <div className="group relative">
                             <select
@@ -1700,7 +1737,11 @@ export default function Dashboard() {
                               >
                                 {oldRfqProjectColumns.map((colName) => (
                                   <td key={colName}>
-                                    <TruncatedCell value={project[colName]} />
+                                    {HISTORY_BADGE_COLUMNS.has(colName) ? (
+                                      <HistoryValueBadge columnName={colName} value={project[colName]} />
+                                    ) : (
+                                      <TruncatedCell value={project[colName]} />
+                                    )}
                                   </td>
                                 ))}
                                 <td className="history-action-cell">
