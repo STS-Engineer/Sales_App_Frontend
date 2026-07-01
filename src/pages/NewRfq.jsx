@@ -3109,10 +3109,17 @@ export default function NewRfq() {
     pricingWorkflowState === PRICING_WORKFLOW_STATE_REJECTED ||
     pricingFileDecisionAudit.rejectedAt
   );
+  const _aiValData = rfqSnapshot?.rfq_data?.ai_validation;
+  const aiValidationBlocksAction = Boolean(
+    _aiValData &&
+    !_aiValData.approved &&
+    !String(_aiValData.status || "").toLowerCase().includes("skip")
+  );
   const validationButtonsDisabled = Boolean(
     validationActionId ||
     hasRecordedValidationDecision ||
-    !(currentUserRole === "OWNER" || isAssignedValidatorUser)
+    !(currentUserRole === "OWNER" || isAssignedValidatorUser) ||
+    aiValidationBlocksAction
   );
   const hideValidationActionButtons = Boolean(
     hasRecordedValidationDecision ||
@@ -4045,8 +4052,7 @@ export default function NewRfq() {
       matchesSelfValidationPromptCase &&
       Boolean(nextSelfValidationPromptSignature) &&
       readSelfValidationPromptSignature(rfq.rfq_id) === nextSelfValidationPromptSignature;
-    const shouldOpenSelfValidationPrompt =
-      matchesSelfValidationPromptCase && !hasAcknowledgedSelfValidationPrompt;
+    const shouldOpenSelfValidationPrompt = false;
     setRfqCreatorEmail(nextRfqCreatorEmail);
     setRevisionNotes(String(rfq?.revision_notes || ""));
     setDiscussionMessages([]);
@@ -5496,14 +5502,19 @@ export default function NewRfq() {
     if (!rfqId || !canUseRfqActions) return;
     setSaving(true);
     try {
-      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), "owner_update");
-      // Force a full server-side reload so the UI reflects the real DB state
-      // (phase reset to RFQ/PENDING_FOR_VALIDATION, costing data cleared).
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      await submitRfq(rfqId);
       await syncRfq(rfqId);
-      showToast("RFQ updated successfully.", { type: "success", title: "RFQ updated" });
+      showToast("RFQ updated and re-submitted for AI validation.", { type: "success", title: "RFQ updated" });
       setIsRfqUpdateModeActive(false);
-    } catch {
-      setRfqError("Unable to save. Please try again.");
+    } catch (error) {
+      await syncRfq(rfqId).catch(() => {});
+      const isAiBlock = error?.status === 422 && error?.data?.detail?.ai_blocked;
+      if (!isAiBlock) {
+        setRfqError("Unable to save. Please try again.");
+      } else {
+        setIsRfqUpdateModeActive(false);
+      }
     } finally {
       setSaving(false);
     }
@@ -5718,7 +5729,11 @@ export default function NewRfq() {
         title: "Updates submitted"
       });
     } catch (error) {
-      setRfqError(error?.message || "Unable to submit updates.");
+      await syncRfq(rfqId).catch(() => {});
+      const isAiBlock = error?.status === 422 && error?.data?.detail?.ai_blocked;
+      if (!isAiBlock) {
+        setRfqError(error?.message || "Unable to submit updates.");
+      }
     } finally {
       setRevisionActionId("");
       setOptimisticRevisionMode(false);
@@ -9924,16 +9939,22 @@ export default function NewRfq() {
                             {(aiVal.discussion || aiVal.message) && !isQueued && !isProcessing && (
                               <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Agent discussion</p>
-                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                                  {aiVal.discussion || aiVal.message}
-                                </p>
+                                <div className="mt-2 text-sm leading-6 text-slate-700 whitespace-pre-wrap">
+                                  {(aiVal.discussion || aiVal.message || "").split("\n").map((line, i, arr) => (
+                                    <span key={i} className={/^\d+\.\s+\S/.test(line) ? "font-bold" : ""}>
+                                      {line}{i < arr.length - 1 ? "\n" : ""}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                             )}
                             {!aiApproved && aiFields.length > 0 && (
                               <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Fields to correct</p>
                                 <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-red-600">
-                                  {aiFields.map((f, i) => <li key={i}>{f}</li>)}
+                                  {aiFields.map((f, i) => (
+                                    <li key={i}>{f}</li>
+                                  ))}
                                 </ul>
                               </div>
                             )}
@@ -9943,6 +9964,14 @@ export default function NewRfq() {
                     })()}
 
                     <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
+                      <div className="mb-4 pb-4 border-b border-slate-100">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Validator review</p>
+                        <p className="mt-1 text-base font-bold text-ink">
+                          {form.validatorEmail
+                            ? <>Responsible validator : <span className="text-tide">{form.validatorEmail}</span></>
+                            : "Validator validation"}
+                        </p>
+                      </div>
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -10067,7 +10096,17 @@ export default function NewRfq() {
                         <span>Awaiting updates from the RFQ creator. Actions are locked until the creator submits their changes.</span>
                       </div>
                     ) : !hideValidationActionButtons ? (
-                      <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-2">
+                      <div className="shrink-0 flex flex-col gap-2 border-t border-slate-200/70 pt-2">
+                        {aiValidationBlocksAction && (
+                          <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-700">
+                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                            </svg>
+                            <span>Actions are locked until the AI agent approves this RFQ.</span>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center justify-end gap-3">
+                        {!validatorIsCreator && (
                         <button
                           type="button"
                           className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
@@ -10077,6 +10116,7 @@ export default function NewRfq() {
                           <Pencil className="h-4 w-4" />
                           Update
                         </button>
+                        )}
                         <button
                           type="button"
                           className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
@@ -10095,6 +10135,7 @@ export default function NewRfq() {
                           <Check className="h-4 w-4" />
                           {validationActionId === "approve" ? "Approving..." : "Approve"}
                         </button>
+                        </div>
                       </div>
                     ) : null}
                   </form>
@@ -10770,40 +10811,6 @@ export default function NewRfq() {
         </div>
       ) : null}
 
-      {selfValidationPromptOpen ? (
-        <div className="chat-modal-backdrop" role="presentation">
-          <div
-            className="chat-modal w-[calc(100vw-24px)] max-w-[580px] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Validation required"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="chat-modal-header">
-              <p className="chat-modal-title">You are the validator for this {formalDocumentLabel}</p>
-            </div>
-            <div className="chat-modal-body">
-              <div className="w-full">
-                <p className="text-sm leading-6 text-slate-600">
-                  Please review this {formalDocumentLabel} and validate it. Clicking below will open the
-                  <span className="font-semibold text-tide"> Validation </span>
-                  tab.
-                </p>
-                <div className="chat-modal-actions justify-end mt-5">
-                  <button
-                    type="button"
-                    className="gradient-button inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-soft"
-                    onClick={handleConfirmSelfValidationPrompt}
-                  >
-                    <Check className="h-4 w-4" />
-                    Open Validation
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {fileDeleteTarget ? (
         <div
@@ -11468,7 +11475,7 @@ export default function NewRfq() {
             <div className="chat-modal-body">
               <div className="chat-modal-fallback w-full">
                 <p className="text-slate-600">
-                  Specify which fields the creator must update. Your note will be sent by email to the creator and displayed in the chatbot.
+                  Specify which fields the creator must update. Your note will be sent by email to the creator.
                 </p>
                 <label className="mt-2 flex w-full flex-col gap-2 text-left text-xs font-semibold uppercase tracking-widest text-slate-500">
                   <span>Fields to update &amp; instructions</span>
