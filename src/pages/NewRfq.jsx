@@ -2696,6 +2696,8 @@ export default function NewRfq() {
   const [productDrawings, setProductDrawings] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
+  const [pendingUpdateFiles, setPendingUpdateFiles] = useState([]); // { file, localId, updateType } — queued uploads for Update mode
+  const [pendingDeleteFiles, setPendingDeleteFiles] = useState([]); // server file objects queued for deletion in Update mode
   const [costingFiles, setCostingFiles] = useState([]);
   const [costingFileState, setCostingFileState] = useState(null);
   const [costingFileActionModalOpen, setCostingFileActionModalOpen] = useState(false);
@@ -3264,19 +3266,48 @@ export default function NewRfq() {
     [stepCompletion]
   );
 
+  // In Update mode, compute step completion purely from required fields in the
+  // current form — bypassing rfqSnapshot and the stepCompletion strict-chain.
+  // This ensures real-time reactivity as the user fills in fields, with zero
+  // API calls and zero navigation side-effects.
+  //
+  // Drawing note: product drawings uploaded via handleProductDrawingUpload go
+  // into productDrawings (not localFiles), so they are absent from mergedFiles.
+  // We extend mergedFiles with those local entries so the rfqFiles check reflects
+  // the true effective drawing state: (server drawings still present) +
+  // (locally added drawings not yet saved).
+  const updateModeStepCompletion = useMemo(() => {
+    if (!isRfqUpdateModeActive) return {};
+    const localProductDrawingEntries = Object.values(productDrawings)
+      .flat()
+      .filter((e) => e.source === "local");
+    const effectiveMergedFiles = localProductDrawingEntries.length > 0
+      ? [...mergedFiles, ...localProductDrawingEntries]
+      : mergedFiles;
+    return Object.fromEntries(
+      STEPS.map((step) => [
+        step.id,
+        getRfqRequiredStepFields(step.id).every((fieldName) =>
+          isRfqFieldComplete(form, fieldName, { mergedFiles: effectiveMergedFiles })
+        )
+      ])
+    );
+  }, [isRfqUpdateModeActive, form, mergedFiles, productDrawings]);
+
   const stepStates = useMemo(() => {
-    const entries = STEPS.map((step, index) => {
+    const completion = isRfqUpdateModeActive ? updateModeStepCompletion : displayStepCompletion;
+    const entries = STEPS.map((step) => {
       const isLocked = false;
-      const isComplete = Boolean(displayStepCompletion[step.id]);
+      const isComplete = Boolean(completion[step.id]);
       const statusType = isComplete ? "fulfilled" : "draft";
       return [step.id, { isLocked, isComplete, statusType }];
     });
     return Object.fromEntries(entries);
-  }, [displayStepCompletion]);
-  const allStepsComplete = useMemo(
-    () => STEPS.every((step) => displayStepCompletion[step.id]),
-    [displayStepCompletion]
-  );
+  }, [displayStepCompletion, isRfqUpdateModeActive, updateModeStepCompletion]);
+  const allStepsComplete = useMemo(() => {
+    const completion = isRfqUpdateModeActive ? updateModeStepCompletion : displayStepCompletion;
+    return STEPS.every((step) => completion[step.id]);
+  }, [displayStepCompletion, isRfqUpdateModeActive, updateModeStepCompletion]);
   const canOpenRfqValidation =
     hasValidationLock && !holdSelfValidationPrompt;
   const isCostingStage = selectedStage === "In costing";
@@ -3518,10 +3549,16 @@ export default function NewRfq() {
         return;
       }
       const nextStage = pipelineStages.find((entry) => entry.key === nextSelectedStage);
+      const nextSubPhase =
+        getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || "";
       setSelectedStage(nextSelectedStage);
-      setSelectedSubPhase(
-        getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || ""
-      );
+      // If the user has already been navigated to Validation (rfqValidationReached=true),
+      // don't let background syncs (file uploads, auto-saves) force them back to "Validation"
+      // when they may have navigated to the form editor.
+      if (rfqValidationReached && nextSubPhase === "Validation") {
+        return;
+      }
+      setSelectedSubPhase(nextSubPhase);
     }
   }, [
     activeStage,
@@ -3531,7 +3568,8 @@ export default function NewRfq() {
     isRevisionModeActive,
     pipelineStages,
     persistValidationView,
-    persistCostingReviewView
+    persistCostingReviewView,
+    rfqValidationReached,
   ]);
 
   useEffect(() => {
@@ -3569,9 +3607,14 @@ export default function NewRfq() {
         return;
       }
       const nextStage = pipelineStages.find((entry) => entry.key === nextSelectedStage);
-      setSelectedSubPhase(
-        getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || ""
-      );
+      const nextSubPhase =
+        getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || "";
+      // Don't force-navigate back to Validation when the user is editing the form:
+      // file/drawing changes trigger this effect via mergedFiles → allStepsComplete.
+      if (rfqValidationReached && nextSubPhase === "Validation") {
+        return;
+      }
+      setSelectedSubPhase(nextSubPhase);
     }
   }, [
     activeSubPhase,
@@ -3583,7 +3626,8 @@ export default function NewRfq() {
     pipelineStages,
     selectedStage,
     persistValidationView,
-    persistCostingReviewView
+    persistCostingReviewView,
+    rfqValidationReached,
   ]);
 
   useEffect(() => {
@@ -3941,6 +3985,7 @@ export default function NewRfq() {
       syncChat = true,
       auditLogs,
       preserveActiveTab = false,
+      preserveNavigationState = false,
       revealUpdatedRfqFields = false
     } = {}
   ) => {
@@ -4128,7 +4173,7 @@ export default function NewRfq() {
       setRfqValidationReached(false);
       setRfqFormEditEnabled(true);
       setPersistValidationView(false);
-    } else if (nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
+    } else if (!preserveNavigationState && nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
       setSelectedStage("RFQ");
       setSelectedSubPhase(shouldOpenSelfValidationPrompt ? "RFQ form" : "Validation");
       setActiveStep("step-notes");
@@ -4163,7 +4208,7 @@ export default function NewRfq() {
     setRfqError("");
     try {
       const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
-      applyRfq(rfq, { auditLogs, preserveActiveTab: true, ...options });
+      applyRfq(rfq, { auditLogs, preserveActiveTab: true, preserveNavigationState: true, ...options });
       return true;
     } catch (error) {
       setRfqError(`Unable to refresh this ${formalDocumentLabel}. Please try again.`);
@@ -4177,7 +4222,7 @@ export default function NewRfq() {
     setRfqError("");
     try {
       const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
-      applyRfq(rfq, { auditLogs, preserveActiveTab: true, ...options });
+      applyRfq(rfq, { auditLogs, preserveActiveTab: true, preserveNavigationState: true, ...options });
       return true;
     } catch (error) {
       setRfqError(`Unable to refresh this ${formalDocumentLabel}. Please try again.`);
@@ -4593,6 +4638,9 @@ export default function NewRfq() {
     if (isFormalDocumentTab && rfqFormFieldReadOnly) {
       return;
     }
+    if (event.target.name === "validatorEmail") {
+      return;
+    }
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
   };
 
@@ -4705,7 +4753,7 @@ export default function NewRfq() {
           ? true
           : vol.priceSource === "Official Customer Price"
             ? false
-            : product.targetPriceIsEstimated ?? null;
+            : null; // When priceSource is empty/deselected, always null — no fallback to old value
         const sop = extractSopYear(product.sop);
         const volumeMap = vol.volumes || {};
         let derivedQty;
@@ -4804,6 +4852,21 @@ export default function NewRfq() {
     setLocalFiles((prev) => [...prev, ...newLocalFiles]);
     setFileUploadModalOpen(false);
     const chosenUpdateType = fileUpdateType;
+
+    // In Update mode: just queue the uploads — no API call until Save Changes / Submit
+    if (isRfqUpdateModeActive) {
+      setPendingUpdateFiles((prev) => [
+        ...prev,
+        ...pendingUploadFiles.map((file, i) => ({
+          file,
+          localId: newLocalFiles[i].id,
+          updateType: chosenUpdateType,
+        })),
+      ]);
+      setPendingUploadFiles([]);
+      return;
+    }
+
     setFileUploadPending(true);
     setSaving(true);
     try {
@@ -4844,6 +4907,20 @@ export default function NewRfq() {
       ...prev,
       [productIndex]: [...(prev[productIndex] || []), ...localEntries]
     }));
+
+    // In Update mode: queue drawings for upload on Save Changes / Submit — no backend call now
+    if (isRfqUpdateModeActive) {
+      setPendingUpdateFiles((prev) => [
+        ...prev,
+        ...localEntries.map((entry) => ({
+          file: entry.file,
+          localId: entry.id,
+          updateType: "simple",
+        })),
+      ]);
+      return;
+    }
+
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
@@ -4947,6 +5024,10 @@ export default function NewRfq() {
       }
       return prev.filter((item) => item.id !== fileId);
     });
+    // If we're in Update mode, also remove from the pending-upload queue
+    if (isRfqUpdateModeActive) {
+      setPendingUpdateFiles((prev) => prev.filter((p) => p.localId !== fileId));
+    }
   };
 
   const handleDeleteFile = async (file) => {
@@ -4957,6 +5038,12 @@ export default function NewRfq() {
       return;
     }
     if (!rfqId) return;
+    // In Update mode: remove visually and queue for deletion on Save Changes / Submit
+    if (isRfqUpdateModeActive) {
+      setServerFiles((prev) => prev.filter((f) => f.id !== file.id));
+      setPendingDeleteFiles((prev) => [...prev, file]);
+      return;
+    }
     setFileActionId(file.id);
     try {
       await deleteRfqFile(rfqId, file.id, file.name);
@@ -5495,32 +5582,81 @@ export default function NewRfq() {
 
   const handleUpdateRFQ = () => {
     if (!rfqId || !canUseRfqActions) return;
+    _preUpdateSnapshotRef.current = { form: structuredClone(form) };
+    setPendingUpdateFiles([]);
+    setPendingDeleteFiles([]);
     setIsRfqUpdateModeActive(true);
+    showToast("Mode update on, you can make your changes and submit it.", { type: "info", title: "Update mode" });
   };
 
   const handleSaveRfqUpdate = async () => {
     if (!rfqId || !canUseRfqActions) return;
+    if (!allStepsComplete) {
+      const firstIncompleteStep = getLeadingEdgeStepIdFromCompletion(displayStepCompletion);
+      if (firstIncompleteStep) handleStepViewChange(firstIncompleteStep);
+      setRfqError("Please complete all required fields before saving.");
+      return;
+    }
     setSaving(true);
     try {
       await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
-      await submitRfq(rfqId);
-      await syncRfq(rfqId);
-      showToast("RFQ updated and re-submitted for AI validation.", { type: "success", title: "RFQ updated" });
-      setIsRfqUpdateModeActive(false);
-    } catch (error) {
-      await syncRfq(rfqId).catch(() => {});
-      const isAiBlock = error?.status === 422 && error?.data?.detail?.ai_blocked;
-      if (!isAiBlock) {
-        setRfqError("Unable to save. Please try again.");
-      } else {
-        setIsRfqUpdateModeActive(false);
+      for (const { file, updateType } of pendingUpdateFiles) {
+        await uploadRfqFile(rfqId, file, updateType);
       }
+      for (const file of pendingDeleteFiles) {
+        await deleteRfqFile(rfqId, file.id, file.name);
+      }
+      setPendingUpdateFiles([]);
+      setPendingDeleteFiles([]);
+      // Clear local-only drawing entries — server drawings come back via syncRfq below
+      setProductDrawings((prev) => {
+        const cleared = {};
+        for (const key of Object.keys(prev)) {
+          const remaining = (prev[key] || []).filter((e) => e.source !== "local");
+          if (remaining.length > 0) cleared[key] = remaining;
+        }
+        return cleared;
+      });
+      await syncRfq(rfqId);
+      showToast("RFQ updated successfully.", { type: "success", title: "RFQ updated" });
+      setIsRfqUpdateModeActive(false);
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("Validation");
+      setActiveStep("step-notes");
+      setRfqValidationReached(true);
+      setRfqFormEditEnabled(false);
+    } catch (error) {
+      setRfqError("Unable to save. Please try again.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleCancelRfqUpdate = () => {
+    // Remove locally-queued uploads from localFiles and revoke their object URLs
+    const addedLocalIds = new Set(pendingUpdateFiles.map((p) => p.localId).filter(Boolean));
+    setLocalFiles((prev) => {
+      prev.forEach((f) => { if (addedLocalIds.has(f.id) && f.url) URL.revokeObjectURL(f.url); });
+      return prev.filter((f) => !addedLocalIds.has(f.id));
+    });
+    // Restore server files that were visually removed but not yet deleted on the server
+    setServerFiles((prev) => [...prev, ...pendingDeleteFiles]);
+    // Clear pending queues
+    setPendingUpdateFiles([]);
+    setPendingDeleteFiles([]);
+    // Discard local-only pending drawings
+    setProductDrawings((prev) => {
+      const cleared = {};
+      for (const key of Object.keys(prev)) {
+        const remaining = (prev[key] || []).filter((e) => e.source !== "local");
+        if (remaining.length > 0) cleared[key] = remaining;
+      }
+      return cleared;
+    });
+    // Restore form to the state it was in when Update mode was entered
+    const snapshot = _preUpdateSnapshotRef.current;
+    if (snapshot?.form) setForm(snapshot.form);
+    _preUpdateSnapshotRef.current = null;
     setIsRfqUpdateModeActive(false);
   };
 
@@ -5559,10 +5695,13 @@ export default function NewRfq() {
   const _rfqIdRef = useRef(rfqId);
   const _canUseRfqActionsRef = useRef(canUseRfqActions);
   const _activeRfqTabRef = useRef(activeRfqTab);
+  const _isRfqUpdateModeActiveRef = useRef(isRfqUpdateModeActive);
+  const _preUpdateSnapshotRef = useRef(null);
   useEffect(() => { _latestFormRef.current = form; }, [form]);
   useEffect(() => { _rfqIdRef.current = rfqId; }, [rfqId]);
   useEffect(() => { _canUseRfqActionsRef.current = canUseRfqActions; }, [canUseRfqActions]);
   useEffect(() => { _activeRfqTabRef.current = activeRfqTab; }, [activeRfqTab]);
+  useEffect(() => { _isRfqUpdateModeActiveRef.current = isRfqUpdateModeActive; }, [isRfqUpdateModeActive]);
   useEffect(() => {
     if (!_autoSaveInitRef.current) {
       _autoSaveInitRef.current = true;
@@ -5571,6 +5710,7 @@ export default function NewRfq() {
     if (_autoSaveTimerRef.current) clearTimeout(_autoSaveTimerRef.current);
     _autoSaveTimerRef.current = setTimeout(async () => {
       if (!_canUseRfqActionsRef.current) return;
+      if (_isRfqUpdateModeActiveRef.current) return; // No auto-save in Update mode
       const currentRfqId = _rfqIdRef.current;
       if (!currentRfqId) {
         if (_autoCreateRef.current) return;
@@ -5650,16 +5790,42 @@ export default function NewRfq() {
     setIsSubmittingToValidator(true);
     try {
       await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      // Flush any pending file/drawing operations queued during Update mode
+      for (const { file, updateType } of pendingUpdateFiles) {
+        await uploadRfqFile(rfqId, file, updateType);
+      }
+      for (const file of pendingDeleteFiles) {
+        await deleteRfqFile(rfqId, file.id, file.name);
+      }
+      setPendingUpdateFiles([]);
+      setPendingDeleteFiles([]);
+      setProductDrawings((prev) => {
+        const cleared = {};
+        for (const key of Object.keys(prev)) {
+          const remaining = (prev[key] || []).filter((e) => e.source !== "local");
+          if (remaining.length > 0) cleared[key] = remaining;
+        }
+        return cleared;
+      });
       if (!form.validatorEmail) {
         const result = await assignValidator(rfqId);
         setForm((prev) => ({ ...prev, validatorEmail: result.zone_manager_email || prev.validatorEmail }));
       }
       await submitRfq(rfqId);
       await syncRfq(rfqId);
-      setValidationSuccess("RFQ submitted successfully.");
+      setSelectedStage("RFQ");
+      setSelectedSubPhase("Validation");
+      setActiveStep("step-notes");
+      setRfqValidationReached(true);
+      setRfqFormEditEnabled(false);
+      const wasUpdateMode = isRfqUpdateModeActive;
+      setIsRfqUpdateModeActive(false);
+      _preUpdateSnapshotRef.current = null;
+      showToast(
+        wasUpdateMode ? "RFQ updated and re-submitted successfully." : "RFQ submitted successfully.",
+        { type: "success", title: wasUpdateMode ? "RFQ updated" : "RFQ submitted" }
+      );
     } catch (error) {
-      // Sync the snapshot so the persistent AI section picks up rfq_data.ai_validation
-      // even after a rejection (backend saves it before raising 422).
       await syncRfq(rfqId).catch(() => {});
       const isAiBlock = error?.status === 422 && error?.data?.detail?.ai_blocked;
       if (!isAiBlock) {
@@ -9012,46 +9178,25 @@ export default function NewRfq() {
 
                           {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
                           <div className="flex items-center gap-2">
-                            {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && isRfqCreator ? (
-                              isRfqUpdateModeActive ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/60 bg-tide/20 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/80 hover:bg-tide/30 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                    onClick={handleSaveRfqUpdate}
-                                    disabled={saving}
-                                  >
-                                    {saving ? "Saving…" : "Save Changes"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                    onClick={handleCancelRfqUpdate}
-                                    disabled={saving}
-                                  >
-                                    Cancel
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/40 bg-tide/10 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/60 hover:bg-tide/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                    onClick={handleUpdateRFQ}
-                                    disabled={saving}
-                                  >
-                                    Update
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sun/40 bg-sun/10 px-4 py-2 text-sm font-semibold text-sun shadow-sm transition hover:-translate-y-0.5 hover:border-sun/60 hover:bg-sun/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                    onClick={handleChangeIndexRFQ}
-                                    disabled={saving}
-                                  >
-                                    Change Index
-                                  </button>
-                                </>
-                              )
+                            {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && isRfqCreator && !isRfqUpdateModeActive ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/40 bg-tide/10 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/60 hover:bg-tide/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                  onClick={handleUpdateRFQ}
+                                  disabled={saving}
+                                >
+                                  Update
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sun/40 bg-sun/10 px-4 py-2 text-sm font-semibold text-sun shadow-sm transition hover:-translate-y-0.5 hover:border-sun/60 hover:bg-sun/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                  onClick={handleChangeIndexRFQ}
+                                  disabled={saving}
+                                >
+                                  Change Index
+                                </button>
+                              </>
                             ) : null}
                           </div>
 
@@ -9289,20 +9434,18 @@ export default function NewRfq() {
                                                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-600" title={serverDrawing.name}>
                                                           {serverDrawing.name}
                                                         </span>
-                                                        {!rfqFormFieldReadOnly && (
-                                                          <div className="flex shrink-0 gap-0.5">
-                                                            {serverDrawing.url && (
-                                                              <button type="button" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1 text-slate-600 transition hover:border-tide/40 hover:text-tide" onClick={() => handlePreviewFile(serverDrawing)} title="View">
-                                                                <Eye className="h-3 w-3" />
-                                                              </button>
-                                                            )}
-                                                            {allowFileDeletion && (
-                                                              <button type="button" className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-1 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60" onClick={() => setFileDeleteTarget(serverDrawing)} disabled={Boolean(isDeleting)} title="Delete">
-                                                                <Trash2 className="h-3 w-3" />
-                                                              </button>
-                                                            )}
-                                                          </div>
-                                                        )}
+                                                        <div className="flex shrink-0 gap-0.5">
+                                                          {serverDrawing.url && (
+                                                            <button type="button" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1 text-slate-600 transition hover:border-tide/40 hover:text-tide" onClick={() => handlePreviewFile(serverDrawing)} title="View">
+                                                              <Eye className="h-3 w-3" />
+                                                            </button>
+                                                          )}
+                                                          {!rfqFormFieldReadOnly && allowFileDeletion && (
+                                                            <button type="button" className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-1 text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60" onClick={() => setFileDeleteTarget(serverDrawing)} disabled={Boolean(isDeleting)} title="Delete">
+                                                              <Trash2 className="h-3 w-3" />
+                                                            </button>
+                                                          )}
+                                                        </div>
                                                       </div>
                                                       );
                                                     })}
@@ -9315,16 +9458,16 @@ export default function NewRfq() {
                                                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-600" title={file.name}>
                                                           {file.name}
                                                         </span>
-                                                        {!rfqFormFieldReadOnly && (
-                                                          <div className="flex shrink-0 gap-0.5">
-                                                            <button type="button" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1 text-slate-600 transition hover:border-tide/40 hover:text-tide" onClick={() => handlePreviewFile(file)} title="View">
-                                                              <Eye className="h-3 w-3" />
-                                                            </button>
+                                                        <div className="flex shrink-0 gap-0.5">
+                                                          <button type="button" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-1 text-slate-600 transition hover:border-tide/40 hover:text-tide" onClick={() => handlePreviewFile(file)} title="View">
+                                                            <Eye className="h-3 w-3" />
+                                                          </button>
+                                                          {!rfqFormFieldReadOnly && (
                                                             <button type="button" className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 p-1 text-red-600 transition hover:border-red-300 hover:bg-red-100" onClick={() => setProductDrawings((prev) => ({ ...prev, [productIndex]: (prev[productIndex] || []).filter((e) => e.id !== file.id) }))} title="Delete">
                                                               <Trash2 className="h-3 w-3" />
                                                             </button>
-                                                          </div>
-                                                        )}
+                                                          )}
+                                                        </div>
                                                       </div>
                                                     ))}
                                                     {/* Empty state */}
@@ -9793,11 +9936,21 @@ export default function NewRfq() {
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validatorEmail")} />
+                              <FormField label="Validator Email" name="validatorEmail" type="email" value={form.validatorEmail} onChange={handleChange} readOnly {...getRfqFieldRequirementProps("validatorEmail")} />
                             </div>
                           </div>
                           {!rfqFormFieldReadOnly && canUseRfqActions ? (
-                            <div className="mt-4 flex justify-end">
+                            <div className="mt-4 flex items-center justify-end gap-2">
+                              {isRfqUpdateModeActive && (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                  onClick={handleCancelRfqUpdate}
+                                  disabled={saving}
+                                >
+                                  Cancel
+                                </button>
+                              )}
                               <div className="group relative">
                                 <button
                                   type="button"
