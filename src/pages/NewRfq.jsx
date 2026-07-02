@@ -463,6 +463,85 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
   );
 }
 
+function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
+  const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
+
+  const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
+  const [editingOther, setEditingOther] = useState(false);
+
+  const prevValueRef = useRef(value);
+  if (prevValueRef.current !== value) {
+    prevValueRef.current = value;
+    const shouldBeOther = Boolean(value && !isPredefined(value));
+    if (shouldBeOther !== otherMode) {
+      setOtherMode(shouldBeOther);
+      if (!shouldBeOther) setEditingOther(false);
+    }
+  }
+
+  const selectValue = otherMode ? "__other__" : (value || "");
+
+  const handleSelectChange = (e) => {
+    const v = e.target.value;
+    if (v === "__other__") {
+      setOtherMode(true); setEditingOther(true);
+      if (isPredefined(value)) onChange({ target: { name, value: "" } });
+    } else {
+      setOtherMode(false); setEditingOther(false);
+      onChange({ target: { name, value: v } });
+    }
+  };
+
+  const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
+
+  return (
+    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{label}</span>
+        {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
+        {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
+      </span>
+      {readOnly ? (
+        <div className={"input-field " + lockedCls}>{value || "—"}</div>
+      ) : editingOther ? (
+        <input
+          className="input-field"
+          type="text"
+          placeholder="Please specify..."
+          value={value}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "") { setOtherMode(false); setEditingOther(false); }
+            onChange({ target: { name, value: v } });
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
+          onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+        />
+      ) : (
+        <select
+          className="input-field appearance-none"
+          name={name}
+          value={selectValue}
+          onChange={handleSelectChange}
+          onMouseDown={(e) => {
+            if (otherMode) { e.preventDefault(); setEditingOther(true); }
+          }}
+        >
+          <option value="">— Select —</option>
+          {options.map(opt => {
+            const v = typeof opt === "string" ? opt : opt.value;
+            const l = typeof opt === "string" ? opt : opt.label;
+            return <option key={v} value={v}>{l}</option>;
+          })}
+          <option value="__other__">{otherMode && value ? value : "Other"}</option>
+        </select>
+      )}
+    </label>
+  );
+}
+
 const PIPELINE_STAGES = [
   {
     key: "RFQ",
@@ -9973,7 +10052,7 @@ export default function NewRfq() {
                                   onChange={handleChange}
                                 >
                                   <option value="">— Select —</option>
-                                  <option value="Carboard divider">Carboard divider</option>
+                                  <option value="Cardboard divider">Cardboard divider</option>
                                   <option value="One way tray">One way tray</option>
                                   <option value="Returnable plastic tray">Returnable plastic tray</option>
                                 </select>
@@ -9996,8 +10075,8 @@ export default function NewRfq() {
                             <ResponsibilityField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validationResponsible")} />
                             <ResponsibilityField label="Design owner" name="designOwner" value={form.designOwner} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designOwner")} />
                             <ResponsibilityField label="Development costs" name="developmentCosts" value={form.developmentCosts} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("developmentCosts")} />
-                            <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={[{ value: "", label: "— Select —" }, { value: "Yes", label: "Yes" }, { value: "No", label: "No" }]} {...getRfqFieldRequirementProps("technicalCapacity")} />
-                            <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={[{ value: "", label: "— Select —" }, { value: "Yes", label: "Yes" }, { value: "No", label: "No" }]} {...getRfqFieldRequirementProps("scope")} />
+                            <SelectOrOtherField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={["Yes", "No"]} {...getRfqFieldRequirementProps("technicalCapacity")} />
+                            <SelectOrOtherField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={["Yes", "No"]} {...getRfqFieldRequirementProps("scope")} />
                             <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("strategicNote")} />
                             <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("finalRecommendation")} />
                           </div>
