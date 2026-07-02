@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
+import { Pencil } from "lucide-react";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
-import { listRfqs, getTeamView, getTeamMembers, getOldRfqs } from "../api";
+import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
 
@@ -625,6 +626,12 @@ export default function Dashboard() {
   const [oldRfqSubitemColumns, setOldRfqSubitemColumns] = useState([]);
   const [oldRfqsLoading, setOldRfqsLoading] = useState(false);
   const [oldRfqsError, setOldRfqsError] = useState("");
+  const [editingOldRfqId, setEditingOldRfqId] = useState(null);
+  const [editingOldRfqData, setEditingOldRfqData] = useState({});
+  const [savingOldRfqId, setSavingOldRfqId] = useState(null);
+  const [editingSubitemId, setEditingSubitemId] = useState(null);
+  const [editingSubitemData, setEditingSubitemData] = useState({});
+  const [savingSubitemId, setSavingSubitemId] = useState(null);
   const [oldSearchTerm, setOldSearchTerm] = useState("");
   const [oldCustomerFilter, setOldCustomerFilter] = useState("");
   const [oldKamFilter, setOldKamFilter] = useState("");
@@ -908,6 +915,124 @@ export default function Dashboard() {
 
   const handleCloseSubitemsModal = () => {
     setSelectedOldProject(null);
+    setEditingSubitemId(null);
+    setEditingSubitemData({});
+    setSavingSubitemId(null);
+  };
+
+  const NON_EDITABLE_OLD_RFQ_COLUMNS = new Set(["old_rfq_id", "excel_row_number", "subitems_count"]);
+
+  const isOldRfqColumnEditable = (columnName) => !NON_EDITABLE_OLD_RFQ_COLUMNS.has(columnName);
+
+  const NON_EDITABLE_SUBITEM_COLUMNS = new Set(["old_rfq_subitem_id", "old_rfq_id", "excel_row_number", "subitem_order", "parent_id"]);
+
+  const isSubitemColumnEditable = (columnName) => !NON_EDITABLE_SUBITEM_COLUMNS.has(columnName);
+
+  const handleStartSubitemEdit = (subitem) => {
+    setEditingSubitemId(subitem.old_rfq_subitem_id);
+    setEditingSubitemData({ ...subitem });
+  };
+
+  const handleCancelSubitemEdit = () => {
+    setEditingSubitemId(null);
+    setEditingSubitemData({});
+    setSavingSubitemId(null);
+  };
+
+  const handleSubitemEditFieldChange = (columnName, value) => {
+    setEditingSubitemData((prev) => ({ ...prev, [columnName]: value }));
+  };
+
+  const handleSaveSubitemRow = async (subitemId) => {
+    setSavingSubitemId(subitemId);
+    try {
+      const payload = {};
+      oldRfqSubitemColumns.forEach((columnName) => {
+        if (isSubitemColumnEditable(columnName)) {
+          payload[columnName] = editingSubitemData?.[columnName] ?? null;
+        }
+      });
+
+      const response = await updateOldRfqSubitem(subitemId, payload);
+      const updatedItem = response?.item || editingSubitemData;
+
+      setSelectedOldProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              subitems: (prev.subitems || []).map((s) =>
+                s.old_rfq_subitem_id === subitemId ? { ...s, ...updatedItem } : s
+              ),
+            }
+          : prev
+      );
+      setOldRfqs((prev) =>
+        prev.map((project) =>
+          project.old_rfq_id === updatedItem.old_rfq_id
+            ? {
+                ...project,
+                subitems: (project.subitems || []).map((s) =>
+                  s.old_rfq_subitem_id === subitemId ? { ...s, ...updatedItem } : s
+                ),
+              }
+            : project
+        )
+      );
+
+      setEditingSubitemId(null);
+      setEditingSubitemData({});
+      setSavingSubitemId(null);
+      showToast("Subitem updated successfully.", { type: "success", title: "Saved" });
+    } catch {
+      setSavingSubitemId(null);
+      showToast("Unable to update subitem.", { type: "error", title: "Save failed" });
+    }
+  };
+
+  const handleStartOldRfqEdit = (project) => {
+    setEditingOldRfqId(project.old_rfq_id);
+    setEditingOldRfqData({ ...project });
+  };
+
+  const handleCancelOldRfqEdit = () => {
+    setEditingOldRfqId(null);
+    setEditingOldRfqData({});
+    setSavingOldRfqId(null);
+  };
+
+  const handleOldRfqEditFieldChange = (columnName, value) => {
+    setEditingOldRfqData((prev) => ({ ...prev, [columnName]: value }));
+  };
+
+  const handleSaveOldRfqRow = async (oldRfqId) => {
+    setSavingOldRfqId(oldRfqId);
+    try {
+      const payload = {};
+      oldRfqProjectColumns.forEach((columnName) => {
+        if (isOldRfqColumnEditable(columnName)) {
+          payload[columnName] = editingOldRfqData?.[columnName] ?? null;
+        }
+      });
+
+      const response = await updateOldRfq(oldRfqId, payload);
+      const updatedItem = response?.item || editingOldRfqData;
+
+      setOldRfqs((prev) =>
+        prev.map((project) =>
+          project.old_rfq_id === oldRfqId
+            ? { ...project, ...updatedItem }
+            : project
+        )
+      );
+
+      setEditingOldRfqId(null);
+      setEditingOldRfqData({});
+      setSavingOldRfqId(null);
+      showToast("RFQ history row updated successfully.", { type: "success", title: "Saved" });
+    } catch {
+      setSavingOldRfqId(null);
+      showToast("Unable to update RFQ history row.", { type: "error", title: "Save failed" });
+    }
   };
 
   const detailedProductLineOptions = useMemo(
@@ -1730,36 +1855,82 @@ export default function Dashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => (
+                            {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => {
+                              const isEditingThisRow = editingOldRfqId === project.old_rfq_id;
+                              return (
                               <tr
                                 key={project.old_rfq_id ?? project.name}
-                                className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
+                                className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingThisRow ? "bg-blue-50/40" : "hover:bg-white/70"}`}
                               >
-                                {oldRfqProjectColumns.map((colName) => (
+                                {oldRfqProjectColumns.map((colName) => {
+                                  const isEditableColumn = isOldRfqColumnEditable(colName);
+                                  return (
                                   <td key={colName}>
-                                    {HISTORY_BADGE_COLUMNS.has(colName) ? (
+                                    {isEditingThisRow && isEditableColumn ? (
+                                      <input
+                                        type="text"
+                                        className="history-inline-edit-input"
+                                        value={editingOldRfqData?.[colName] ?? ""}
+                                        onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                      />
+                                    ) : HISTORY_BADGE_COLUMNS.has(colName) ? (
                                       <HistoryValueBadge columnName={colName} value={project[colName]} />
                                     ) : (
                                       <TruncatedCell value={project[colName]} />
                                     )}
                                   </td>
-                                ))}
+                                  );
+                                })}
                                 <td className="history-action-cell">
-                                  {(project.subitems?.length ?? 0) > 0 ? (
-                                    <button
-                                      type="button"
-                                      className="history-subitems-btn inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
-                                      style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
-                                      onClick={() => handleOpenSubitemsModal(project)}
-                                    >
-                                      View subitems ({project.subitems.length})
-                                    </button>
-                                  ) : (
-                                    <span className="history-muted text-xs font-medium text-slate-400">No subitems</span>
-                                  )}
+                                  <div className="flex flex-row flex-wrap items-center gap-1">
+                                    {(project.subitems?.length ?? 0) > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="history-subitems-btn inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
+                                        style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
+                                        onClick={() => handleOpenSubitemsModal(project)}
+                                      >
+                                        View subitems ({project.subitems.length})
+                                      </button>
+                                    ) : (
+                                      <span className="history-muted text-xs font-medium text-slate-400">No subitems</span>
+                                    )}
+                                    {isEditingThisRow ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="history-save-btn"
+                                          disabled={savingOldRfqId === project.old_rfq_id}
+                                          onClick={() => handleSaveOldRfqRow(project.old_rfq_id)}
+                                        >
+                                          {savingOldRfqId === project.old_rfq_id ? "Saving..." : "Save"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="history-cancel-btn"
+                                          disabled={savingOldRfqId === project.old_rfq_id}
+                                          onClick={handleCancelOldRfqEdit}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="history-subitems-btn inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                        style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
+                                        disabled={editingOldRfqId !== null}
+                                        onClick={() => handleStartOldRfqEdit(project)}
+                                      >
+                                        <Pencil size={12} />
+                                        Update
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
-                            )) : (
+                              );
+                            }) : (
                               <tr>
                                 <td colSpan={oldRfqProjectColumns.length + 1} className="px-4 py-16 text-center text-sm text-slate-400">
                                   No old RFQs found
@@ -1970,21 +2141,72 @@ export default function Dashboard() {
                         {oldRfqSubitemColumns.map((colName) => (
                           <th key={colName}>{getOldRfqSubitemColumnLabel(colName)}</th>
                         ))}
+                        <th className="history-subitem-action-cell">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(selectedOldProject.subitems || []).map((subitem, index) => (
-                        <tr
-                          key={`${selectedOldProject.old_rfq_id}-subitem-${index}`}
-                          className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
-                        >
-                          {oldRfqSubitemColumns.map((colName) => (
-                            <td key={colName}>
-                              <TruncatedCell value={subitem[colName]} />
+                      {(selectedOldProject.subitems || []).map((subitem, index) => {
+                        const isEditingThisSubitem = editingSubitemId === subitem.old_rfq_subitem_id;
+                        return (
+                          <tr
+                            key={`${selectedOldProject.old_rfq_id}-subitem-${index}`}
+                            className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingThisSubitem ? "bg-blue-50/40" : "hover:bg-white/70"}`}
+                          >
+                            {oldRfqSubitemColumns.map((colName) => {
+                              const editable = isSubitemColumnEditable(colName);
+                              return (
+                                <td key={colName}>
+                                  {isEditingThisSubitem && editable ? (
+                                    <input
+                                      type="text"
+                                      className="history-inline-edit-input"
+                                      value={editingSubitemData?.[colName] ?? ""}
+                                      onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                    />
+                                  ) : (
+                                    <TruncatedCell value={subitem[colName]} />
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="history-subitem-action-cell">
+                              <div className="flex flex-row flex-wrap items-center gap-1">
+                                {isEditingThisSubitem ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="history-save-btn"
+                                      disabled={savingSubitemId === subitem.old_rfq_subitem_id}
+                                      onClick={() => handleSaveSubitemRow(subitem.old_rfq_subitem_id)}
+                                    >
+                                      {savingSubitemId === subitem.old_rfq_subitem_id ? "Saving..." : "Save"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="history-cancel-btn"
+                                      disabled={savingSubitemId === subitem.old_rfq_subitem_id}
+                                      onClick={handleCancelSubitemEdit}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="history-subitems-btn inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                    style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
+                                    disabled={editingSubitemId !== null}
+                                    onClick={() => handleStartSubitemEdit(subitem)}
+                                  >
+                                    <Pencil size={12} />
+                                    Update
+                                  </button>
+                                )}
+                              </div>
                             </td>
-                          ))}
-                        </tr>
-                      ))}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

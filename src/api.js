@@ -302,6 +302,20 @@ export async function getOldRfqs() {
   return request("/api/old-rfqs");
 }
 
+export async function updateOldRfq(oldRfqId, payload) {
+  return request(`/api/old-rfqs/${oldRfqId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function updateOldRfqSubitem(subitemId, payload) {
+  return request(`/api/old-rfq-subitems/${subitemId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
 export async function getTeamMembers(includeSelf = false) {
   return request(`/api/team-view/members${includeSelf ? "?include_self=true" : ""}`);
 }

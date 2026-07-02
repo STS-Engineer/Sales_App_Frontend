@@ -5582,6 +5582,10 @@ export default function NewRfq() {
 
   const handleUpdateRFQ = () => {
     if (!rfqId || !canUseRfqActions) return;
+    if (currentUserRole !== "OWNER" && !isRfqCreator) {
+      showToast("You are not allowed to update this RFQ.", { type: "error", title: "Permission denied" });
+      return;
+    }
     _preUpdateSnapshotRef.current = { form: structuredClone(form) };
     setPendingUpdateFiles([]);
     setPendingDeleteFiles([]);
@@ -5776,6 +5780,10 @@ export default function NewRfq() {
 
   const handleSubmitToValidator = async () => {
     if (!rfqId || !canUseRfqActions) return;
+    if (isRfqUpdateModeActive && currentUserRole !== "OWNER" && !isRfqCreator) {
+      showToast("You are not allowed to update this RFQ.", { type: "error", title: "Permission denied" });
+      return;
+    }
 
     const assemblyMissingComponent = (form.products || []).some((p) => {
       const pl = String(p.productLine || "").trim().toLowerCase();
@@ -9178,7 +9186,7 @@ export default function NewRfq() {
 
                           {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
                           <div className="flex items-center gap-2">
-                            {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && isRfqCreator && !isRfqUpdateModeActive ? (
+                            {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && (isRfqCreator || currentUserRole === "OWNER") && !isRfqUpdateModeActive ? (
                               <>
                                 <button
                                   type="button"

@@ -1005,13 +1005,100 @@ body {
 
 .history-action-cell {
   white-space: nowrap;
-  min-width: 160px;
-  max-width: 200px;
+  min-width: 240px;
+  max-width: 320px;
   vertical-align: middle;
 }
 
 .history-subitems-btn {
   white-space: nowrap;
+}
+
+/* .history-update-btn styling is handled via Tailwind classes inline (same as .history-subitems-btn) */
+
+.history-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: 8px;
+  border: 1px solid #059669;
+  background: #059669;
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffffff;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
+  cursor: pointer;
+  margin-top: 4px;
+  margin-right: 4px;
+}
+
+.history-save-btn:hover:not(:disabled) {
+  background: #047857;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(5, 150, 105, 0.35);
+}
+
+.history-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.history-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.history-cancel-btn:hover:not(:disabled) {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.history-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.history-inline-edit-input {
+  width: 100%;
+  min-width: 140px;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: inherit;
+  font-family: inherit;
+  font-weight: 500;
+  color: #334155;
+  background: #ffffff;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.history-inline-edit-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.history-subitem-action-cell {
+  white-space: nowrap;
+  min-width: 160px;
+  max-width: 220px;
+  vertical-align: middle;
 }
 
 /* ── TruncatedCell — History View ── */
