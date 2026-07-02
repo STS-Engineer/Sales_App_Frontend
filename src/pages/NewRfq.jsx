@@ -10283,16 +10283,6 @@ export default function NewRfq() {
                                 </div>
                               </div>
                             )}
-                            {!aiApproved && aiFields.length > 0 && (
-                              <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Fields to correct</p>
-                                <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-red-600">
-                                  {aiFields.map((f, i) => (
-                                    <li key={i}>{f}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
                           </div>
                         </section>
                       );
