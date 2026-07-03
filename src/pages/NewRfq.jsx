@@ -66,11 +66,9 @@ import {
 } from "../utils/rfq.js";
 import { formatStandardTimestamp } from "../utils/dateUtils.js";
 import { useEurFxRates } from "../utils/useEurFxRates.js";
-
 const COSTING_READ_ONLY_ROLES = ["COSTING_TEAM", "RND", "PLM"];
 const RFQ_CREATOR_ROLES = ["OWNER", "COMMERCIAL", "ZONE_MANAGER"];
 const AI_CONVERSATION_URL_PATTERN = /(?:^|\n)\s*Conversation URL:\s*(https?:\/\/\S+)/i;
-
 function extractAiConversationMeta(aiValidation) {
   const rawDiscussion = String(
     aiValidation?.discussion || aiValidation?.message || ""
@@ -80,12 +78,10 @@ function extractAiConversationMeta(aiValidation) {
     explicitConversationUrl ||
     rawDiscussion.match(AI_CONVERSATION_URL_PATTERN)?.[1] ||
     "";
-
   return {
     conversationUrl: matchedConversationUrl,
   };
 }
-
 const initialForm = {
   id: "",
   automotiveType: "",
@@ -173,7 +169,6 @@ const initialForm = {
   potentialRiskDoAssessment: "",
   potentialRiskNotDoAssessment: ""
 };
-
 const STEPS = [
   {
     id: "step-client",
@@ -196,10 +191,8 @@ const STEPS = [
     accent: "ink"
   }
 ];
-
 const STEP_REQUIREMENT_REQUIRED = "required";
 const STEP_REQUIREMENT_OPTIONAL = "optional";
-
 const RFQ_STEP_REQUIREMENTS = {
   "step-client": {
     required: [
@@ -253,7 +246,6 @@ const RFQ_STEP_REQUIREMENTS = {
     optional: []
   }
 };
-
 const RFQ_PRODUCT_FIELD_REQUIREMENTS = {
   product: STEP_REQUIREMENT_REQUIRED,
   productLine: STEP_REQUIREMENT_REQUIRED,
@@ -263,19 +255,17 @@ const RFQ_PRODUCT_FIELD_REQUIREMENTS = {
   sop: STEP_REQUIREMENT_REQUIRED,
   costingData: STEP_REQUIREMENT_OPTIONAL,
   revisionLevel: STEP_REQUIREMENT_OPTIONAL,
-  quantity: STEP_REQUIREMENT_OPTIONAL,
+  quantity: STEP_REQUIREMENT_REQUIRED,
   targetPrice: STEP_REQUIREMENT_REQUIRED,
   currency: STEP_REQUIREMENT_REQUIRED,
   targetPriceIsEstimated: STEP_REQUIREMENT_REQUIRED
 };
-
 const RFQ_STEP_FORM_FIELDS = Object.fromEntries(
   Object.entries(RFQ_STEP_REQUIREMENTS).map(([stepId, fields]) => [
     stepId,
     [...fields.required, ...fields.optional].filter((fieldName) => fieldName !== "rfqFiles")
   ])
 );
-
 const RFQ_REQUIRED_FIELD_NAMES = new Set(
   Object.values(RFQ_STEP_REQUIREMENTS).flatMap((fields) => fields.required)
 );
@@ -313,7 +303,6 @@ const STEP_ORDER_INDEX = Object.fromEntries(
 );
 const AUTOFILL_REVEAL_HIGHLIGHT_CLASSES =
   "ring-2 ring-tide/30 ring-offset-2 ring-offset-white transition-shadow";
-
 const STEP_STYLES = {
   tide: {
     bar: "bg-tide",
@@ -340,23 +329,19 @@ const STEP_STYLES = {
     bg: "bg-ink/5"
   }
 };
-
 const extractSopYear = (sop) => {
   if (!sop && sop !== 0) return NaN;
   const match = String(sop).match(/\b(19\d{2}|20\d{2})\b/);
   return match ? parseInt(match[1], 10) : NaN;
 };
-
 const getRfqFieldRequirementProps = (fieldName) => ({
   required: RFQ_REQUIRED_FIELD_NAMES.has(fieldName),
   optional: RFQ_OPTIONAL_FIELD_NAMES.has(fieldName)
 });
-
 const getProductFieldRequirementProps = (fieldName) => ({
   required: getProductRequirement(fieldName) === STEP_REQUIREMENT_REQUIRED,
   optional: getProductRequirement(fieldName) === STEP_REQUIREMENT_OPTIONAL
 });
-
 const renderRequirementLabel = (label, { required = false, optional = false } = {}) => (
   <span className="flex flex-wrap items-center gap-1">
     <span>{label}</span>
@@ -372,16 +357,13 @@ const renderRequirementLabel = (label, { required = false, optional = false } = 
     ) : null}
   </span>
 );
-
 function ResponsibilityField({ label, name, value, customer, onChange, readOnly, required, optional }) {
   const isPredefinedValue = (v) =>
     !v || v === "AVOCarbon" || (customer && v === customer);
-
   const [otherMode, setOtherMode] = useState(
     () => Boolean(value && !isPredefinedValue(value))
   );
   const [editingOther, setEditingOther] = useState(false);
-
   // Sync when value changes externally (e.g. loading a saved RFQ)
   const prevValueRef = useRef(value);
   if (prevValueRef.current !== value) {
@@ -392,13 +374,11 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
       if (!shouldBeOther) setEditingOther(false);
     }
   }
-
   const selectValue =
     otherMode ? "__other__" :
     !value ? "" :
     value === "AVOCarbon" ? "AVOCarbon" :
     (customer && value === customer) ? "__customer__" : "";
-
   const handleSelectChange = (e) => {
     const v = e.target.value;
     if (v === "__customer__") {
@@ -415,9 +395,7 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
       if (isPredefinedValue(value)) onChange({ target: { name, value: "" } });
     }
   };
-
   const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
-
   return (
     <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
       <span className="flex flex-wrap items-center gap-1">
@@ -462,13 +440,10 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
     </label>
   );
 }
-
 function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
   const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
-
   const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
   const [editingOther, setEditingOther] = useState(false);
-
   const prevValueRef = useRef(value);
   if (prevValueRef.current !== value) {
     prevValueRef.current = value;
@@ -478,9 +453,7 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
       if (!shouldBeOther) setEditingOther(false);
     }
   }
-
   const selectValue = otherMode ? "__other__" : (value || "");
-
   const handleSelectChange = (e) => {
     const v = e.target.value;
     if (v === "__other__") {
@@ -491,9 +464,7 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
       onChange({ target: { name, value: v } });
     }
   };
-
   const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
-
   return (
     <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
       <span className="flex flex-wrap items-center gap-1">
@@ -541,7 +512,6 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
     </label>
   );
 }
-
 const PIPELINE_STAGES = [
   {
     key: "RFQ",
@@ -569,7 +539,6 @@ const PIPELINE_STAGES = [
     subPhases: ["Get prototype orders", "Prototype ongoing"]
   }
 ];
-
 const GROUPED_PIPELINE_STAGE_MAP = {
   RFQ: "RFQ",
   "In costing": "In costing",
@@ -586,7 +555,6 @@ const GROUPED_PIPELINE_STAGE_MAP = {
   "Get prototype orders": "Prototype",
   "Prototype ongoing": "Prototype"
 };
-
 const SUBPHASE_ALIASES = {
   RFQ: "RFQ form",
   Potential: "RFQ form",
@@ -595,7 +563,6 @@ const SUBPHASE_ALIASES = {
   "Mission accepted": "Mission status",
   "Mission not accepted": "Mission status"
 };
-
 const STATUS_CHOICES = [
   "RFQ",
   "In costing",
@@ -611,18 +578,15 @@ const STATUS_CHOICES = [
   "Lost",
   "Cancelled"
 ];
-
 const normalizeAssessmentValue = (value) => {
   if (value === null || value === undefined) return undefined;
   const text = String(value).trim();
   return text ? text : undefined;
 };
-
 const collectAssessmentValues = (source, keys = []) =>
   keys
     .map((key) => normalizeAssessmentValue(source?.[key]))
     .filter((value) => value !== undefined);
-
 const pickAssessmentArray = (source, keys = []) => {
   for (const key of keys) {
     const value = source?.[key];
@@ -636,20 +600,15 @@ const pickAssessmentArray = (source, keys = []) => {
   }
   return [];
 };
-
 const resolveAssessmentValue = (rfqData, { directKeys, arrayKeys, numberedKeys, legacyKeys }) => {
   const directValue = collectAssessmentValues(rfqData, directKeys)[0];
   if (directValue) return directValue;
-
   const fromArray = pickAssessmentArray(rfqData, arrayKeys);
   if (fromArray.length) return fromArray.join("\n\n");
-
   const fromNumbered = collectAssessmentValues(rfqData, numberedKeys);
   if (fromNumbered.length) return fromNumbered.join("\n\n");
-
   return collectAssessmentValues(rfqData, legacyKeys).join("\n\n");
 };
-
 const extractPotentialAssessmentFields = (rfqData = {}) => {
   return {
     potentialRiskDoAssessment: resolveAssessmentValue(rfqData, {
@@ -699,21 +658,17 @@ const extractPotentialAssessmentFields = (rfqData = {}) => {
     })
   };
 };
-
 const calculatePotentialMarginKeur = (salesKeur, marginPercent) => {
   const rawSales = String(salesKeur ?? "").trim();
   const rawMargin = String(marginPercent ?? "").trim();
   if (!rawSales || !rawMargin) return "";
-
   const sales = Number(rawSales.replace(",", "."));
   const margin = Number(rawMargin.replace(",", "."));
   if (!Number.isFinite(sales) || !Number.isFinite(margin)) return "";
-
   const computed = (sales * margin) / 100;
   if (!Number.isFinite(computed)) return "";
   return computed.toFixed(2).replace(/\.?0+$/, "");
 };
-
 const RFQ_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
 const POTENTIAL_CHATBOT_INITIAL_GREETING =
@@ -811,7 +766,6 @@ const FEASIBILITY_STATUS_OPTIONS = [
   { value: "FEASIBLE_UNDER_CONDITION", label: "Feasible Under Condition" },
   { value: "NOT_FEASIBLE", label: "Not Feasible" }
 ];
-
 const formatFeasibilityStatusLabel = (value) => {
   const normalizedValue = String(value || "").trim().toUpperCase();
   const matchedOption = FEASIBILITY_STATUS_OPTIONS.find(
@@ -827,7 +781,6 @@ const formatFeasibilityStatusLabel = (value) => {
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
 };
-
 const getFeasibilityStatusBadgeClasses = (value) => {
   const normalizedValue = String(value || "").trim().toUpperCase();
   if (normalizedValue === "FEASIBLE") {
@@ -841,10 +794,8 @@ const getFeasibilityStatusBadgeClasses = (value) => {
   }
   return "border-slate-200 bg-slate-50 text-slate-700";
 };
-
 const getProductRequirement = (fieldName) =>
   RFQ_PRODUCT_FIELD_REQUIREMENTS[fieldName] || STEP_REQUIREMENT_REQUIRED;
-
 const isProductFieldFilled = (product = {}, fieldName, { includeOptional = false } = {}) => {
   const requirement = getProductRequirement(fieldName);
   if (!includeOptional && requirement === STEP_REQUIREMENT_OPTIONAL) {
@@ -854,11 +805,13 @@ const isProductFieldFilled = (product = {}, fieldName, { includeOptional = false
   if (fieldName === "targetPriceIsEstimated") {
     return value !== null && value !== undefined;
   }
+  if (fieldName === "quantity") {
+    return value !== null && value !== undefined && value !== "" && Number(value) > 0;
+  }
   if (value === 0) return true;
   if (value === null || value === undefined) return false;
   return String(value).trim().length > 0;
 };
-
 const isProductCollection = (value) =>
   Array.isArray(value) &&
   value.every(
@@ -869,7 +822,6 @@ const isProductCollection = (value) =>
         (fieldName) => Object.prototype.hasOwnProperty.call(item, fieldName)
       )
   );
-
 const hasCompleteProductCollection = (products = [], { includeOptional = false } = {}) =>
   Array.isArray(products) &&
   products.length > 0 &&
@@ -886,7 +838,6 @@ const hasCompleteProductCollection = (products = [], { includeOptional = false }
     }
     return true;
   });
-
 const hasMeaningfulValue = (value) => {
   if (value === 0) return true;
   if (value === null || value === undefined) return false;
@@ -898,10 +849,10 @@ const hasMeaningfulValue = (value) => {
   }
   return String(value).trim().length > 0;
 };
-
 const isAvocarbonEmail = (value) =>
   typeof value === "string" && value.trim().toLowerCase().endsWith("@avocarbon.com");
-
+const isValidEmailFormat = (value) =>
+  typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => {
   if (fieldName === "rfqFiles") {
     return Array.isArray(mergedFiles) && mergedFiles.length > 0;
@@ -913,11 +864,11 @@ const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => 
     return vols.every((v) => hasMeaningfulValue(v?.[key]));
   }
   if (fieldName === "contactEmail") {
-    return hasMeaningfulValue(form?.contactEmail) && !isAvocarbonEmail(form?.contactEmail);
+    const v = form?.contactEmail;
+    return hasMeaningfulValue(v) && isValidEmailFormat(v) && !isAvocarbonEmail(v);
   }
   return hasMeaningfulValue(form?.[fieldName]);
 };
-
 const isRawRfqFieldSkipped = (rawRfqData = {}, fieldName) => {
   const backendKeys = RFQ_FRONTEND_TO_BACKEND_FIELD_KEYS[fieldName] || [];
   return backendKeys.some((key) => {
@@ -925,7 +876,6 @@ const isRawRfqFieldSkipped = (rawRfqData = {}, fieldName) => {
     return typeof value === "string" && value.trim() === "_";
   });
 };
-
 const getRfqWorkflowStepFields = (stepId) => {
   const stepRequirements = RFQ_STEP_REQUIREMENTS[stepId] || { required: [], optional: [] };
   return [
@@ -935,10 +885,8 @@ const getRfqWorkflowStepFields = (stepId) => {
     )
   ];
 };
-
 const getRfqRequiredStepFields = (stepId) =>
   RFQ_STEP_REQUIREMENTS[stepId]?.required || [];
-
 const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   const changedFields = RFQ_FORM_FIELD_NAMES.filter((fieldName) => {
     const previousValue = previousForm?.[fieldName];
@@ -955,17 +903,14 @@ const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
   if (JSON.stringify(previousForm?.volumes || []) !== JSON.stringify(nextForm?.volumes || [])) {
     changedFields.push("volumes");
   }
-
   if (!changedFields.length) {
     return [];
   }
-
   const filledFields = changedFields.filter((fieldName) =>
     hasMeaningfulValue(nextForm?.[fieldName])
   );
   return filledFields.length ? filledFields : changedFields;
 };
-
 const getRfqStepCompletionMap = (form = {}, mergedFiles = [], rawRfqData = {}) =>
   Object.fromEntries(
     STEPS.map((step) => [
@@ -979,7 +924,6 @@ const getRfqStepCompletionMap = (form = {}, mergedFiles = [], rawRfqData = {}) =
       )
     ])
   );
-
 const getRfqDisplayStepCompletionMap = (
   form = {},
   mergedFiles = [],
@@ -992,15 +936,12 @@ const getRfqDisplayStepCompletionMap = (
       if (strictComplete) {
         return [step.id, true];
       }
-
       const requiredComplete = getRfqRequiredStepFields(step.id).every((fieldName) =>
         isRfqFieldComplete(form, fieldName, { mergedFiles })
       );
-
       return [step.id, requiredComplete];
     })
   );
-
 const getHighestUnlockedStepIndexFromCompletion = (completion = {}) => {
   for (let i = 0; i < STEPS.length; i += 1) {
     if (!completion[STEPS[i].id]) {
@@ -1009,7 +950,6 @@ const getHighestUnlockedStepIndexFromCompletion = (completion = {}) => {
   }
   return STEPS.length - 1;
 };
-
 const getFirstIncompleteWorkflowField = (
   stepId,
   form = {},
@@ -1030,10 +970,8 @@ const getFirstIncompleteWorkflowField = (
   }
   return "";
 };
-
 const getLeadingEdgeStepIdFromCompletion = (completion = {}) =>
   STEPS[getHighestUnlockedStepIndexFromCompletion(completion)]?.id || "step-client";
-
 const getNextIncompleteStepIdAfterStep = (stepId, completion = {}) => {
   const startIndex = STEP_ORDER_INDEX[stepId] ?? -1;
   for (let index = startIndex + 1; index < STEPS.length; index += 1) {
@@ -1044,7 +982,6 @@ const getNextIncompleteStepIdAfterStep = (stepId, completion = {}) => {
   }
   return "";
 };
-
 const buildStepFocusRevealTarget = (
   stepId,
   form = {},
@@ -1108,7 +1045,6 @@ const buildStepFocusRevealTarget = (
     highlight
   };
 };
-
 const buildRfqAutofillRevealTarget = (
   previousForm = {},
   nextForm = {},
@@ -1119,13 +1055,11 @@ const buildRfqAutofillRevealTarget = (
   if (!changedFields.length) {
     return null;
   }
-
   const lastChangedField = changedFields[changedFields.length - 1];
   const rawTargetStepId =
     RFQ_FIELD_TO_STEP_MAP[lastChangedField] ||
     RFQ_FIELD_TO_STEP_MAP[changedFields[0]] ||
     "step-client";
-
   // --- Stepper guard: clamp target step to the highest allowed step -----
   const nextStepCompletion = getRfqStepCompletionMap(
     nextForm,
@@ -1139,7 +1073,6 @@ const buildRfqAutofillRevealTarget = (
   const nextIncompleteStepId = nextStepCompletion[rawTargetStepId]
     ? getNextIncompleteStepIdAfterStep(rawTargetStepId, nextStepCompletion)
     : "";
-
   if (nextIncompleteStepId) {
     const requestedNextIndex = STEP_ORDER_INDEX[nextIncompleteStepId] ?? rawTargetIndex;
     const clampedNextIndex = Math.min(requestedNextIndex, highestAllowed);
@@ -1149,13 +1082,11 @@ const buildRfqAutofillRevealTarget = (
       updatedFields: changedFields
     });
   }
-
   const clampedIndex = Math.min(rawTargetIndex, highestAllowed);
   const targetStepId = STEPS[clampedIndex]?.id || "step-client";
   // If clamped, switch to "step" mode so we don't try to scroll to a field
   // that lives on a later (unreachable) step.
   const wasClamped = clampedIndex < rawTargetIndex;
-
   // Products table updates: don't trigger any scroll — the table is already
   // visible when the user is on step-client, so scrolling would disrupt them.
   const nextIncompleteFieldOnTargetStep = !wasClamped
@@ -1166,14 +1097,12 @@ const buildRfqAutofillRevealTarget = (
       rawRfqData
     )
     : "";
-
   if (nextIncompleteFieldOnTargetStep === "products" || nextIncompleteFieldOnTargetStep === "application") {
     return buildStepFocusRevealTarget(targetStepId, nextForm, mergedFiles, rawRfqData, {
       highlight: false,
       updatedFields: changedFields
     });
   }
-
   if (!wasClamped && (lastChangedField === "products" || lastChangedField === "application")) {
     return {
       stepId: targetStepId,
@@ -1184,7 +1113,6 @@ const buildRfqAutofillRevealTarget = (
       highlight: false
     };
   }
-
   return {
     stepId: targetStepId,
     mode: wasClamped ? "step" : "field",
@@ -1193,11 +1121,9 @@ const buildRfqAutofillRevealTarget = (
     highlight: false
   };
 };
-
 // Shared field sets used by both buildRfqChatFocusRevealTarget and buildStepFocusRevealTarget.
 const LOGISTICS_SECTION_FIELDS = new Set(["poDate", "ppapDate", "rfqReceptionDate", "expectedQuotationDate"]);
 const CONTACT_SECTION_FIELDS = new Set(["contactName", "contactFunction", "contactPhone", "contactEmail"]);
-
 const isProductsCollectionPrompt = (content = "") => {
   const normalized = String(content || "").trim().toLowerCase();
   if (!normalized) {
@@ -1271,7 +1197,6 @@ const isProductsCollectionPrompt = (content = "") => {
     normalized.includes("price source")
   );
 };
-
 const isVolumesCollectionPrompt = (content = "") => {
   const normalized = String(content || "").trim().toLowerCase();
   if (!normalized) return false;
@@ -1311,7 +1236,6 @@ const isVolumesCollectionPrompt = (content = "") => {
   if (normalized.includes("delivery plant") && normalized.includes("?")) return true;
   return false;
 };
-
 const isLogisticsCollectionPrompt = (content = "") => {
   const normalized = String(content || "").trim().toLowerCase();
   if (!normalized) return false;
@@ -1323,7 +1247,6 @@ const isLogisticsCollectionPrompt = (content = "") => {
   if (normalized.includes("quotation date")) return true;
   return false;
 };
-
 const isContactCollectionPrompt = (content = "") => {
   const normalized = String(content || "").trim().toLowerCase();
   if (!normalized) return false;
@@ -1333,7 +1256,6 @@ const isContactCollectionPrompt = (content = "") => {
   if (normalized.includes("contact email")) return true;
   return false;
 };
-
 const getLatestAssistantMessageContent = (messages = []) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -1343,7 +1265,6 @@ const getLatestAssistantMessageContent = (messages = []) => {
   }
   return "";
 };
-
 const buildRfqChatFocusRevealTarget = (
   previousForm = {},
   nextForm = {},
@@ -1356,7 +1277,6 @@ const buildRfqChatFocusRevealTarget = (
   // products) and the step-fallback (which would incorrectly scroll to the top
   // of step-client).
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
-
   // Volumes changes take priority over products changes — the LLM updates both
   // when saving qty/target price, but we want to show the Volumes table.
   // Exception: if the assistant is asking a products-collection question (including
@@ -1416,7 +1336,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-
   // Volumes-question prompts anchor to the Volumes table.
   // "For Product N (Part Number: ...)" → scroll to that product's specific row.
   // Guard: if the message is also a Products-table prompt (e.g. costing data question
@@ -1433,7 +1352,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-
   // Products-question prompts always anchor to the Products table.
   if (isProductsCollectionPrompt(latestAssistantContent)) {
     return {
@@ -1445,7 +1363,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-
   // Logistics-question prompts anchor to the Logistics details section.
   if (isLogisticsCollectionPrompt(latestAssistantContent)) {
     return {
@@ -1457,7 +1374,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-
   // Contact-question prompts anchor to the Contact details section.
   if (isContactCollectionPrompt(latestAssistantContent)) {
     return {
@@ -1469,7 +1385,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-
   // Basic-info fields (customer, project name, automotive type, delivery zone at
   // top-level) are at the very top of step-client — don't let autofill redirect
   // to rfq-products just because application/productName aren't filled yet.
@@ -1477,7 +1392,6 @@ const buildRfqChatFocusRevealTarget = (
   if (changedFields.length > 0 && changedFields.every((f) => BASIC_INFO_FIELDS.has(f))) {
     return null;
   }
-
   // Form-state anchor: when message-text matching above didn't catch the context
   // (unusual LLM phrasing, concurrent field saves, etc.), use the next incomplete
   // workflow field to decide which section needs attention.
@@ -1507,7 +1421,6 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-
   const autofillRevealTarget = buildRfqAutofillRevealTarget(
     previousForm,
     nextForm,
@@ -1517,7 +1430,6 @@ const buildRfqChatFocusRevealTarget = (
   if (autofillRevealTarget) {
     return autofillRevealTarget;
   }
-
   const nextStepCompletion = getRfqStepCompletionMap(
     nextForm,
     mergedFiles,
@@ -1529,35 +1441,29 @@ const buildRfqChatFocusRevealTarget = (
   });
   return focusTarget;
 };
-
 const getMissingPotentialSharedFields = (form = {}) =>
   SHARED_POTENTIAL_FIELDS
     .filter(({ key }) => !hasMeaningfulValue(form?.[key]))
     .map(({ label }) => label);
-
 const getChangedPotentialFormFields = (previousForm = {}, nextForm = {}) => {
   const changedFields = POTENTIAL_FORM_FIELD_NAMES.filter((fieldName) => {
     const previousValue = previousForm?.[fieldName];
     const nextValue = nextForm?.[fieldName];
     return String(previousValue ?? "").trim() !== String(nextValue ?? "").trim();
   });
-
   if (!changedFields.length) {
     return [];
   }
-
   const filledFields = changedFields.filter((fieldName) =>
     hasMeaningfulValue(nextForm?.[fieldName])
   );
   return filledFields.length ? filledFields : changedFields;
 };
-
 const buildPotentialAutofillRevealTarget = (previousForm = {}, nextForm = {}) => {
   const changedFields = getChangedPotentialFormFields(previousForm, nextForm);
   if (!changedFields.length) {
     return null;
   }
-
   const lastChangedField = changedFields[changedFields.length - 1];
   return {
     fieldName: lastChangedField,
@@ -1566,7 +1472,6 @@ const buildPotentialAutofillRevealTarget = (previousForm = {}, nextForm = {}) =>
     highlight: false
   };
 };
-
 const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   if (!prevMessages.length) return serverMessages;
   const pending = prevMessages.filter(
@@ -1596,7 +1501,6 @@ const mergeChatWithAttachments = (serverMessages = [], prevMessages = []) => {
   });
   return merged;
 };
-
 const normalizeRfqFiles = (rfq) => {
   const topLevelRfqFiles =
     Array.isArray(rfq?.rfq_files) && rfq.rfq_files.length > 0 ? rfq.rfq_files : null;
@@ -1673,7 +1577,6 @@ const normalizeRfqFiles = (rfq) => {
     };
   });
 };
-
 const normalizeCostingFiles = (rfq) => {
   const raw = rfq?.costing_files || [];
   if (!Array.isArray(raw)) return [];
@@ -1715,7 +1618,6 @@ const normalizeCostingFiles = (rfq) => {
     };
   });
 };
-
 const normalizeCostingFileState = (rfq) => {
   const raw = rfq?.costing_file_state;
   if (!raw || typeof raw !== "object") return null;
@@ -1725,7 +1627,6 @@ const normalizeCostingFileState = (rfq) => {
       fileSource?.file && typeof fileSource.file === "object"
         ? fileSource.file
         : fileSource;
-
     return {
       id:
         innerFile?.id ||
@@ -1771,7 +1672,6 @@ const normalizeCostingFileState = (rfq) => {
         ""
     };
   };
-
   const normalizedFile = normalizeStateFile(
     raw?.file,
     "costing-file-state",
@@ -1793,7 +1693,6 @@ const normalizeCostingFileState = (rfq) => {
     raw?.validation_at,
     raw?.validation_by
   );
-
   let workflowState = String(raw?.workflow_state || "").trim().toUpperCase();
   if (!workflowState) {
     if (normalizedPricingFile) {
@@ -1807,7 +1706,6 @@ const normalizeCostingFileState = (rfq) => {
       workflowState = PRICING_WORKFLOW_STATE_WAITING_BOM;
     }
   }
-
   return {
     fileStatus: String(raw?.file_status || "").trim().toUpperCase() || "PENDING",
     feasibilityStatus: String(raw?.feasibility_status || "").trim().toUpperCase(),
@@ -1823,7 +1721,6 @@ const normalizeCostingFileState = (rfq) => {
     rejectionReason: String(raw?.rejection_reason || "").trim()
   };
 };
-
 const buildLegacyCostingFileState = (files = []) => {
   if (!Array.isArray(files) || !files.length) {
     return {
@@ -1863,7 +1760,6 @@ const buildLegacyCostingFileState = (files = []) => {
     file: latest ? { ...latest, url: safeLegacyUrl } : null
   };
 };
-
 const getLatestCostingFileEntryByRole = (rfq, fileRole) => {
   const targetRole = String(fileRole || "").trim().toUpperCase();
   if (!targetRole) return null;
@@ -1873,14 +1769,12 @@ const getLatestCostingFileEntryByRole = (rfq, fileRole) => {
   );
   return matches.length ? matches[matches.length - 1] : null;
 };
-
 const normalizePricingUpload = (raw, { fallbackId, fallbackName }) => {
   if (!raw || typeof raw !== "object") return null;
   const fileSource =
     raw?.file && typeof raw.file === "object"
       ? raw.file
       : raw;
-
   const normalizedFile =
     fileSource && typeof fileSource === "object"
       ? {
@@ -1926,7 +1820,6 @@ const normalizePricingUpload = (raw, { fallbackId, fallbackName }) => {
           ""
       }
       : null;
-
   return {
     note: String(raw?.note || raw?.file_note || "").trim(),
     uploadedBy: String(raw?.uploaded_by || fileSource?.uploaded_by || "").trim(),
@@ -1934,7 +1827,6 @@ const normalizePricingUpload = (raw, { fallbackId, fallbackName }) => {
     file: normalizedFile
   };
 };
-
 const normalizePricingBomUpload = (rfq) =>
   normalizePricingUpload(
     rfq?.costing_file_state?.bom_file ||
@@ -1945,7 +1837,6 @@ const normalizePricingBomUpload = (rfq) =>
       fallbackName: "Pricing BOM file"
     }
   );
-
 const normalizePricingFinalPriceUpload = (rfq) =>
   normalizePricingUpload(
     rfq?.costing_file_state?.pricing_file ||
@@ -1956,14 +1847,11 @@ const normalizePricingFinalPriceUpload = (rfq) =>
       fallbackName: "Pricing final price file"
     }
   );
-
 const FILES_PREVIEW_LIMIT = 3;
-
 const getFileExtension = (name = "") => {
   const extension = String(name).split(".").pop()?.trim() || "";
   return extension ? extension.toUpperCase() : "FILE";
 };
-
 const getFileAccentClasses = (name = "") => {
   const extension = getFileExtension(name).toLowerCase();
   if (["xls", "xlsx", "xlsm", "csv"].includes(extension)) {
@@ -1977,12 +1865,10 @@ const getFileAccentClasses = (name = "") => {
   }
   return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
 };
-
 const parseFileTimestamp = (value) => {
   const parsed = parseServerTimestamp(value);
   return parsed ? parsed.getTime() : 0;
 };
-
 const parseServerTimestamp = (value) => {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value;
@@ -2001,7 +1887,6 @@ const parseServerTimestamp = (value) => {
   const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
-
 const formatFileDate = (value, { withTime = false } = {}) => {
   if (value === null || value === undefined || value === "") return "Date unavailable";
   const parsed = parseServerTimestamp(value);
@@ -2022,7 +1907,6 @@ const formatFileDate = (value, { withTime = false } = {}) => {
       timeZone: "Africa/Tunis"
     });
 };
-
 const formatFileSize = (value) => {
   if (value === null || value === undefined || value === "") {
     return "Size unavailable";
@@ -2042,11 +1926,9 @@ const formatFileSize = (value) => {
   }
   return `${size} B`;
 };
-
 const normalizeEmailValue = (value) => String(value || "").trim().toLowerCase();
 const normalizeOfferSubPhase = (value) =>
   String(value || "").trim() === "Offer validation" ? "Offer preparation" : value;
-
 const normalizeDiscussionMessage = (entry, index = 0) => {
   const content = String(entry?.content || entry?.message || "").trim();
   if (!content) return null;
@@ -2068,7 +1950,6 @@ const normalizeDiscussionMessage = (entry, index = 0) => {
     recipientEmail: String(entry?.recipient_email || entry?.recipientEmail || "").trim()
   };
 };
-
 const mapDiscussionMessages = (messages = []) =>
   messages
     .map((entry, index) => normalizeDiscussionMessage(entry, index))
@@ -2077,7 +1958,6 @@ const mapDiscussionMessages = (messages = []) =>
       (left, right) =>
         parseFileTimestamp(left?.createdAt) - parseFileTimestamp(right?.createdAt)
     );
-
 const formatDiscussionDate = (value) => {
   if (!value) return "Just now";
   const parsed = new Date(value);
@@ -2090,7 +1970,6 @@ const formatDiscussionDate = (value) => {
     minute: "2-digit"
   });
 };
-
 const getFileKind = (file) => {
   const type = file?.file?.type || "";
   if (type.startsWith("image/")) return "image";
@@ -2102,7 +1981,6 @@ const getFileKind = (file) => {
   if (["txt", "md", "csv"].includes(ext)) return "text";
   return "file";
 };
-
 const DRAFT_CACHE_KEY = "rfq_draft_id";
 const DRAFT_CACHE_TS_KEY = "rfq_draft_ts";
 const DRAFT_CACHE_TTL_MS = 15000;
@@ -2151,7 +2029,6 @@ const buildProductMirrorFields = (products = []) => {
     : [createEmptyProductItem()];
   const firstProduct = safeProducts[0] || createEmptyProductItem();
   const totalTargetTo = calculateTotalTargetTo(safeProducts);
-
   return {
     application: firstProduct.application || "",
     productName: firstProduct.product || "",
@@ -2167,7 +2044,6 @@ const buildProductMirrorFields = (products = []) => {
     toTotal: totalTargetTo > 0 ? totalTargetTo / 1000 : ""
   };
 };
-
 const buildRfqDataPayloadFromForm = (form = {}) => {
   const products = normalizeProductsForPayload(form.products);
   const firstProduct = products[0] || {};
@@ -2179,7 +2055,6 @@ const buildRfqDataPayloadFromForm = (form = {}) => {
     (total, product) => total + (Number(product.target_to) || 0),
     0
   );
-
   return {
     automotive_type: normalizeAutomotiveType(form.automotiveType) || "",
     customer_name: form.customer || "",
@@ -2246,11 +2121,9 @@ const withInitialChatMessage = (messages = [], greeting, { append = false } = {}
     role: "assistant",
     content: greeting
   };
-
   if (!Array.isArray(messages) || !messages.length) {
     return [{ ...initialMessage }];
   }
-
   const normalizedGreeting = String(greeting || "").trim();
   const isOfferGreeting = normalizedGreeting.startsWith(OFFER_CHATBOT_GREETING_PREFIX);
   const hasInitialGreeting = messages.some((message) => {
@@ -2260,13 +2133,10 @@ const withInitialChatMessage = (messages = [], greeting, { append = false } = {}
     if (normalizedMessage === normalizedGreeting) return true;
     return isOfferGreeting && normalizedMessage.startsWith(OFFER_CHATBOT_GREETING_PREFIX);
   });
-
   if (hasInitialGreeting) return messages;
   return append ? [...messages, { ...initialMessage }] : [{ ...initialMessage }, ...messages];
 };
-
 const canUseStorage = () => typeof window !== "undefined";
-
 const getDraftInitState = () => {
   if (typeof globalThis === "undefined") {
     return { promise: null, ts: 0 };
@@ -2276,7 +2146,6 @@ const getDraftInitState = () => {
   }
   return globalThis.__rfqDraftInitState;
 };
-
 const readCachedDraftId = () => {
   if (!canUseStorage()) return "";
   const cachedId = window.sessionStorage.getItem(DRAFT_CACHE_KEY) || "";
@@ -2288,34 +2157,29 @@ const readCachedDraftId = () => {
   }
   return cachedId;
 };
-
 const writeCachedDraftId = (id) => {
   if (!canUseStorage()) return;
   if (!id) return;
   window.sessionStorage.setItem(DRAFT_CACHE_KEY, id);
   window.sessionStorage.setItem(DRAFT_CACHE_TS_KEY, String(Date.now()));
 };
-
 const clearCachedDraftId = () => {
   if (!canUseStorage()) return;
   window.sessionStorage.removeItem(DRAFT_CACHE_KEY);
   window.sessionStorage.removeItem(DRAFT_CACHE_TS_KEY);
 };
-
 const getPricingFinalPriceSaveStorageKey = (rfqId) => {
   const normalizedRfqId = String(rfqId || "").trim();
   return normalizedRfqId
     ? `${PRICING_FINAL_PRICE_SAVE_KEY_PREFIX}:${normalizedRfqId}`
     : "";
 };
-
 const buildPricingFinalPriceSaveSignature = (rfqId, upload) => {
   const normalizedRfqId = String(rfqId || "").trim();
   const normalizedName = String(upload?.file?.name || "").trim();
   if (!normalizedRfqId || !normalizedName) {
     return "";
   }
-
   return JSON.stringify({
     rfqId: normalizedRfqId,
     fileId: String(upload?.file?.id || "").trim(),
@@ -2324,14 +2188,12 @@ const buildPricingFinalPriceSaveSignature = (rfqId, upload) => {
     fileUrl: String(upload?.file?.url || "").trim()
   });
 };
-
 const readPricingFinalPriceSaveSignature = (rfqId) => {
   if (!canUseStorage()) return "";
   const storageKey = getPricingFinalPriceSaveStorageKey(rfqId);
   if (!storageKey) return "";
   return window.sessionStorage.getItem(storageKey) || "";
 };
-
 const writePricingFinalPriceSaveSignature = (rfqId, signature) => {
   if (!canUseStorage()) return;
   const storageKey = getPricingFinalPriceSaveStorageKey(rfqId);
@@ -2342,21 +2204,18 @@ const writePricingFinalPriceSaveSignature = (rfqId, signature) => {
   }
   window.sessionStorage.setItem(storageKey, signature);
 };
-
 const clearPricingFinalPriceSaveSignature = (rfqId) => {
   if (!canUseStorage()) return;
   const storageKey = getPricingFinalPriceSaveStorageKey(rfqId);
   if (!storageKey) return;
   window.sessionStorage.removeItem(storageKey);
 };
-
 const resolveFileUrl = (url) => {
   if (!url) return "";
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith("/")) return `${API_BASE}${url}`;
   return `${API_BASE}/${url}`;
 };
-
 const createEmptyValidationAudit = () => ({
   approvedAt: "",
   approvedBy: "",
@@ -2365,31 +2224,26 @@ const createEmptyValidationAudit = () => ({
   rejectionReason: "",
   rounds: [],
 });
-
 const createEmptyActionAudit = () => ({
   completedAt: "",
   completedBy: ""
 });
-
 const normalizeAuditValue = (value) => {
   if (value === null || value === undefined) return "";
   return String(value).trim();
 };
-
 const getSelfValidationPromptStorageKey = (rfqId) => {
   const normalizedRfqId = String(rfqId || "").trim();
   return normalizedRfqId
     ? `${SELF_VALIDATION_PROMPT_KEY_PREFIX}:${normalizedRfqId}`
     : "";
 };
-
 const readSelfValidationPromptSignature = (rfqId) => {
   if (!canUseStorage()) return "";
   const storageKey = getSelfValidationPromptStorageKey(rfqId);
   if (!storageKey) return "";
   return window.sessionStorage.getItem(storageKey) || "";
 };
-
 const writeSelfValidationPromptSignature = (rfqId, signature) => {
   if (!canUseStorage()) return;
   const storageKey = getSelfValidationPromptStorageKey(rfqId);
@@ -2401,11 +2255,9 @@ const writeSelfValidationPromptSignature = (rfqId, signature) => {
   }
   window.sessionStorage.setItem(storageKey, normalizedSignature);
 };
-
 const buildSelfValidationPromptSignature = (rfq, auditLogs = []) => {
   const normalizedRfqId = String(rfq?.rfq_id || "").trim();
   if (!normalizedRfqId) return "";
-
   const validationCycleLog = auditLogs.find((entry) => {
     const action = normalizeAuditValue(entry?.action);
     return (
@@ -2415,7 +2267,6 @@ const buildSelfValidationPromptSignature = (rfq, auditLogs = []) => {
   });
   const subStatusValue =
     typeof rfq?.sub_status === "string" ? rfq.sub_status : rfq?.sub_status?.value;
-
   return JSON.stringify({
     rfqId: normalizedRfqId,
     cycleAnchor:
@@ -2430,7 +2281,6 @@ const buildSelfValidationPromptSignature = (rfq, auditLogs = []) => {
     subStatus: normalizeAuditValue(subStatusValue)
   });
 };
-
 const extractValidationAudit = (rfq, auditLogs = []) => {
   const reversedLogs = [...auditLogs].reverse();
   const latestApprovedLog = reversedLogs.find(
@@ -2439,7 +2289,6 @@ const extractValidationAudit = (rfq, auditLogs = []) => {
   const latestRejectedLog = reversedLogs.find(
     (entry) => typeof entry?.action === "string" && entry.action.includes("Validator rejected")
   );
-
   const decisionLogs = auditLogs.filter(
     (entry) =>
       typeof entry?.action === "string" &&
@@ -2464,7 +2313,6 @@ const extractValidationAudit = (rfq, auditLogs = []) => {
       ),
     };
   });
-
   return {
     approvedAt: normalizeAuditValue(rfq?.approved_at),
     approvedBy: normalizeAuditValue(latestApprovedLog?.performed_by),
@@ -2474,13 +2322,11 @@ const extractValidationAudit = (rfq, auditLogs = []) => {
     rounds,
   };
 };
-
 const extractAuditReasonFromAction = (action) => {
   const text = normalizeAuditValue(action);
   if (!text.includes(":")) return "";
   return text.split(":").slice(1).join(":").trim();
 };
-
 const extractCostingReviewAudit = (rfq, auditLogs = []) => {
   // Ignore costing review decisions from before the most recent owner-update reset.
   // When a creator updates an RFQ, costing data is cleared; the reception audit must
@@ -2495,13 +2341,11 @@ const extractCostingReviewAudit = (rfq, auditLogs = []) => {
   const lastResetTime = lastResetLog
     ? (() => { const t = new Date(lastResetLog.timestamp).getTime(); return Number.isNaN(t) ? 0 : t; })()
     : 0;
-
   const isAfterReset = (entry) => {
     if (lastResetTime === 0) return true;
     const t = new Date(entry?.timestamp).getTime();
     return !Number.isNaN(t) && t > lastResetTime;
   };
-
   const approvedLog = auditLogs.find(
     (entry) =>
       typeof entry?.action === "string" &&
@@ -2514,7 +2358,6 @@ const extractCostingReviewAudit = (rfq, auditLogs = []) => {
       entry.action.includes("Costing review rejected") &&
       isAfterReset(entry)
   );
-
   return {
     approvedAt: normalizeAuditValue(approvedLog?.timestamp),
     approvedBy: normalizeAuditValue(approvedLog?.performed_by),
@@ -2525,11 +2368,9 @@ const extractCostingReviewAudit = (rfq, auditLogs = []) => {
       extractAuditReasonFromAction(rejectedLog?.action)
   };
 };
-
 const extractFeasibilitySaveAudit = (rfq, auditLogs = []) => {
   const phaseValue = normalizeAuditValue(rfq?.phase).toUpperCase();
   const subStatusValue = normalizeAuditValue(rfq?.sub_status).toUpperCase();
-
   // Find the most recent owner-update reset log.
   // A "status advanced to costing/pricing" log from before this reset belongs to a
   // previous costing cycle and must not be shown after the data was cleared.
@@ -2543,7 +2384,6 @@ const extractFeasibilitySaveAudit = (rfq, auditLogs = []) => {
   const lastResetTime = lastResetLog
     ? (() => { const t = new Date(lastResetLog.timestamp).getTime(); return Number.isNaN(t) ? 0 : t; })()
     : 0;
-
   const saveLog = [...auditLogs]
     .reverse()
     .find((entry) => {
@@ -2560,23 +2400,19 @@ const extractFeasibilitySaveAudit = (rfq, auditLogs = []) => {
       }
       return true;
     });
-
   const groupedStage = GROUPED_PIPELINE_STAGE_MAP[mapBackendStatusToPipelineStage(rfq)] || "";
   const isCurrentPricingStep =
     phaseValue === "COSTING" && subStatusValue === "PRICING";
   const hasMovedBeyondCosting = ["Offer", "PO", "Prototype"].includes(groupedStage);
-
   if (!saveLog && !isCurrentPricingStep && !hasMovedBeyondCosting) {
     return createEmptyActionAudit();
   }
-
   return {
     completedAt:
       normalizeAuditValue(saveLog?.timestamp) || normalizeAuditValue(rfq?.updated_at),
     completedBy: normalizeAuditValue(saveLog?.performed_by)
   };
 };
-
 const extractPricingFileDecisionAudit = (
   rfq,
   auditLogs = [],
@@ -2597,7 +2433,6 @@ const extractPricingFileDecisionAudit = (
     .find((entry) =>
       normalizeAuditValue(entry?.action).toLowerCase().includes("pricing file rejected:")
     );
-
   if (workflowState === PRICING_WORKFLOW_STATE_APPROVED) {
     return {
       ...createEmptyValidationAudit(),
@@ -2610,7 +2445,6 @@ const extractPricingFileDecisionAudit = (
         normalizeAuditValue(approvalLog?.performed_by)
     };
   }
-
   if (workflowState === PRICING_WORKFLOW_STATE_REJECTED) {
     return {
       ...createEmptyValidationAudit(),
@@ -2626,26 +2460,21 @@ const extractPricingFileDecisionAudit = (
         extractAuditReasonFromAction(rejectionLog?.action)
     };
   }
-
   return createEmptyValidationAudit();
 };
-
 const formatValidationAuditValue = (value) => {
   const text = normalizeAuditValue(value);
   return text || "Not available";
 };
-
 const formatValidationAuditDate = (value) => {
   return formatStandardTimestamp(value);
 };
-
 const getPricingFileDecisionStorageKey = (rfqId) => {
   const normalizedRfqId = String(rfqId || "").trim();
   return normalizedRfqId
     ? `${PRICING_FILE_DECISION_KEY_PREFIX}:${normalizedRfqId}`
     : "";
 };
-
 const normalizeStoredValidationAudit = (audit = {}) => ({
   approvedAt: normalizeAuditValue(audit?.approvedAt),
   approvedBy: normalizeAuditValue(audit?.approvedBy),
@@ -2653,7 +2482,6 @@ const normalizeStoredValidationAudit = (audit = {}) => ({
   rejectedBy: normalizeAuditValue(audit?.rejectedBy),
   rejectionReason: normalizeAuditValue(audit?.rejectionReason)
 });
-
 const readPricingFileDecisionRecord = (rfqId) => {
   if (!canUseStorage()) {
     return { signature: "", audit: createEmptyValidationAudit() };
@@ -2666,7 +2494,6 @@ const readPricingFileDecisionRecord = (rfqId) => {
   if (!rawValue) {
     return { signature: "", audit: createEmptyValidationAudit() };
   }
-
   try {
     const parsed = JSON.parse(rawValue);
     return {
@@ -2678,7 +2505,6 @@ const readPricingFileDecisionRecord = (rfqId) => {
     return { signature: "", audit: createEmptyValidationAudit() };
   }
 };
-
 const writePricingFileDecisionRecord = (rfqId, signature, audit) => {
   if (!canUseStorage()) return;
   const storageKey = getPricingFileDecisionStorageKey(rfqId);
@@ -2696,14 +2522,12 @@ const writePricingFileDecisionRecord = (rfqId, signature, audit) => {
     })
   );
 };
-
 const clearPricingFileDecisionRecord = (rfqId) => {
   if (!canUseStorage()) return;
   const storageKey = getPricingFileDecisionStorageKey(rfqId);
   if (!storageKey) return;
   window.sessionStorage.removeItem(storageKey);
 };
-
 const loadRfqSnapshot = async (targetId) => {
   const [rfq, auditLogs] = await Promise.all([
     getRfq(targetId),
@@ -2711,9 +2535,7 @@ const loadRfqSnapshot = async (targetId) => {
   ]);
   return { rfq, auditLogs };
 };
-
 const normalizePipelineStageKey = (stage) => GROUPED_PIPELINE_STAGE_MAP[stage] || "";
-
 const mergeFilesWithoutDuplicates = (existingFiles, newFiles) => {
   const filesMap = new Map();
   [...existingFiles, ...newFiles].forEach((file) => {
@@ -2722,7 +2544,6 @@ const mergeFilesWithoutDuplicates = (existingFiles, newFiles) => {
   });
   return Array.from(filesMap.values());
 };
-
 const incrementRfqIndex = (ref) => {
   const match = String(ref || "").match(/^(.*)-(\d+)$/);
   if (!match) return null;
@@ -2730,7 +2551,6 @@ const incrementRfqIndex = (ref) => {
   const cur = match[2];
   return `${prefix}-${String(Number(cur) + 1).padStart(cur.length, "0")}`;
 };
-
 /* ─────────────────────────────────────────────────────────────────────────────
  * OFFER PHASE — TEMPORARILY DISABLED
  * The original Offer phase content (section below) is preserved here.
@@ -2797,7 +2617,6 @@ const OfferUnderConstruction = () => (
     </div>
   </section>
 );
-
 export default function NewRfq() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -2809,7 +2628,6 @@ export default function NewRfq() {
   const currentUserRole = String(currentUserProfile?.role || "").trim();
   const normalizedCurrentUserEmail = normalizeEmailValue(currentUserEmail);
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
-
   const openAgentConversationPopup = (conversationUrl) => {
     const url = String(conversationUrl || "").trim();
     if (!url) {
@@ -2819,13 +2637,11 @@ export default function NewRfq() {
       });
       return;
     }
-
     const popupWindow = window.open(
       url,
       "workspace-agent-conversation",
       "popup=yes,width=1440,height=920,left=80,top=60,resizable=yes,scrollbars=yes"
     );
-
     if (!popupWindow) {
       showToast("Popup blocked. Please allow popups for this site, then try again.", {
         type: "error",
@@ -2833,7 +2649,6 @@ export default function NewRfq() {
       });
       return;
     }
-
     popupWindow.focus?.();
   };
   const documentTypeParam = useMemo(
@@ -2979,10 +2794,8 @@ export default function NewRfq() {
     if (!rfqId || !aiValidation || !["queued", "processing"].includes(aiStatus)) {
       return undefined;
     }
-
     let cancelled = false;
     let intervalId = 0;
-
     const refreshAiValidationStatus = async () => {
       try {
         const nextStatus = await getRfqAiValidationStatus(rfqId);
@@ -3001,10 +2814,8 @@ export default function NewRfq() {
         // Best effort polling only.
       }
     };
-
     refreshAiValidationStatus();
     intervalId = window.setInterval(refreshAiValidationStatus, 10000);
-
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -3302,7 +3113,6 @@ export default function NewRfq() {
     validationActionId === "approve" ||
     validationActionId === "reject"
   );
-
   const chatFallback = useMemo(() => {
     if (loadingRfq) {
       return [{ role: "assistant", content: `Loading ${formalDocumentLabel}...` }];
@@ -3315,7 +3125,6 @@ export default function NewRfq() {
       }
     ];
   }, [formalDocumentLabel, loadingRfq]);
-
   const activeChatGreeting =
     activeRfqTab === "potential"
       ? POTENTIAL_CHATBOT_INITIAL_GREETING
@@ -3366,7 +3175,6 @@ export default function NewRfq() {
       ),
     [form, mergedFiles, rfqSnapshot, stepCompletion]
   );
-
   useEffect(() => {
     listProducts().then((data) => {
       const raw = Array.isArray(data?.products) ? data.products : [];
@@ -3379,23 +3187,19 @@ export default function NewRfq() {
       }));
     }).catch(() => {});
   }, []);
-
   useEffect(() => {
     rfqStepAutoFollowPausedRef.current = false;
   }, [rfqId]);
-
   useEffect(() => {
     if (!rfqError) return;
     showToast(rfqError, { type: "error", title: `${formalDocumentLabel} update failed` });
     setRfqError("");
   }, [rfqError, showToast]);
-
   useEffect(() => {
     if (!validationSuccess) return;
     showToast(validationSuccess, { type: "success", title: `${formalDocumentLabel} updated` });
     setValidationSuccess("");
   }, [validationSuccess, showToast]);
-
   const hasWorkflowMovedBeyondRfq = Boolean(activeStage && activeStage !== "RFQ");
   const isCancelledAfterRfqValidation = Boolean(
     normalizePipelineStageKey(activeStage) === "RFQ" &&
@@ -3410,7 +3214,6 @@ export default function NewRfq() {
       rfqValidationReached ||
       hasWorkflowMovedBeyondRfq
     );
-
   const getActiveDisplaySubPhase = (stageKey) => {
     if (stageKey === "RFQ" && isRevisionModeActive) {
       return "RFQ form";
@@ -3439,7 +3242,6 @@ export default function NewRfq() {
     () => getHighestUnlockedStepIndexFromCompletion(stepCompletion),
     [stepCompletion]
   );
-
   // In Update mode, compute step completion purely from required fields in the
   // current form — bypassing rfqSnapshot and the stepCompletion strict-chain.
   // This ensures real-time reactivity as the user fills in fields, with zero
@@ -3467,7 +3269,6 @@ export default function NewRfq() {
       ])
     );
   }, [isRfqUpdateModeActive, form, mergedFiles, productDrawings]);
-
   const stepStates = useMemo(() => {
     const completion = isRfqUpdateModeActive ? updateModeStepCompletion : displayStepCompletion;
     const entries = STEPS.map((step) => {
@@ -3498,7 +3299,6 @@ export default function NewRfq() {
     isCostingStage && costingDisplaySubPhase === "feasibility";
   const isCostingPricingView =
     isCostingStage && costingDisplaySubPhase === "Pricing";
-
     // SharePoint button — URL comes exclusively from the backend (rfq_data.sharepoint.folder_url)
   const sharePointUrl =
     rfqSnapshot?.rfq_data?.sharepoint?.folder_url ||
@@ -3702,20 +3502,25 @@ export default function NewRfq() {
     }
     rfqStepAutoFollowPausedRef.current = targetIndex < highestUnlockedStepIndex;
     setActiveStep(stepId);
+    if (stepId === "step-notes" && !form.validatorEmail && rfqId && canUseRfqActions) {
+      const firstThreeComplete = ["step-client", "step-request", "step-schedule"].every(
+        (id) => stepStates[id]?.isComplete
+      );
+      if (firstThreeComplete) {
+        handleAssignValidator();
+      }
+    }
     if (isRfqValidationView) {
       setSelectedStage("RFQ");
       setSelectedSubPhase("RFQ form");
     }
   };
-
   useEffect(() => {
     if (!isRfqFormView) {
       rfqStepAutoFollowPausedRef.current = false;
     }
   }, [isRfqFormView]);
-
   rfqValidationReachedRef.current = rfqValidationReached;
-
   useEffect(() => {
     const nextSelectedStage = resolveVisiblePipelineStageKey(
       normalizePipelineStageKey(activeStage) || firstPipelineStageKey
@@ -3747,7 +3552,6 @@ export default function NewRfq() {
     persistValidationView,
     persistCostingReviewView,
   ]);
-
   useEffect(() => {
     if (!selectedStage || pipelineStageKeys.has(selectedStage)) {
       return;
@@ -3770,7 +3574,6 @@ export default function NewRfq() {
     pipelineStages,
     selectedStage
   ]);
-
   useEffect(() => {
     const nextSelectedStage = resolveVisiblePipelineStageKey(
       normalizePipelineStageKey(activeStage) || firstPipelineStageKey
@@ -3805,7 +3608,6 @@ export default function NewRfq() {
     persistCostingReviewView,
     rfqValidationReached,
   ]);
-
   useEffect(() => {
     setRfqFormEditEnabled(false);
     setIsRfqUpdateModeActive(false);
@@ -3821,7 +3623,6 @@ export default function NewRfq() {
     setRevisionActionId("");
     setOptimisticRevisionMode(false);
   }, [rfqId]);
-
   useEffect(() => {
     if (isRevisionModeActive) {
       setRfqValidationReached(false);
@@ -3831,7 +3632,6 @@ export default function NewRfq() {
       setRfqValidationReached(true);
     }
   }, [activeSubPhase, isRevisionModeActive]);
-
   // Track the message index at which revision mode starts so the greeting
   // is inserted at that fixed position and not re-appended after each new message.
   useEffect(() => {
@@ -3843,12 +3643,10 @@ export default function NewRfq() {
     }
     revisionModeActiveRef.current = isRevision;
   }, [isRevisionModeActive, isFormalDocumentTab]); // activeChatMessages intentionally omitted
-
   useEffect(() => {
     if (!pendingRfqAutofillReveal) {
       return;
     }
-
     if (
       !isFormalDocumentTab ||
       selectedStage !== "RFQ" ||
@@ -3857,7 +3655,6 @@ export default function NewRfq() {
       setPendingRfqAutofillReveal(null);
       return;
     }
-
     if (activeStep !== pendingRfqAutofillReveal.stepId) {
       // --- Stepper guard: clamp the reveal target to the highest allowed
       const allowedIdx = highestUnlockedStepIndex;
@@ -3875,12 +3672,10 @@ export default function NewRfq() {
       setActiveStep(clampedStepId);
       return;
     }
-
     let canceled = false;
     let retryTimer = 0;
     let highlightTimer = 0;
     let stabilizeTimer = 0;
-
     const isElementScrollable = (element) => {
       if (!element) {
         return false;
@@ -3889,7 +3684,6 @@ export default function NewRfq() {
       const overflowY = computedStyle?.overflowY || "";
       return /(auto|scroll|overlay)/i.test(overflowY) && element.scrollHeight > element.clientHeight + 1;
     };
-
     const isElementVisibleInContainer = (element, container, padding = 16) => {
       if (!element || !container) {
         return false;
@@ -3901,7 +3695,6 @@ export default function NewRfq() {
         elementRect.bottom <= containerRect.bottom - padding
       );
     };
-
     const isElementVisibleInViewport = (element, padding = 24) => {
       if (!element) {
         return false;
@@ -3912,7 +3705,6 @@ export default function NewRfq() {
         elementRect.bottom <= window.innerHeight - padding
       );
     };
-
     const revealSpecificElement = (element, { preserveIfVisible = false } = {}) => {
       if (!element) {
         return;
@@ -3936,12 +3728,10 @@ export default function NewRfq() {
         block: preserveIfVisible ? "nearest" : "start"
       });
     };
-
     const revealTarget = (attempt = 0) => {
       if (canceled) {
         return;
       }
-
       const fieldElement =
         pendingRfqAutofillReveal.mode === "field" &&
           pendingRfqAutofillReveal.fieldName
@@ -3951,7 +3741,6 @@ export default function NewRfq() {
         ? document.getElementById(pendingRfqAutofillReveal.elementId)
         : null;
       const sectionElement = document.getElementById(pendingRfqAutofillReveal.stepId);
-
       // When elementId is set but the element isn't in the DOM yet, retry.
       if (pendingRfqAutofillReveal.elementId && !specificElement) {
         if (attempt >= 6) {
@@ -3965,7 +3754,6 @@ export default function NewRfq() {
         retryTimer = window.setTimeout(() => revealTarget(attempt + 1), 90);
         return;
       }
-
       const targetElement =
         pendingRfqAutofillReveal.mode === "field"
           ? fieldElement?.closest("label") || fieldElement || sectionElement
@@ -3974,7 +3762,6 @@ export default function NewRfq() {
         pendingRfqAutofillReveal.elementId === "rfq-products" &&
         Array.isArray(pendingRfqAutofillReveal.updatedFields) &&
         pendingRfqAutofillReveal.updatedFields.includes("products");
-
       if (!targetElement) {
         if (attempt >= 6) {
           setPendingRfqAutofillReveal(null);
@@ -3983,7 +3770,6 @@ export default function NewRfq() {
         retryTimer = window.setTimeout(() => revealTarget(attempt + 1), 90);
         return;
       }
-
       if (specificElement) {
         if (shouldPreserveProductsViewport) {
           rfqProductsViewportLockUntilRef.current = Date.now() + 1200;
@@ -4007,7 +3793,6 @@ export default function NewRfq() {
           block: pendingRfqAutofillReveal.mode === "field" ? "center" : "start"
         });
       }
-
       if (pendingRfqAutofillReveal.highlight !== false) {
         targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
         highlightTimer = window.setTimeout(() => {
@@ -4016,9 +3801,7 @@ export default function NewRfq() {
       }
       setPendingRfqAutofillReveal(null);
     };
-
     retryTimer = window.setTimeout(() => revealTarget(0), 40);
-
     return () => {
       canceled = true;
       window.clearTimeout(retryTimer);
@@ -4035,26 +3818,21 @@ export default function NewRfq() {
     selectedStage,
     selectedSubPhase
   ]);
-
   useEffect(() => {
     if (!pendingPotentialAutofillReveal) {
       return;
     }
-
     if (activeRfqTab !== "potential") {
       setPendingPotentialAutofillReveal(null);
       return;
     }
-
     let canceled = false;
     let retryTimer = 0;
     let highlightTimer = 0;
-
     const revealTarget = (attempt = 0) => {
       if (canceled) {
         return;
       }
-
       const fieldElement = pendingPotentialAutofillReveal.fieldName
         ? document.getElementsByName(pendingPotentialAutofillReveal.fieldName)?.[0]
         : null;
@@ -4062,7 +3840,6 @@ export default function NewRfq() {
         ? document.getElementById(pendingPotentialAutofillReveal.sectionId)
         : null;
       const targetElement = fieldElement?.closest("label") || fieldElement || sectionElement;
-
       if (!targetElement) {
         if (attempt >= 6) {
           setPendingPotentialAutofillReveal(null);
@@ -4071,12 +3848,10 @@ export default function NewRfq() {
         retryTimer = window.setTimeout(() => revealTarget(attempt + 1), 90);
         return;
       }
-
       targetElement.scrollIntoView({
         behavior: "smooth",
         block: "center"
       });
-
       if (pendingPotentialAutofillReveal.highlight !== false) {
         targetElement.classList.add(...AUTOFILL_REVEAL_HIGHLIGHT_CLASSES.split(" "));
         highlightTimer = window.setTimeout(() => {
@@ -4085,16 +3860,13 @@ export default function NewRfq() {
       }
       setPendingPotentialAutofillReveal(null);
     };
-
     retryTimer = window.setTimeout(() => revealTarget(0), 40);
-
     return () => {
       canceled = true;
       window.clearTimeout(retryTimer);
       window.clearTimeout(highlightTimer);
     };
   }, [activeRfqTab, form, pendingPotentialAutofillReveal]);
-
   useEffect(() => {
     if (!isCostingStage || canOpenCostingPricing) {
       return;
@@ -4103,13 +3875,11 @@ export default function NewRfq() {
       setSelectedSubPhase("feasibility");
     }
   }, [canOpenCostingPricing, isCostingStage, selectedSubPhase]);
-
   useEffect(() => {
     if (selectedStage === "Offer" && selectedSubPhase === "Offer validation") {
       setSelectedSubPhase("Offer preparation");
     }
   }, [selectedStage, selectedSubPhase]);
-
   useEffect(() => {
     if (rfqProductsViewportLockUntilRef.current > Date.now()) {
       return;
@@ -4150,11 +3920,9 @@ export default function NewRfq() {
     stepCompletion,
     stepIndex
   ]);
-
   const canGoNext = Boolean(!isLastStep);
   const prevStepId = stepIndex > 0 ? stepIds[stepIndex - 1] : "";
   const canGoPrev = Boolean(prevStepId);
-
   const applyRfq = (
     rfq,
     {
@@ -4377,7 +4145,6 @@ export default function NewRfq() {
       );
     }
   };
-
   const syncRfq = async (targetId, options = {}) => {
     const idToLoad = targetId || rfqId;
     if (!idToLoad) return false;
@@ -4391,7 +4158,6 @@ export default function NewRfq() {
       return false;
     }
   };
-
   const hydrateRfqAfterMutation = async (targetId, options = {}) => {
     const idToLoad = targetId || rfqId;
     if (!idToLoad) return false;
@@ -4405,7 +4171,6 @@ export default function NewRfq() {
       return false;
     }
   };
-
   // Poll after RFQ approval until rfq_data.sharepoint.folder_url is populated by the backend
   // background task. Updates only rfqSnapshot so the SharePoint button activates automatically.
   // Fire-and-forget — does not block UI. Max 15 attempts × 2 s = 30 s total.
@@ -4441,24 +4206,19 @@ export default function NewRfq() {
  
     setTimeout(poll, delayMs);
   };
-
   const ensureRfqExists = async () => {
     if (rfqId) {
       return rfqId;
     }
-
     if (rfqIdParam) {
       return rfqIdParam;
     }
-
     if (rfqCreatePromiseRef.current) {
       return rfqCreatePromiseRef.current;
     }
-
     const chatMode = activeRfqTab === "potential" ? "potential" : "rfq";
     const createDocumentType =
       activeRfqTab === "potential" ? "POTENTIAL" : activeRfqTab === "rfi" ? "RFI" : "RFQ";
-
     rfqCreatePromiseRef.current = createRfq({
       chat_mode: chatMode,
       document_type: createDocumentType
@@ -4475,13 +4235,10 @@ export default function NewRfq() {
       .finally(() => {
         rfqCreatePromiseRef.current = null;
       });
-
     return rfqCreatePromiseRef.current;
   };
-
   useEffect(() => {
     let alive = true;
-
     const init = async () => {
       setLoadingRfq(true);
       setRfqError("");
@@ -4573,12 +4330,10 @@ export default function NewRfq() {
           setCostingSavePending(false);
           return;
         }
-
         setRfqSnapshot(null);
         setRfqAuditLogs([]);
         rfqAuditLogsRef.current = [];
         const { rfq, auditLogs } = await loadRfqSnapshot(rfqIdParam);
-
         if (!alive) return;
         setRfqId(rfq.rfq_id);
         setRfqCreatedInThisSession(false);
@@ -4635,21 +4390,17 @@ export default function NewRfq() {
         }
       }
     };
-
     init();
     return () => {
       alive = false;
     };
   }, [documentTypeParam, rfqIdParam, navigate]);
-
   useEffect(() => {
     localFilesRef.current = localFiles;
   }, [localFiles]);
-
   useEffect(() => {
     let alive = true;
     const currentRfqId = rfqId || rfqIdParam;
-
     if (!currentRfqId || !activeDiscussionPhase) {
       setDiscussionMessages([]);
       setDiscussionLoading(false);
@@ -4658,7 +4409,6 @@ export default function NewRfq() {
         alive = false;
       };
     }
-
     const loadDiscussion = async () => {
       setDiscussionLoading(true);
       setDiscussionError("");
@@ -4676,17 +4426,14 @@ export default function NewRfq() {
         }
       }
     };
-
     loadDiscussion();
     return () => {
       alive = false;
     };
   }, [activeDiscussionPhase, discussionModalOpen, rfqId, rfqIdParam]);
-
   useEffect(() => {
     let alive = true;
     const currentRfqId = rfqId || rfqIdParam;
-
     if (!currentRfqId || !isCostingStage) {
       setCostingDiscussionMessages([]);
       setCostingDiscussionLoading(false);
@@ -4695,7 +4442,6 @@ export default function NewRfq() {
         alive = false;
       };
     }
-
     const loadCostingDiscussion = async () => {
       setCostingDiscussionLoading(true);
       setCostingDiscussionError("");
@@ -4715,13 +4461,11 @@ export default function NewRfq() {
         }
       }
     };
-
     loadCostingDiscussion();
     return () => {
       alive = false;
     };
   }, [isCostingStage, rfqId, rfqIdParam]);
-
   useEffect(() => {
     return () => {
       localFilesRef.current.forEach((file) => {
@@ -4731,7 +4475,6 @@ export default function NewRfq() {
       });
     };
   }, []);
-
   useEffect(() => {
     if (!filePreview) return;
     const handleKeyDown = (event) => {
@@ -4744,7 +4487,6 @@ export default function NewRfq() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [filePreview]);
-
   useEffect(() => {
     return () => {
       if (filePreview?.previewUrl && filePreview.previewUrl.startsWith("blob:")) {
@@ -4752,7 +4494,6 @@ export default function NewRfq() {
       }
     };
   }, [filePreview]);
-
   useEffect(() => {
     return () => {
       if (templatePreviewUrl) {
@@ -4760,7 +4501,6 @@ export default function NewRfq() {
       }
     };
   }, [templatePreviewUrl]);
-
   useEffect(() => {
     setTemplatePreviewFilename("");
     setTemplatePreviewModalOpen(false);
@@ -4782,7 +4522,6 @@ export default function NewRfq() {
     setOfferTemplatePreviewPending(false);
     setOfferTemplateDownloadPending(false);
   }, [rfqId]);
-
   useEffect(() => {
     if (!rfqId || !isOfferPreparationView) return;
     loadOfferTemplatePreview();
@@ -4806,7 +4545,6 @@ export default function NewRfq() {
     isOfferPreparationView,
     rfqId
   ]);
-
   const handleChange = (event) => {
     if (activeRfqTab === "potential" && potentialFieldReadOnly) {
       return;
@@ -4819,7 +4557,6 @@ export default function NewRfq() {
     }
     setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
   };
-
   const handleProductChange = (index, fieldName, value) => {
     if (fieldName !== "drawing" && isFormalDocumentTab && rfqFormFieldReadOnly) {
       return;
@@ -4848,7 +4585,6 @@ export default function NewRfq() {
       };
     });
   };
-
   const handleAddProduct = () => {
     if (isFormalDocumentTab && rfqFormFieldReadOnly) {
       return;
@@ -4879,7 +4615,6 @@ export default function NewRfq() {
       };
     });
   };
-
   const handleRemoveProduct = (index) => {
     if (isFormalDocumentTab && rfqFormFieldReadOnly) {
       return;
@@ -4904,9 +4639,11 @@ export default function NewRfq() {
       };
     });
   };
-
   const handleVolumeChange = (index, fieldName, value) => {
     if (isFormalDocumentTab && rfqFormFieldReadOnly) {
+      return;
+    }
+    if (value !== '' && !Number.isNaN(Number(value)) && Number(value) < 0) {
       return;
     }
     setForm((prev) => {
@@ -4932,14 +4669,16 @@ export default function NewRfq() {
             : null; // When priceSource is empty/deselected, always null — no fallback to old value
         const sop = extractSopYear(product.sop);
         const volumeMap = vol.volumes || {};
-        let derivedQty;
-        {
-          const total = Object.values(volumeMap).reduce((sum, v) => sum + Number(v || 0), 0);
-          if (total > 0) derivedQty = total;
-        }
+        // If the user has entered at least one year row, derive quantity from the sum —
+        // using "" (not undefined) when the total is 0 so clearing a year also clears
+        // the mirrored product.quantity (and thus totalTargetTo).
+        const hasYearEntries = Object.keys(volumeMap).length > 0;
+        const volumeTotal = Object.values(volumeMap).reduce((sum, v) => sum + Number(v || 0), 0);
+        const derivedQty = hasYearEntries ? (volumeTotal > 0 ? volumeTotal : "") : undefined;
         const nextProduct = {
           ...product,
-          targetPrice: vol.targetPrice !== undefined && vol.targetPrice !== ""
+          // Propagate empty string so clearing vol.targetPrice also clears product.targetPrice
+          targetPrice: vol.targetPrice !== undefined && vol.targetPrice !== null
             ? vol.targetPrice
             : product.targetPrice,
           targetPriceIsEstimated: isEstimated,
@@ -4959,7 +4698,6 @@ export default function NewRfq() {
       };
     });
   };
-
   const handleAddQtyYear = (volumeIndex) => {
     if (isFormalDocumentTab && rfqFormFieldReadOnly) return;
     setForm((prev) => {
@@ -4988,7 +4726,6 @@ export default function NewRfq() {
       return { ...prev, volumes: nextVolumes };
     });
   };
-
   const handleFilesChange = (event) => {
     if (!allowFileUpload) {
       if (rfqFileInputRef.current) rfqFileInputRef.current.value = "";
@@ -5001,7 +4738,6 @@ export default function NewRfq() {
     setFileUpdateType("simple");
     setFileUploadModalOpen(true);
   };
-
   const handleConfirmFileUpload = async () => {
     if (!pendingUploadFiles.length) return;
     let currentRfqId = rfqId;
@@ -5028,7 +4764,6 @@ export default function NewRfq() {
     setLocalFiles((prev) => [...prev, ...newLocalFiles]);
     setFileUploadModalOpen(false);
     const chosenUpdateType = fileUpdateType;
-
     // In Update mode: just queue the uploads — no API call until Save Changes / Submit
     if (isRfqUpdateModeActive) {
       setPendingUpdateFiles((prev) => [
@@ -5042,7 +4777,6 @@ export default function NewRfq() {
       setPendingUploadFiles([]);
       return;
     }
-
     setFileUploadPending(true);
     setSaving(true);
     try {
@@ -5069,7 +4803,6 @@ export default function NewRfq() {
       setPendingUploadFiles([]);
     }
   };
-
   const handleProductDrawingUpload = async (productIndex, files) => {
     if (!files.length) return;
     const localEntries = files.map((file) => ({
@@ -5083,7 +4816,6 @@ export default function NewRfq() {
       ...prev,
       [productIndex]: [...(prev[productIndex] || []), ...localEntries]
     }));
-
     // In Update mode: queue drawings for upload on Save Changes / Submit — no backend call now
     if (isRfqUpdateModeActive) {
       setPendingUpdateFiles((prev) => [
@@ -5096,7 +4828,6 @@ export default function NewRfq() {
       ]);
       return;
     }
-
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
@@ -5122,7 +4853,6 @@ export default function NewRfq() {
       setSaving(false);
     }
   };
-
   const handlePreviewFile = (file) => {
     if (!file?.url) return;
     if (file.source === "local") {
@@ -5134,11 +4864,9 @@ export default function NewRfq() {
       setFilePreview({ ...file, url: resolvedUrl });
     }
   };
-
   const handleDownloadFile = async (file) => {
     if (!file) return;
     const fileName = file.name || "downloaded-file";
-
     // Blob URL already cached from a previous preview — download directly without re-fetching.
     const cached = file.previewUrl;
     if (cached && cached.startsWith("blob:")) {
@@ -5150,30 +4878,28 @@ export default function NewRfq() {
       document.body.removeChild(link);
       return;
     }
-
     const rawUrl = cached || file.url;
     if (!rawUrl) {
       setRfqError("Download link not available for this file.");
       return;
     }
-
     try {
       let response;
       if (/^https?:\/\//i.test(rawUrl)) {
-        // Azure SAS URLs are blocked by CORS when fetched directly from the browser.
-        // Route through our backend proxy which fetches the blob server-side.
+        // Azure SAS URLs are CORS-blocked — route all downloads through the backend.
+        // prependApiBase: true ensures the call reaches the API server even when the
+        // frontend is served on a different origin than the backend.
         const fileId = file.id ? String(file.id) : "";
         const currentRfqId = rfqId || "";
         if (fileId && currentRfqId) {
           response = await authorizedFetch(
-            `/api/rfq/${encodeURIComponent(currentRfqId)}/costing-file/${encodeURIComponent(fileId)}/download`
+            `/api/rfq/${encodeURIComponent(currentRfqId)}/costing-file/${encodeURIComponent(fileId)}/download`,
+            { prependApiBase: true }
           );
         } else {
-          // Fallback: try plain fetch (works if CORS is configured on the storage bucket).
           response = await fetch(rawUrl);
         }
       } else {
-        // Backend API path — must include the Bearer auth token.
         const resolvedUrl = resolveFileUrl(rawUrl);
         response = await authorizedFetch(resolvedUrl, { prependApiBase: false });
       }
@@ -5191,7 +4917,6 @@ export default function NewRfq() {
       setRfqError("Unable to download this file. Please try again.");
     }
   };
-
   const handleRemoveLocalFile = (fileId) => {
     setLocalFiles((prev) => {
       const target = prev.find((item) => item.id === fileId);
@@ -5205,7 +4930,6 @@ export default function NewRfq() {
       setPendingUpdateFiles((prev) => prev.filter((p) => p.localId !== fileId));
     }
   };
-
   const handleDeleteFile = async (file) => {
     if (!file) return;
     if (!allowFileDeletion) return;
@@ -5230,14 +4954,12 @@ export default function NewRfq() {
       setFileActionId("");
     }
   };
-
   const handleConfirmDelete = async () => {
     if (!fileDeleteTarget) return;
     const target = fileDeleteTarget;
     setFileDeleteTarget(null);
     await handleDeleteFile(target);
   };
-
   const renderFilePreview = (file) => {
     const previewUrl = file?.previewUrl || file?.url || "";
     if (!previewUrl) {
@@ -5279,7 +5001,6 @@ export default function NewRfq() {
       </div>
     );
   };
-
   const handleStageChange = (stageKey) => {
     if (!pipelineStageKeys.has(stageKey)) {
       return;
@@ -5294,7 +5015,6 @@ export default function NewRfq() {
         : stage?.subPhases?.[0] || ""
     );
   };
-
   const handleConfirmSelfValidationPrompt = () => {
     const targetRfqId = rfqId || form.id;
     if (targetRfqId && selfValidationPromptSignature) {
@@ -5311,7 +5031,6 @@ export default function NewRfq() {
     setRfqValidationReached(true);
     setRfqFormEditEnabled(false);
   };
-
   const handleSubPhaseChange = (stageKey, subPhase) => {
     if (!pipelineStageKeys.has(stageKey)) {
       return;
@@ -5349,7 +5068,6 @@ export default function NewRfq() {
       }
     }
   };
-
   const handleResizeStart = (event) => {
     if (chatCollapsed) return;
     resizeState.current = { startX: event.clientX, startWidth: chatWidth };
@@ -5358,7 +5076,6 @@ export default function NewRfq() {
     window.addEventListener("pointermove", handleResizeMove);
     window.addEventListener("pointerup", handleResizeEnd);
   };
-
   const handleResizeMove = (event) => {
     const delta = resizeState.current.startX - event.clientX;
     const nextWidth = Math.min(
@@ -5367,19 +5084,16 @@ export default function NewRfq() {
     );
     setChatWidth(nextWidth);
   };
-
   const handleResizeEnd = () => {
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
     window.removeEventListener("pointermove", handleResizeMove);
     window.removeEventListener("pointerup", handleResizeEnd);
   };
-
   const handleRfqChatEdit = async (visibleMessageIndex, message) => {
     if (!canUseRfqActions) return false;
     const trimmedMessage = String(message || "").trim();
     if (!trimmedMessage) return false;
-
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
@@ -5387,7 +5101,6 @@ export default function NewRfq() {
       setRfqError("Unable to update this chat message right now.");
       return false;
     }
-
     const previousMessages = rfqChatMessages;
     const nextMessages = rfqChatMessages.slice(0, visibleMessageIndex);
     setRfqError("");
@@ -5395,7 +5108,6 @@ export default function NewRfq() {
       ...nextMessages,
       { role: "user", content: trimmedMessage }
     ]);
-
     let finalAssistantResponse = "";
     try {
       const reply = await editRfqChatMessage(currentRfqId, {
@@ -5408,7 +5120,6 @@ export default function NewRfq() {
       setRfqError(error?.message || "Unable to update this chat message.");
       return false;
     }
-
     const synced = await syncRfq(currentRfqId, {
       revealUpdatedRfqFields: true
     });
@@ -5420,12 +5131,10 @@ export default function NewRfq() {
     }
     return true;
   };
-
   const handlePotentialChatEdit = async (visibleMessageIndex, message) => {
     if (!canUseRfqActions) return false;
     const trimmedMessage = String(message || "").trim();
     if (!trimmedMessage) return false;
-
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
@@ -5433,7 +5142,6 @@ export default function NewRfq() {
       setRfqError("Unable to update this potential chat message right now.");
       return false;
     }
-
     const previousMessages = potentialChatMessages;
     const nextMessages = potentialChatMessages.slice(0, visibleMessageIndex);
     setRfqError("");
@@ -5441,7 +5149,6 @@ export default function NewRfq() {
       ...nextMessages,
       { role: "user", content: trimmedMessage }
     ]);
-
     let finalAssistantResponse = "";
     try {
       const reply = await editPotentialChatMessage(currentRfqId, {
@@ -5460,7 +5167,6 @@ export default function NewRfq() {
       setRfqError(error?.message || "Unable to update this potential chat message.");
       return false;
     }
-
     const synced = await syncRfq(currentRfqId, {
       revealUpdatedRfqFields: true
     });
@@ -5472,12 +5178,10 @@ export default function NewRfq() {
     }
     return true;
   };
-
   const handleOfferChatEdit = async (visibleMessageIndex, message) => {
     if (!canUseOfferActions) return false;
     const trimmedMessage = String(message || "").trim();
     if (!trimmedMessage) return false;
-
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
@@ -5485,7 +5189,6 @@ export default function NewRfq() {
       setRfqError("Unable to update this offer chat message right now.");
       return false;
     }
-
     const previousMessages = offerChatMessages;
     const nextMessages = offerChatMessages.slice(0, visibleMessageIndex);
     setRfqError("");
@@ -5493,7 +5196,6 @@ export default function NewRfq() {
       ...nextMessages,
       { role: "user", content: trimmedMessage }
     ]);
-
     let finalAssistantResponse = "";
     try {
       const reply = await editOfferChatMessage(currentRfqId, {
@@ -5509,7 +5211,6 @@ export default function NewRfq() {
       setRfqError(error?.message || "Unable to update this offer chat message.");
       return false;
     }
-
     const synced = await syncRfq(currentRfqId);
     await loadOfferTemplatePreview();
     if (!synced && finalAssistantResponse) {
@@ -5520,7 +5221,6 @@ export default function NewRfq() {
     }
     return true;
   };
-
   const handleUnlockToUpdate = async () => {
     setRfqPostValidationUnlocked(true);
     setRfqChatMessages((prev) => [
@@ -5542,7 +5242,6 @@ export default function NewRfq() {
       // so the user can still edit this session. On next refresh they'll see the lock again.
     }
   };
-
   const handleChatSend = async (message, attachments = []) => {
     if (isOfferStage ? !canUseOfferActions : !canUseRfqActions) return;
     const activeChatMode =
@@ -5566,12 +5265,10 @@ export default function NewRfq() {
       : "";
     const displayMessage = trimmedMessage || fallbackMessage;
     const payloadMessage = trimmedMessage || fallbackMessage;
-
     setActiveChatMessages((prev) => [
       ...prev,
       { role: "user", content: displayMessage, attachments }
     ]);
-
     let currentRfqId = rfqId;
     try {
       currentRfqId = await ensureRfqExists();
@@ -5585,7 +5282,6 @@ export default function NewRfq() {
       ]);
       return;
     }
-
     const fileAttachments = (attachments || []).filter((attachment) => attachment?.file);
     if (fileAttachments.length) {
       const newLocalFiles = fileAttachments.map((attachment) => ({
@@ -5623,12 +5319,10 @@ export default function NewRfq() {
         setSaving(false);
       }
     }
-
     if (!payloadMessage) {
       await syncRfq(currentRfqId);
       return;
     }
-
     let shouldAutoRedirect = false;
     let finalAssistantResponse = "";
     let replyRfq = null;
@@ -5682,19 +5376,16 @@ export default function NewRfq() {
       }
     }
   };
-
   const handleProceedToFormalRfq = async (documentType = "RFQ") => {
     if (!canUseRfqActions) return;
     let currentRfqId = rfqId;
     setRfqError("");
-
     try {
       currentRfqId = await ensureRfqExists();
     } catch {
       setRfqError("Unable to create the draft before proceeding.");
       return;
     }
-
     setProceedingToFormalRfq(true);
     try {
       const updatedRfq = await proceedToFormalRfq(currentRfqId, documentType);
@@ -5710,7 +5401,6 @@ export default function NewRfq() {
       setProceedingToFormalRfq(false);
     }
   };
-
   const handleProductSelect = (index, selectedName) => {
     const selected = productOptions.find(
       (p) => (p.product_name || p.product_line) === selectedName
@@ -5740,7 +5430,6 @@ export default function NewRfq() {
       };
     });
   };
-
   const handleSaveForm = async () => {
     if (!rfqId || !canUseRfqActions) return;
     setSaving(true);
@@ -5755,7 +5444,6 @@ export default function NewRfq() {
       setSaving(false);
     }
   };
-
   const handleUpdateRFQ = () => {
     if (!rfqId || !canUseRfqActions) return;
     if (currentUserRole !== "OWNER" && !isRfqCreator) {
@@ -5768,7 +5456,6 @@ export default function NewRfq() {
     setIsRfqUpdateModeActive(true);
     showToast("Mode update on, you can make your changes and submit it.", { type: "info", title: "Update mode" });
   };
-
   const handleSaveRfqUpdate = async () => {
     if (!rfqId || !canUseRfqActions) return;
     if (!allStepsComplete) {
@@ -5811,7 +5498,6 @@ export default function NewRfq() {
       setSaving(false);
     }
   };
-
   const handleCancelRfqUpdate = () => {
     // Remove locally-queued uploads from localFiles and revoke their object URLs
     const addedLocalIds = new Set(pendingUpdateFiles.map((p) => p.localId).filter(Boolean));
@@ -5839,7 +5525,6 @@ export default function NewRfq() {
     _preUpdateSnapshotRef.current = null;
     setIsRfqUpdateModeActive(false);
   };
-
   const handleChangeIndexRFQ = async () => {
     if (!rfqId || !canUseRfqActions) return;
     const currentRef = rfqSnapshot?.rfq_data?.systematic_rfq_id || "";
@@ -5867,7 +5552,6 @@ export default function NewRfq() {
       setSaving(false);
     }
   };
-
   const _autoSaveTimerRef = useRef(null);
   const _autoSaveInitRef = useRef(false);
   const _autoCreateRef = useRef(false);
@@ -5926,41 +5610,53 @@ export default function NewRfq() {
     }, 1500);
     return () => clearTimeout(_autoSaveTimerRef.current);
   }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleAssignValidator = async () => {
     if (!rfqId || !canUseRfqActions) return;
     setSaving(true);
     try {
-      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      const updatedRfq = await updateRfqData(rfqId, buildRfqDataPayloadFromForm(_latestFormRef.current));
+      // Update snapshot only — do NOT call syncRfq/applyRfq here, as that resets the entire
+      // form from the backend and would overwrite any in-progress user edits (e.g. a recently
+      // cleared qty/year that hasn't been auto-saved yet).
+      if (updatedRfq) setRfqSnapshot(updatedRfq);
       const result = await assignValidator(rfqId);
       setForm((prev) => ({ ...prev, validatorEmail: result.zone_manager_email || prev.validatorEmail }));
-      await syncRfq(rfqId);
     } catch {
       // silent — validator assignment is best-effort
     } finally {
       setSaving(false);
     }
   };
-
-  const _autoAssignedRfqIdsRef = useRef(new Set());
+  const _lastValidatorAssignmentRef = useRef(null);
   useEffect(() => {
     if (!rfqId || !canUseRfqActions) return;
-    if (form.validatorEmail) return;
-    if (_autoAssignedRfqIdsRef.current.has(rfqId)) return;
-    const hasProductLine = (form.products || []).some((p) => String(p.productLine || "").trim() !== "");
-    const hasDeliveryZone = (form.volumes || []).some((v) => String(v.deliveryZone || "").trim() !== "");
-    if (!hasProductLine || !hasDeliveryZone) return;
-    _autoAssignedRfqIdsRef.current.add(rfqId);
+    const firstThreeComplete = ["step-client", "step-request", "step-schedule"].every(
+      (id) => stepStates[id]?.isComplete
+    );
+    if (!firstThreeComplete) return;
+    const deliveryZones = (form.volumes || [])
+      .map((v) => String(v.deliveryZone || "").trim())
+      .filter(Boolean)
+      .sort()
+      .join(",");
+    const toTotalStr = String(form.toTotal || "").trim();
+    // When toTotal is cleared, reset the assignment signature so the next valid value
+    // triggers a fresh re-assignment, but don't call handleAssignValidator with empty data.
+    if (!toTotalStr) {
+      _lastValidatorAssignmentRef.current = null;
+      return;
+    }
+    const signature = `${rfqId}|${deliveryZones}|${toTotalStr}`;
+    if (_lastValidatorAssignmentRef.current === signature) return;
+    _lastValidatorAssignmentRef.current = signature;
     handleAssignValidator();
-  }, [rfqId, canUseRfqActions, form.validatorEmail, form.products, form.volumes]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  }, [rfqId, canUseRfqActions, stepStates, form.toTotal, form.volumes]); // eslint-disable-line react-hooks/exhaustive-deps
   const handleSubmitToValidator = async () => {
     if (!rfqId || !canUseRfqActions) return;
     if (isRfqUpdateModeActive && currentUserRole !== "OWNER" && !isRfqCreator) {
       showToast("You are not allowed to update this RFQ.", { type: "error", title: "Permission denied" });
       return;
     }
-
     const assemblyMissingComponent = (form.products || []).some((p) => {
       const pl = String(p.productLine || "").trim().toLowerCase();
       return (pl === "ass" || pl === "assembly") && !String(p.components || "").trim();
@@ -5969,7 +5665,6 @@ export default function NewRfq() {
       setRfqError("Component is required for Assembly product lines.");
       return;
     }
-
     setSaving(true);
     setIsSubmittingToValidator(true);
     try {
@@ -6020,7 +5715,6 @@ export default function NewRfq() {
       setIsSubmittingToValidator(false);
     }
   };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!rfqId || !canUseRfqActions) return;
@@ -6032,13 +5726,11 @@ export default function NewRfq() {
       setSaving(false);
     }
   };
-
   const handleCloseRevisionRequestModal = () => {
     if (revisionActionId === "request") return;
     setRevisionRequestModalOpen(false);
     setRevisionComment("");
   };
-
   const handleSubmitRevisionRequest = async () => {
     if (!rfqId || revisionActionId) return;
     const comment = String(revisionComment || "").trim();
@@ -6046,7 +5738,6 @@ export default function NewRfq() {
       setRfqError("Please provide revision instructions.");
       return;
     }
-
     setRevisionActionId("request");
     setRfqError("");
     try {
@@ -6065,7 +5756,6 @@ export default function NewRfq() {
       setRevisionActionId("");
     }
   };
-
   const handleSubmitRevisionUpdates = async () => {
     if (!rfqId || revisionActionId || !canUseRfqActions) return;
     setRevisionActionId("submit");
@@ -6089,7 +5779,6 @@ export default function NewRfq() {
       setOptimisticRevisionMode(false);
     }
   };
-
   const handleValidationUpdate = async () => {
     if (!rfqId) return;
     setRfqError("");
@@ -6100,7 +5789,6 @@ export default function NewRfq() {
       });
       return;
     }
-
     // When the validator and the creator are different people, the validator
     // specifies which fields the creator must update via the revision modal.
     if (!validatorIsCreator) {
@@ -6108,7 +5796,6 @@ export default function NewRfq() {
       setRevisionRequestModalOpen(true);
       return;
     }
-
     setOptimisticRevisionMode(true);
     setRfqFormEditEnabled(true);
     setPersistValidationView(false);
@@ -6118,7 +5805,6 @@ export default function NewRfq() {
     setActiveStep((prev) => (stepIds.includes(prev) ? prev : "step-client"));
     setRevisionNotes("");
     setRevisionActionId("self");
-
     try {
       const updatedRfq = await requestRevision(rfqId, {
         comment: SELF_REVISION_REQUEST_COMMENT
@@ -6138,7 +5824,6 @@ export default function NewRfq() {
       setOptimisticRevisionMode(false);
     }
   };
-
   const handleApproveValidation = async () => {
     if (!rfqId) return;
     setValidationActionId("approve");
@@ -6155,7 +5840,6 @@ export default function NewRfq() {
       setValidationActionId("");
     }
   };
-
   const loadCostingTemplatePreview = async () => {
     if (!rfqId || templatePreviewPending) return null;
     if (templatePreviewUrl) {
@@ -6164,7 +5848,6 @@ export default function NewRfq() {
         filename: templatePreviewFilename || templateDefaultFilename
       };
     }
-
     setTemplatePreviewPending(true);
     setRfqError("");
     try {
@@ -6186,7 +5869,6 @@ export default function NewRfq() {
       setTemplatePreviewPending(false);
     }
   };
-
   const handleOpenCostingPdfPreview = async () => {
     if (!canDownloadCostingTemplate || templatePreviewPending) return;
     const template = templatePreviewUrl
@@ -6200,7 +5882,6 @@ export default function NewRfq() {
     }
     setTemplatePreviewModalOpen(true);
   };
-
   const handleDownloadCostingPdfTemplate = async () => {
     if (!rfqId || templateDownloadPending) return;
     setTemplateDownloadPending(true);
@@ -6224,7 +5905,6 @@ export default function NewRfq() {
       setTemplateDownloadPending(false);
     }
   };
-
   const loadOfferTemplatePreview = async () => {
     if (!rfqId || offerTemplatePreviewPending) return null;
     setOfferTemplatePreviewPending(true);
@@ -6265,7 +5945,6 @@ export default function NewRfq() {
       setOfferTemplatePreviewPending(false);
     }
   };
-
   const handleDownloadOfferPreparationTemplate = async () => {
     if (!rfqId || offerTemplateDownloadPending) return;
     setOfferTemplateDownloadPending(true);
@@ -6286,7 +5965,6 @@ export default function NewRfq() {
       setOfferTemplateDownloadPending(false);
     }
   };
-
   const handleApproveCostingReview = async () => {
     if (!rfqId || costingReviewActionId || !canReviewCostingfeasibility) return;
     setCostingReviewActionId("approve");
@@ -6307,21 +5985,18 @@ export default function NewRfq() {
       setCostingReviewActionId("");
     }
   };
-
   const handleRejectCostingReview = () => {
     if (costingReviewActionId || !canReviewCostingfeasibility) return;
     setValidationSuccess("");
     setRfqError("");
     setCostingRejectModalOpen(true);
   };
-
   const handleCloseCostingRejectModal = () => {
     if (costingReviewActionId === "reject") return;
     setCostingRejectModalOpen(false);
     setCostingRejectReason("");
     setRfqError("");
   };
-
   const handleConfirmCostingRejectReview = async () => {
     if (!rfqId || !canReviewCostingfeasibility) return;
     if (!String(costingRejectReason || "").trim()) {
@@ -6349,7 +6024,6 @@ export default function NewRfq() {
       setCostingReviewActionId("");
     }
   };
-
   const openCostingFileActionModal = (mode) => {
     if (!canManageCostingFeasibilityHandoff || costingSavePending || costingFileActionPending) {
       return;
@@ -6364,7 +6038,6 @@ export default function NewRfq() {
     setRemovedExistingFeasibilityFileIds([]);
     setCostingFileActionModalOpen(true);
   };
-
   const handleCloseCostingFileActionModal = () => {
     if (costingFileActionPending) return;
     setCostingFileActionModalOpen(false);
@@ -6374,13 +6047,11 @@ export default function NewRfq() {
     setExistingFeasibilityFilesInPopup([]);
     setRemovedExistingFeasibilityFileIds([]);
   };
-
   const handleCostingFileDraftChange = (event) => {
     const selected = Array.from(event.target.files || []);
     setCostingFileActionDraft((prev) => mergeFilesWithoutDuplicates(prev || [], selected));
     event.target.value = "";
   };
-
   const handleRemovePendingCostingFile = (fileToRemove) => {
     setCostingFileActionDraft((prev) =>
       (prev || []).filter(
@@ -6391,7 +6062,6 @@ export default function NewRfq() {
       )
     );
   };
-
   const handleSubmitCostingFileAction = async (event) => {
     event.preventDefault();
     if (!rfqId || costingFileActionPending || !canManageCostingFeasibilityHandoff) return;
@@ -6406,10 +6076,8 @@ export default function NewRfq() {
       setRfqError("Please choose the completed feasibility file before submitting.");
       return;
     }
-
     setCostingFileActionPending(true);
     setRfqError("");
-
     try {
       for (const entryId of removedExistingFeasibilityFileIds) {
         await deleteCostingFileEntry(rfqId, entryId);
@@ -6444,7 +6112,6 @@ export default function NewRfq() {
       setCostingFileActionPending(false);
     }
   };
-
   const openPricingBomModal = () => {
     if (!canManagePricingBom || pricingBomPending) {
       return;
@@ -6454,23 +6121,19 @@ export default function NewRfq() {
     setPricingBomDraft(null);
     setPricingBomModalOpen(true);
   };
-
   const handleClosePricingBomModal = () => {
     if (pricingBomPending) return;
     setPricingBomModalOpen(false);
     setPricingBomNote("");
     setPricingBomDraft(null);
   };
-
   const handlePricingBomDraftChange = (event) => {
     const nextFile = event.target.files?.[0] || null;
     setPricingBomDraft(nextFile);
   };
-
   const handleSubmitPricingBomUpload = async (event) => {
     event.preventDefault();
     if (!rfqId || pricingBomPending || !canManagePricingBom) return;
-
     const trimmedNote = String(pricingBomNote || "").trim();
     if (!trimmedNote) {
       setRfqError("Please provide a note for the costing BOM upload.");
@@ -6480,10 +6143,8 @@ export default function NewRfq() {
       setRfqError("Please choose the costing file with BOM data before submitting.");
       return;
     }
-
     setPricingBomPending(true);
     setRfqError("");
-
     try {
       const updatedRfq = await uploadPricingBomFile(rfqId, {
         note: trimmedNote,
@@ -6505,7 +6166,6 @@ export default function NewRfq() {
       setPricingBomPending(false);
     }
   };
-
   const openPricingFinalPriceModal = () => {
     if (!canManagePricingFinalPrice || pricingFinalPricePending) {
       return;
@@ -6519,20 +6179,17 @@ export default function NewRfq() {
     setRemovedExistingPricingFileIds([]);
     setPricingFinalPriceModalOpen(true);
   };
-
   const handleClosePricingFinalPriceModal = () => {
     if (pricingFinalPricePending) return;
     setPricingFinalPriceModalOpen(false);
     setExistingPricingFilesInPopup([]);
     setRemovedExistingPricingFileIds([]);
   };
-
   const handlePricingFinalPriceDraftChange = (event) => {
     const selected = Array.from(event.target.files || []);
     setPricingFinalPriceDraft((prev) => mergeFilesWithoutDuplicates(prev || [], selected));
     event.target.value = "";
   };
-
   const handleRemovePendingPricingFile = (fileToRemove) => {
     setPricingFinalPriceDraft((prev) =>
       (prev || []).filter(
@@ -6543,7 +6200,6 @@ export default function NewRfq() {
       )
     );
   };
-
   const handleRemoveExistingFeasibilityFileFromPopup = (fileToRemove) => {
     setExistingFeasibilityFilesInPopup((prev) =>
       (prev || []).filter((f) => f.id !== fileToRemove.id)
@@ -6552,7 +6208,6 @@ export default function NewRfq() {
       setRemovedExistingFeasibilityFileIds((prev) => [...prev, fileToRemove.id]);
     }
   };
-
   const handleRemoveExistingPricingFileFromPopup = (fileToRemove) => {
     setExistingPricingFilesInPopup((prev) =>
       (prev || []).filter((f) => f.id !== fileToRemove.id)
@@ -6561,21 +6216,17 @@ export default function NewRfq() {
       setRemovedExistingPricingFileIds((prev) => [...prev, fileToRemove.id]);
     }
   };
-
   const handleSubmitPricingFinalPriceUpload = async (event) => {
     event.preventDefault();
     if (!rfqId || pricingFinalPricePending || !canManagePricingFinalPrice) return;
-
     const trimmedNote = String(pricingFinalPriceNote || "").trim();
     const hasRemovals = removedExistingPricingFileIds.length > 0;
     if (pricingFinalPriceDraft.length === 0 && !hasRemovals) {
       setRfqError("Please choose the costing file with final price before submitting.");
       return;
     }
-
     setPricingFinalPricePending(true);
     setRfqError("");
-
     try {
       for (const entryId of removedExistingPricingFileIds) {
         await deleteCostingFileEntry(rfqId, entryId);
@@ -6610,7 +6261,6 @@ export default function NewRfq() {
       setPricingFinalPricePending(false);
     }
   };
-
   const handleSavePricingFinalPrice = () => {
     if (!canSavePricingFinalPrice) {
       if (!hasPricingFinalPriceUpload) {
@@ -6627,14 +6277,11 @@ export default function NewRfq() {
       title: "Validation opened"
     });
   };
-
   const handleApprovePricingFileValidation = async () => {
     if (!rfqId || pricingFileValidationActionId || !canValidatePricingFile) return;
-
     setPricingFileValidationActionId("approve");
     setValidationSuccess("");
     setRfqError("");
-
     try {
       await submitCostingValidation(rfqId, { is_approved: true });
       await hydrateRfqAfterMutation(rfqId);
@@ -6653,21 +6300,18 @@ export default function NewRfq() {
       setPricingFileValidationActionId("");
     }
   };
-
   const handleRejectPricingFileValidation = () => {
     if (pricingFileValidationActionId || !canValidatePricingFile) return;
     setValidationSuccess("");
     setRfqError("");
     setPricingFileRejectModalOpen(true);
   };
-
   const handleClosePricingFileRejectModal = () => {
     if (pricingFileValidationActionId === "reject") return;
     setPricingFileRejectModalOpen(false);
     setPricingFileRejectReason("");
     setRfqError("");
   };
-
   const handleConfirmPricingFileReject = async () => {
     if (!canValidatePricingFile) return;
     const rejectionReason = String(pricingFileRejectReason || "").trim();
@@ -6678,7 +6322,6 @@ export default function NewRfq() {
     setPricingFileValidationActionId("reject");
     setValidationSuccess("");
     setRfqError("");
-
     try {
       await submitCostingValidation(rfqId, {
         is_approved: false,
@@ -6699,7 +6342,6 @@ export default function NewRfq() {
       setPricingFileValidationActionId("");
     }
   };
-
   const handleSaveCostingfeasibility = async () => {
     if (!rfqId || costingSavePending || !canSaveCostingfeasibility) return;
     if (!hasRecordedCostingReviewDecision || isCostingReviewRejected) {
@@ -6712,18 +6354,15 @@ export default function NewRfq() {
       );
       return;
     }
-
     setCostingSavePending(true);
     setCostingfeasibilitySaved(true);
     setValidationSuccess("");
     setRfqError("");
-
     try {
       await advanceRfqStatus(rfqId, {
         target_phase: "COSTING",
         target_sub_status: "PRICING"
       });
-
       setPersistCostingReviewView(false);
       await hydrateRfqAfterMutation(rfqId);
       setSelectedStage("In costing");
@@ -6736,12 +6375,10 @@ export default function NewRfq() {
       setCostingSavePending(false);
     }
   };
-
   const handleCostingDiscussionSend = async (event) => {
     event.preventDefault();
     const content = String(costingDiscussionDraft || "").trim();
     const recipientEmail = String(costingDiscussionRecipient || "").trim();
-
     if (
       !content ||
       !recipientEmail ||
@@ -6750,11 +6387,9 @@ export default function NewRfq() {
     ) {
       return;
     }
-
     let currentRfqId = rfqId;
     setCostingDiscussionSending(true);
     setCostingDiscussionError("");
-
     try {
       currentRfqId = await ensureRfqExists();
       const createdMessage = await postCostingMessage(currentRfqId, {
@@ -6778,21 +6413,17 @@ export default function NewRfq() {
       setCostingDiscussionSending(false);
     }
   };
-
   const handleRejectValidation = async () => {
     setValidationSuccess("");
     setRfqError("");
     setRejectModalOpen(true);
   };
-
-
   const handleCloseRejectModal = () => {
     if (validationActionId === "reject") return;
     setRejectModalOpen(false);
     setRejectReason("");
     setRfqError("");
   };
-
   const handleConfirmRejectValidation = async () => {
     if (!rfqId) return;
     if (!String(rejectReason || "").trim()) {
@@ -6820,19 +6451,16 @@ export default function NewRfq() {
       setValidationActionId("");
     }
   };
-
   const handleDiscussionSend = async (event) => {
     event.preventDefault();
     const content = String(discussionDraft || "").trim();
     if (!content || discussionSending || !canParticipateInDiscussion) {
       return;
     }
-
     let currentRfqId = rfqId;
     const phase = activeDiscussionPhase;
     setDiscussionSending(true);
     setDiscussionError("");
-
     try {
       currentRfqId = await ensureRfqExists();
       const createdMessage = await postRfqDiscussion(currentRfqId, {
@@ -6849,7 +6477,6 @@ export default function NewRfq() {
       setDiscussionSending(false);
     }
   };
-
   const productRows = Array.isArray(form.products) && form.products.length
     ? form.products
     : [createEmptyProductItem()];
@@ -6871,6 +6498,14 @@ export default function NewRfq() {
     [form.deliveryZone]
   );
   const totalTargetTo = calculateTotalTargetTo(productRows);
+  useEffect(() => {
+    const computed = totalTargetTo > 0 ? totalTargetTo / 1000 : "";
+    setForm((prev) => {
+      const prevVal = prev.toTotal;
+      if ((prevVal || "") === (computed || "")) return prev;
+      return { ...prev, toTotal: computed };
+    });
+  }, [totalTargetTo]); // eslint-disable-line react-hooks/exhaustive-deps
   const sharedProductCurrency = useMemo(
     () =>
       sanitizeProductCurrencyCode(
@@ -6939,29 +6574,23 @@ export default function NewRfq() {
   const sharedTurnoverUnit = sharedProductCurrency
     ? `k${sharedProductCurrency}`
     : "k";
-
   /* ACTION PLAN - DISABLED
   const ACTION_STATUSES = ["Open", "In Progress", "Done", "Cancelled"];
-
   const handleActionDraftChange = (field, value) => {
     setActionDraft((prev) => ({ ...prev, [field]: value }));
   };
-
   const handleAddAction = () => {
     if (!actionDraft.action.trim()) return;
     setActionItems((prev) => [...prev, { ...actionDraft, id: Date.now() }]);
     setActionDraft({ action: "", description: "", responsible: "", dueDate: "", status: "Open" });
     setActionFormOpen(false);
   };
-
   const handleDeleteAction = (id) => {
     setActionItems((prev) => prev.filter((a) => a.id !== id));
   };
-
   const handleStatusChange = (id, status) => {
     setActionItems((prev) => prev.map((a) => a.id === id ? { ...a, status } : a));
   };
-
   const STATUS_COLORS = {
     "Open":        "bg-violet-50 text-violet-700 border-violet-200",
     "In Progress": "bg-amber-50 text-amber-700 border-amber-200",
@@ -6975,11 +6604,9 @@ export default function NewRfq() {
     "Cancelled":   "bg-slate-400",
   };
   */
-
   return (
     <div className="min-h-screen overflow-y-auto bg-slate-100/70 flex flex-col lg:h-screen lg:overflow-hidden">
       <TopBar />
-
       {/* ── Action Plan Modal - DISABLED ─────────────────────────── */}
       {false && (
         <div
@@ -6993,7 +6620,6 @@ export default function NewRfq() {
             {/* Decorative blobs */}
             <div className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-tide/10 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-violet-400/10 blur-3xl" />
-
             {/* Header */}
             <div className="relative flex items-center justify-between border-b border-slate-100/80 bg-white/60 px-8 py-5 backdrop-blur-sm">
               <div className="flex items-center gap-4">
@@ -7026,7 +6652,6 @@ export default function NewRfq() {
                 </button>
               </div>
             </div>
-
             {/* Table */}
             <div className="relative flex-1 overflow-y-auto px-8 py-6">
               <table className="w-full text-sm border-separate border-spacing-y-1">
@@ -7093,7 +6718,6 @@ export default function NewRfq() {
                       </td>
                     </tr>
                   ))}
-
                   {/* Inline new-row form */}
                   {actionFormOpen && (
                     <tr>
@@ -7166,7 +6790,6 @@ export default function NewRfq() {
           </div>
         </div>
       )}
-
       <div className="flex flex-1 min-h-0 flex-col pt-4 pb-0 sm:pt-6 lg:pt-1 overflow-auto lg:overflow-hidden">
         <div className="w-full flex flex-1 min-h-0 flex-col overflow-auto lg:overflow-hidden">
           <div className="app-shell w-full flex flex-1 min-h-0 flex-col rounded-none border border-slate-200/70 shadow-card overflow-auto lg:overflow-hidden">
@@ -7208,7 +6831,6 @@ export default function NewRfq() {
                               : isActive
                                 ? "pipeline-step-active"
                                 : "pipeline-step-idle";
-
                           return (
                             <div
                               key={stage.key}
@@ -7320,7 +6942,6 @@ export default function NewRfq() {
                                             ? "bg-white/10"
                                             : "";
                                         const subPhaseHoverClass = isSubDisabled ? "" : "hover:bg-white/10";
-
                                         return (
                                           <button
                                             key={subPhase}
@@ -7376,7 +6997,6 @@ export default function NewRfq() {
                     )}
                   </button>
                   */}
-
                   {isRfqStage && (isRfqFormView || isRfqValidationView) ? (
                     <button
                       type="button"
@@ -7422,7 +7042,6 @@ export default function NewRfq() {
                   ) : null}
                 </div>
               </div>
-
               {isRfqStage && isRfqFormView ? (
                 <div className="px-4 sm:px-6">
                   <div className="flex items-center gap-6 border-b border-slate-200/70 text-sm font-semibold text-slate-500">
@@ -7508,7 +7127,6 @@ export default function NewRfq() {
                   </div>
                 </div>
               ) : null}
-
               {false && isRfqStage && activeRfqTab === "new" ? (
                 <section className="px-4 pb-4 sm:px-6">
                   <div className="card overflow-hidden p-0">
@@ -7529,7 +7147,6 @@ export default function NewRfq() {
                           </p>
                         </div>
                       </div>
-
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -7559,7 +7176,6 @@ export default function NewRfq() {
                         />
                       </div>
                     </div>
-
                     <div className="px-5 py-4">
                       {compactFiles.length ? (
                         <div className="divide-y divide-slate-200/70">
@@ -7594,7 +7210,6 @@ export default function NewRfq() {
                                     </p>
                                   </div>
                                 </div>
-
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
@@ -7628,7 +7243,6 @@ export default function NewRfq() {
                         </div>
                       )}
                     </div>
-
                     {sortedFiles.length ? (
                       <div className="border-t border-slate-200/70 px-5 py-3">
                         <button
@@ -7644,7 +7258,6 @@ export default function NewRfq() {
                   </div>
                 </section>
               ) : null}
-
               <div
                 className="grid w-full items-stretch gap-3 px-4 pb-0 sm:gap-4 sm:px-6 md:grid-cols-[0.22fr_1fr] lg:grid-cols-[var(--nav-col)_minmax(0,1fr)] lg:flex-1 lg:min-h-0 lg:px-0 overflow-auto lg:overflow-hidden"
                 style={{
@@ -7715,7 +7328,6 @@ export default function NewRfq() {
                               </div>
                             </div>
                           </div>
-
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
@@ -7727,7 +7339,6 @@ export default function NewRfq() {
                                 {sortedFiles.length} file{sortedFiles.length > 1 ? "s" : ""}
                               </span>
                             </div>
-
                             {sortedFiles.length ? (
                               <div className="mt-5 divide-y divide-slate-200/70 rounded-2xl border border-slate-200/70 bg-white/70 px-4">
                                 {sortedFiles.map((file) => {
@@ -7755,7 +7366,6 @@ export default function NewRfq() {
                                           </p>
                                         </div>
                                       </div>
-
                                       <div className="flex items-center gap-2">
                                         <button
                                           type="button"
@@ -7785,7 +7395,6 @@ export default function NewRfq() {
                           </div>
                         </>
                       ) : null}
-
                       {isCostingfeasibilityView ? (
                         <>
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
@@ -7796,7 +7405,6 @@ export default function NewRfq() {
                                 </h2>
                               </div>
                             </div>
-
                             {hasRecordedCostingReviewDecision ? (
                               <section
                                 className={`mt-5 overflow-hidden rounded-[28px] border p-5 shadow-soft ${isCostingReviewRejected
@@ -7828,7 +7436,6 @@ export default function NewRfq() {
                                     {isCostingReviewRejected ? "Rejected" : "Approved"}
                                   </span>
                                 </div>
-
                                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                                   {isCostingReviewRejected ? (
                                     <>
@@ -7912,7 +7519,6 @@ export default function NewRfq() {
                               </div>
                             )}
                           </div>
-
                           {hasRecordedCostingReviewDecision && !isCostingReviewRejected ? (
                             <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 shadow-soft">
                               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -7925,7 +7531,6 @@ export default function NewRfq() {
                                   </p>
                                 </div>
                               </div>
-
                               <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
                                 <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
                                   Required Template
@@ -7943,7 +7548,6 @@ export default function NewRfq() {
                                   </a>
                                 </div>
                               </div>
-
                               <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="max-w-2xl">
                                   <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
@@ -7954,7 +7558,6 @@ export default function NewRfq() {
                                   </p>
                                 </div>
                               </div>
-
                               <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                                   <div className="max-w-2xl">
@@ -8009,7 +7612,6 @@ export default function NewRfq() {
                                   </p>
                                 )}
                               </div>
-
                               {!hasCompletedCostingFileAction ? (
                                 <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                   <div className="max-w-2xl">
@@ -8064,7 +7666,6 @@ export default function NewRfq() {
                                   </div>
                                 </div>
                               ) : null}
-
                               {hasCompletedCostingFileAction ? (
                                 <div className="mt-5 rounded-[24px] border border-emerald-200/80 bg-white/95 p-5 shadow-soft">
                                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -8104,10 +7705,8 @@ export default function NewRfq() {
                                         </p>
                                       )}
                                     </div>
-
                                     {null}
                                   </div>
-
                                   <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
                                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -8215,7 +7814,6 @@ export default function NewRfq() {
                                   </p>
                                 </div>
                               )}
-
                               {hasSavedCostingfeasibility ? (
                                 <div className="mt-5 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 shadow-sm">
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -8262,7 +7860,6 @@ export default function NewRfq() {
                           ) : null}
                         </>
                       ) : null}
-
                       {isCostingPricingView ? (
                         <div className="space-y-6">
                           <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
@@ -8656,7 +8253,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       ) : null}
-
                     </section>
                   ) : isOfferStage ? (
                     <OfferUnderConstruction />
@@ -8666,7 +8262,6 @@ export default function NewRfq() {
                     </div>
                   )
                 ) : null}
-
                 {isRfqFormView && activeRfqTab === "potential" ? (
                   <form
                     onSubmit={handleSubmit}
@@ -8684,7 +8279,6 @@ export default function NewRfq() {
                         </p>
                       </div>
                     </div>
-
                     <div className="relative grid gap-6">
                       <section
                         id="potential-section-overview"
@@ -8701,7 +8295,6 @@ export default function NewRfq() {
                             </p>
                           </div>
                         </div>
-
                         <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           <FormField label="Customer" name="potentialCustomer" value={form.potentialCustomer} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Customer location" name="potentialCustomerLocation" value={form.potentialCustomerLocation} onChange={handleChange} readOnly={potentialFieldReadOnly} />
@@ -8710,7 +8303,6 @@ export default function NewRfq() {
                           <FormField label="Planned product type" name="potentialProductType" value={form.potentialProductType} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
                         </div>
                       </section>
-
                       <section
                         id="potential-section-strategy"
                         className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
@@ -8726,7 +8318,6 @@ export default function NewRfq() {
                             </p>
                           </div>
                         </div>
-
                         <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           <div className="md:col-span-2">
                             <FormField label="Engagement reasons" name="potentialEngagementReason" value={form.potentialEngagementReason} onChange={handleChange} readOnly={potentialFieldReadOnly} autoExpand />
@@ -8744,7 +8335,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       </section>
-
                       <section
                         id="potential-section-business"
                         className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
@@ -8760,7 +8350,6 @@ export default function NewRfq() {
                             </p>
                           </div>
                         </div>
-
                         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                           <FormField label="Sales (kEUR)" name="potentialBusinessSalesKeur" type="number" value={form.potentialBusinessSalesKeur} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Margin (%)" name="potentialBusinessMarginPercent" type="number" value={form.potentialBusinessMarginPercent} onChange={handleChange} readOnly={potentialFieldReadOnly} />
@@ -8772,7 +8361,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       </section>
-
                       <section
                         id="potential-section-risks-do"
                         className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
@@ -8788,7 +8376,6 @@ export default function NewRfq() {
                             </p>
                           </div>
                         </div>
-
                         <div className="mt-4">
                           <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
                             <FormField
@@ -8802,7 +8389,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       </section>
-
                       <section
                         id="potential-section-risks-not-do"
                         className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
@@ -8818,7 +8404,6 @@ export default function NewRfq() {
                             </p>
                           </div>
                         </div>
-
                         <div className="mt-4">
                           <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
                             <FormField
@@ -8832,7 +8417,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       </section>
-
                       <section
                         id="potential-section-contact"
                         className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md"
@@ -8848,7 +8432,6 @@ export default function NewRfq() {
                             </p>
                           </div>
                         </div>
-
                         <div className="mt-4 grid gap-4 lg:grid-cols-2">
                           <FormField label="Contact name" name="potentialContactName" value={form.potentialContactName} onChange={handleChange} readOnly={potentialFieldReadOnly} />
                           <FormField label="Contact function" name="potentialContactFunction" value={form.potentialContactFunction} onChange={handleChange} readOnly={potentialFieldReadOnly} />
@@ -8856,7 +8439,6 @@ export default function NewRfq() {
                           <FormField label="Contact email" name="potentialContactEmail" type="email" value={form.potentialContactEmail} onChange={handleChange} readOnly={potentialFieldReadOnly} error={String(form.potentialContactEmail || "").toLowerCase().endsWith("@avocarbon.com") ? "Internal Avocarbon emails are not allowed." : null} />
                         </div>
                       </section>
-
                       <section className="rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
@@ -8900,7 +8482,6 @@ export default function NewRfq() {
                     <div className="pointer-events-none absolute -left-24 -bottom-28 h-60 w-60 rounded-full bg-sun/10 blur-3xl" />
                   </form>
                 ) : null}
-
                 {showRfqStepNavigation ? (
                   <aside
                     className={`card flex flex-col ${navCollapsed ? "p-3 sm:p-4" : "px-3 pt-4 pb-0 sm:px-4 sm:pt-5 sm:pb-0"
@@ -8913,7 +8494,6 @@ export default function NewRfq() {
                           <h2 className="mt-2 font-display text-xl text-ink">Form steps</h2>
                         </div>
                       ) : null}
-
                       <button
                         type="button"
                         onClick={() => setNavCollapsed((prev) => !prev)}
@@ -8931,7 +8511,6 @@ export default function NewRfq() {
                         )}
                       </button>
                     </div>
-
                     {navCollapsed ? (
                       <div className="mt-4 flex flex-col items-center gap-3 lg:mt-3 lg:gap-2">
                         {STEPS.map((step, index) => {
@@ -9019,7 +8598,6 @@ export default function NewRfq() {
                               <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                             </svg>
                           );
-
                           return (
                             <button
                               key={step.id}
@@ -9052,7 +8630,6 @@ export default function NewRfq() {
                                     {getStepDisplayLabel(step)}
                                   </span>
                                 </span>
-
                                 <span
                                   className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClasses}`}
                                 >
@@ -9067,12 +8644,10 @@ export default function NewRfq() {
                     )}
                   </aside>
                 ) : null}
-
                 {isRfqFormView && activeRfqTab === "files" ? (
                   <section className="card relative col-span-full flex min-h-0 flex-col overflow-hidden lg:h-full lg:min-h-0">
                     <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-tide/10 blur-3xl" />
                     <div className="pointer-events-none absolute -left-24 -bottom-24 h-56 w-56 rounded-full bg-sun/10 blur-3xl" />
-
                     <div className="relative flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                       <div className="flex items-start gap-3">
                         <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-tide/10 text-tide">
@@ -9087,7 +8662,6 @@ export default function NewRfq() {
                           </h2>
                         </div>
                       </div>
-
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
@@ -9108,7 +8682,6 @@ export default function NewRfq() {
                         />
                       </div>
                     </div>
-
                     <div className="relative flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
                       {sortedFiles.length ? (
                         <section className="rounded-2xl border border-slate-200/70 bg-white/95 shadow-soft">
@@ -9125,7 +8698,6 @@ export default function NewRfq() {
                               {sortedFiles.length} total
                             </span>
                           </div>
-
                           <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-slate-200/70 text-left">
                               <thead className="bg-slate-50/80">
@@ -9222,12 +8794,10 @@ export default function NewRfq() {
                     </div>
                   </section>
                 ) : null}
-
                 {false && isRfqFormView && activeRfqTab === "discussion" ? (
                   <section className="card relative flex min-h-0 flex-col overflow-hidden md:col-span-2 lg:col-span-2 lg:h-full lg:min-h-0">
                     <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-tide/10 blur-3xl" />
                     <div className="pointer-events-none absolute -left-24 -bottom-24 h-56 w-56 rounded-full bg-sun/10 blur-3xl" />
-
                     <div className="relative flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                       <div className="flex items-start gap-3">
                         <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-tide/10 text-tide">
@@ -9245,12 +8815,10 @@ export default function NewRfq() {
                           </p>
                         </div>
                       </div>
-
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
                         {discussionMessages.length} message{discussionMessages.length > 1 ? "s" : ""}
                       </span>
                     </div>
-
                     <div className="relative flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
                       {discussionMessages.length ? (
                         <div className="flex flex-col gap-4">
@@ -9263,7 +8831,6 @@ export default function NewRfq() {
                               message.authorName ||
                               message.authorEmail ||
                               (isOwnerReply ? "Owner" : "User");
-
                             return (
                               <div
                                 key={message.id}
@@ -9315,7 +8882,6 @@ export default function NewRfq() {
                         </div>
                       )}
                     </div>
-
                     <form
                       onSubmit={handleDiscussionSend}
                       className="relative border-t border-slate-200/70 bg-white/85 p-5 sm:p-6"
@@ -9350,7 +8916,6 @@ export default function NewRfq() {
                     </form>
                   </section>
                 ) : null}
-
                 {isRfqFormView && isFormalDocumentTab ? (
                   <form
                     onSubmit={handleSubmit}
@@ -9374,7 +8939,6 @@ export default function NewRfq() {
                               </h2>
                             </div>
                           </div>
-
                           {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
                           <div className="flex items-center gap-2">
                             {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && (isRfqCreator || currentUserRole === "OWNER") && !isRfqUpdateModeActive ? (
@@ -9398,7 +8962,6 @@ export default function NewRfq() {
                               </>
                             ) : null}
                           </div>
-
                           {/* Col 3 — Previous / Next, ml-8 pour espace fixe avec Change Index */}
                           <div className="ml-8 flex items-center gap-2">
                             {isRevisionModeActive ? (
@@ -9437,7 +9000,6 @@ export default function NewRfq() {
                             </button>
                           </div>
                         </div>
-
                         {/* Description — en dessous, alignée avec le titre */}
                         <p className="pl-[3.75rem] text-sm text-slate-500 sm:pl-[4.5rem]">
                           {isRevisionModeActive
@@ -9446,9 +9008,7 @@ export default function NewRfq() {
                         </p>
                       </div>
                     </div>
-
                     <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 sm:px-4 sm:pb-4 md:px-5 md:pb-5 lg:overflow-y-auto">
-
                       {activeStep === "step-client" ? (
                         <div
                           id="step-client"
@@ -9479,7 +9039,6 @@ export default function NewRfq() {
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                               </div>
                             </div>
-
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <h3 className="mt-2 font-display text-xl font-semibold text-sun">Products</h3>
@@ -9711,7 +9270,6 @@ export default function NewRfq() {
                                                   value={product.sop ?? ""}
                                                   onChange={(e) => handleProductChange(productIndex, "sop", e.target.value)}
                                                   readOnly={rfqFormFieldReadOnly}
-
                                                   aria-label={`Product ${productIndex + 1} SOP`}
                                                 />
                                               )}
@@ -9746,7 +9304,6 @@ export default function NewRfq() {
                                     </table>
                               </div>
                             </div>
-
                             <div id="rfq-volumes" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Volumes</h3>
                               <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200/70">
@@ -9819,6 +9376,7 @@ export default function NewRfq() {
                                                         <input
                                                           className="input-field min-w-[60px] flex-1"
                                                           type="number"
+                                                          min="0"
                                                           value={volume.volumes?.[year] ?? ""}
                                                           onChange={(e) => handleVolumeChange(volumeIndex, `volumes.${year}`, e.target.value)}
                                                           aria-label={`Volume ${volumeIndex + 1} year ${year}`}
@@ -9862,6 +9420,7 @@ export default function NewRfq() {
                                                     <input
                                                       className="input-field w-full"
                                                       type="number"
+                                                      min="0"
                                                       value={volume.targetPrice ?? ""}
                                                       onChange={(e) => handleVolumeChange(volumeIndex, "targetPrice", e.target.value)}
                                                       aria-label={`Volume ${volumeIndex + 1} target price`}
@@ -10025,7 +9584,6 @@ export default function NewRfq() {
                                 </div>
                               </div>
                             </div>
-
                             <div id="rfq-logistics" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -10035,20 +9593,18 @@ export default function NewRfq() {
                                 <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("expectedQuotationDate")} />
                               </div>
                             </div>
-
                             <div id="rfq-contact" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer contact details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
                                 <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} />
-                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} error={String(form.contactEmail || "").toLowerCase().endsWith("@avocarbon.com") ? "Internal Avocarbon emails are not allowed." : null} />
+                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} error={isAvocarbonEmail(form.contactEmail) ? "Internal Avocarbon emails are not allowed." : (form.contactEmail && !isValidEmailFormat(form.contactEmail) ? "Please enter a valid email address." : null)} />
                               </div>
                             </div>
                           </div>
                         </div>
                       ) : null}
-
                       {activeStep === "step-request" ? (
                         <div
                           id="step-request"
@@ -10082,7 +9638,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       ) : null}
-
                       {activeStep === "step-schedule" ? (
                         <div
                           id="step-schedule"
@@ -10100,7 +9655,6 @@ export default function NewRfq() {
                           </div>
                         </div>
                       ) : null}
-
                       {activeStep === "step-notes" ? (
                         <div
                           id="step-notes"
@@ -10174,7 +9728,6 @@ export default function NewRfq() {
                     </div>
                   </form>
                 ) : null}
-
                 {isRfqValidationView ? (
                   <form
                     onSubmit={handleSubmit}
@@ -10305,7 +9858,6 @@ export default function NewRfq() {
                         </section>
                       );
                     })()}
-
                     <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                       <div className="mb-4 pb-4 border-b border-slate-100">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Validator review</p>
@@ -10325,7 +9877,6 @@ export default function NewRfq() {
                           </h3>
                         </div>
                       </div>
-
                       <div className="mt-4 grid gap-3 md:grid-cols-2">
                         {STEPS.map((step, index) => {
                           const complete = Boolean(stepStates[step.id]?.isComplete);
@@ -10357,7 +9908,6 @@ export default function NewRfq() {
                         })}
                       </div>
                     </section>
-
                     {hasAnyValidationHistory ? (
                       <div className="shrink-0 space-y-4">
                         {(validationAudit.rounds.length > 0
@@ -10430,7 +9980,6 @@ export default function NewRfq() {
                         })}
                       </div>
                     ) : null}
-
                     {isRevisionLockedForNonCreator ? (
                       <div className="shrink-0 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                         <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -10487,7 +10036,6 @@ export default function NewRfq() {
                     ) : null}
                   </form>
                 ) : null}
-
                 {showChatPanel ? (
                   <div className="h-[60vh] min-h-[320px] overflow-hidden md:col-span-2 md:h-[55vh] lg:col-span-1 lg:h-full lg:min-h-0 lg:overflow-hidden lg:sticky lg:top-0">
                     {chatCollapsed ? (
@@ -10577,7 +10125,6 @@ export default function NewRfq() {
           </div>
         </div>
       </div>
-
       {discussionModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -10598,12 +10145,10 @@ export default function NewRfq() {
                   Exchange messages about this {formalDocumentLabel} in a clear and centralized space.
                 </p>
               </div>
-
               <div className="flex items-center gap-2">
                 <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
                   {discussionMessages.length} message{discussionMessages.length > 1 ? "s" : ""}
                 </span>
-
                 <button
                   type="button"
                   className="chat-modal-close"
@@ -10613,7 +10158,6 @@ export default function NewRfq() {
                 </button>
               </div>
             </div>
-
             <div className="chat-modal-body p-0">
               <div className="flex h-full min-h-0 flex-col">
                 <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
@@ -10640,7 +10184,6 @@ export default function NewRfq() {
                           message.authorName ||
                           message.authorEmail ||
                           (isOwnerReply ? "Owner" : "User");
-
                         return (
                           <div
                             key={message.id}
@@ -10692,7 +10235,6 @@ export default function NewRfq() {
                     </div>
                   )}
                 </div>
-
                 <form
                   onSubmit={handleDiscussionSend}
                   className="border-t border-slate-200/70 bg-white/90 p-5 sm:p-6"
@@ -10736,7 +10278,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {isCostingDiscussionOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -10757,12 +10298,10 @@ export default function NewRfq() {
                   Exchange targeted messages for the Costing phase in a clear and centralized space.
                 </p>
               </div>
-
               <div className="flex items-center gap-2">
                 <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
                   {costingDiscussionMessages.length} message{costingDiscussionMessages.length > 1 ? "s" : ""}
                 </span>
-
                 <button
                   type="button"
                   className="chat-modal-close"
@@ -10773,7 +10312,6 @@ export default function NewRfq() {
                 </button>
               </div>
             </div>
-
             <div className="chat-modal-body p-0">
               <div className="flex h-full min-h-0 flex-col">
                 <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
@@ -10797,7 +10335,6 @@ export default function NewRfq() {
                           normalizeEmailValue(currentUserEmail);
                         const authorLabel =
                           message.authorName || message.authorEmail || "User";
-
                         return (
                           <div
                             key={message.id}
@@ -10847,7 +10384,6 @@ export default function NewRfq() {
                     </div>
                   )}
                 </div>
-
                 <form
                   onSubmit={handleCostingDiscussionSend}
                   className="border-t border-slate-200/70 bg-white/90 p-5 sm:p-6"
@@ -10918,7 +10454,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {false && filesPanelOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -10962,7 +10497,6 @@ export default function NewRfq() {
                 </button>
               </div>
             </div>
-
             <div className="chat-modal-body p-0">
               {sortedFiles.length ? (
                 <div className="overflow-x-auto">
@@ -11065,7 +10599,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {filePreview ? (
         <div className="chat-modal-backdrop" onClick={() => setFilePreview(null)} role="presentation">
           <div
@@ -11103,7 +10636,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {templatePreviewModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11157,8 +10689,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
-
       {fileDeleteTarget ? (
         <div
           className="chat-modal-backdrop"
@@ -11214,7 +10744,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {fileUploadModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11302,7 +10831,6 @@ export default function NewRfq() {
                     </label>
                   </div>
                 </div>
-
                 {fileUpdateType === "change_index" && rfqSnapshot?.rfq_data?.systematic_rfq_id ? (
                   <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     <p className="font-semibold">Reference will change:</p>
@@ -11315,7 +10843,6 @@ export default function NewRfq() {
                     </p>
                   </div>
                 ) : null}
-
                 <div className="mb-4">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
                     Files to upload
@@ -11329,7 +10856,6 @@ export default function NewRfq() {
                     ))}
                   </ul>
                 </div>
-
                 <div className="chat-modal-actions justify-end">
                   <button
                     type="button"
@@ -11356,7 +10882,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {costingFileActionModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11513,7 +11038,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {pricingBomModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11593,7 +11117,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {pricingFinalPriceModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11722,7 +11245,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {pricingFileRejectModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11790,7 +11312,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {revisionRequestModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11857,7 +11378,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {rejectModalOpen ? (
         <div
           className="chat-modal-backdrop"
@@ -11925,7 +11445,6 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
-
       {costingRejectModalOpen ? (
         <div
           className="chat-modal-backdrop"
