@@ -902,6 +902,9 @@ const hasMeaningfulValue = (value) => {
 const isAvocarbonEmail = (value) =>
   typeof value === "string" && value.trim().toLowerCase().endsWith("@avocarbon.com");
 
+const isValidEmailFormat = (value) =>
+  typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
 const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => {
   if (fieldName === "rfqFiles") {
     return Array.isArray(mergedFiles) && mergedFiles.length > 0;
@@ -913,7 +916,8 @@ const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => 
     return vols.every((v) => hasMeaningfulValue(v?.[key]));
   }
   if (fieldName === "contactEmail") {
-    return hasMeaningfulValue(form?.contactEmail) && !isAvocarbonEmail(form?.contactEmail);
+    const v = form?.contactEmail;
+    return hasMeaningfulValue(v) && isValidEmailFormat(v) && !isAvocarbonEmail(v);
   }
   return hasMeaningfulValue(form?.[fieldName]);
 };
@@ -3702,6 +3706,14 @@ export default function NewRfq() {
     }
     rfqStepAutoFollowPausedRef.current = targetIndex < highestUnlockedStepIndex;
     setActiveStep(stepId);
+    if (stepId === "step-notes" && !form.validatorEmail && rfqId && canUseRfqActions) {
+      const firstThreeComplete = ["step-client", "step-request", "step-schedule"].every(
+        (id) => stepStates[id]?.isComplete
+      );
+      if (firstThreeComplete) {
+        handleAssignValidator();
+      }
+    }
     if (isRfqValidationView) {
       setSelectedStage("RFQ");
       setSelectedSubPhase("RFQ form");
@@ -5160,20 +5172,20 @@ export default function NewRfq() {
     try {
       let response;
       if (/^https?:\/\//i.test(rawUrl)) {
-        // Azure SAS URLs are blocked by CORS when fetched directly from the browser.
-        // Route through our backend proxy which fetches the blob server-side.
+        // Azure SAS URLs are CORS-blocked — route all downloads through the backend.
+        // prependApiBase: true ensures the call reaches the API server even when the
+        // frontend is served on a different origin than the backend.
         const fileId = file.id ? String(file.id) : "";
         const currentRfqId = rfqId || "";
         if (fileId && currentRfqId) {
           response = await authorizedFetch(
-            `/api/rfq/${encodeURIComponent(currentRfqId)}/costing-file/${encodeURIComponent(fileId)}/download`
+            `/api/rfq/${encodeURIComponent(currentRfqId)}/costing-file/${encodeURIComponent(fileId)}/download`,
+            { prependApiBase: true }
           );
         } else {
-          // Fallback: try plain fetch (works if CORS is configured on the storage bucket).
           response = await fetch(rawUrl);
         }
       } else {
-        // Backend API path — must include the Bearer auth token.
         const resolvedUrl = resolveFileUrl(rawUrl);
         response = await authorizedFetch(resolvedUrl, { prependApiBase: false });
       }
@@ -5942,17 +5954,23 @@ export default function NewRfq() {
     }
   };
 
-  const _autoAssignedRfqIdsRef = useRef(new Set());
+  const _lastValidatorAssignmentRef = useRef(null);
   useEffect(() => {
     if (!rfqId || !canUseRfqActions) return;
-    if (form.validatorEmail) return;
-    if (_autoAssignedRfqIdsRef.current.has(rfqId)) return;
-    const hasProductLine = (form.products || []).some((p) => String(p.productLine || "").trim() !== "");
-    const hasDeliveryZone = (form.volumes || []).some((v) => String(v.deliveryZone || "").trim() !== "");
-    if (!hasProductLine || !hasDeliveryZone) return;
-    _autoAssignedRfqIdsRef.current.add(rfqId);
+    const firstThreeComplete = ["step-client", "step-request", "step-schedule"].every(
+      (id) => stepStates[id]?.isComplete
+    );
+    if (!firstThreeComplete) return;
+    const deliveryZones = (form.volumes || [])
+      .map((v) => String(v.deliveryZone || "").trim())
+      .filter(Boolean)
+      .sort()
+      .join(",");
+    const signature = `${rfqId}|${deliveryZones}|${String(form.toTotal || "").trim()}`;
+    if (_lastValidatorAssignmentRef.current === signature) return;
+    _lastValidatorAssignmentRef.current = signature;
     handleAssignValidator();
-  }, [rfqId, canUseRfqActions, form.validatorEmail, form.products, form.volumes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rfqId, canUseRfqActions, stepStates, form.toTotal, form.volumes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmitToValidator = async () => {
     if (!rfqId || !canUseRfqActions) return;
@@ -10024,7 +10042,7 @@ export default function NewRfq() {
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
                                 <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} />
-                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} error={String(form.contactEmail || "").toLowerCase().endsWith("@avocarbon.com") ? "Internal Avocarbon emails are not allowed." : null} />
+                                <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} error={isAvocarbonEmail(form.contactEmail) ? "Internal Avocarbon emails are not allowed." : (form.contactEmail && !isValidEmailFormat(form.contactEmail) ? "Please enter a valid email address." : null)} />
                               </div>
                             </div>
                           </div>
