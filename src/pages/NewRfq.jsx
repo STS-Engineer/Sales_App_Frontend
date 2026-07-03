@@ -6918,6 +6918,24 @@ export default function NewRfq() {
     if (!Number.isFinite(number)) return "";
     return (number / 1000).toLocaleString("en-US", { maximumFractionDigits: 5 });
   };
+
+  useEffect(() => {
+    const newToTotal = totalTargetTo > 0 ? totalTargetTo / 1000 : "";
+    setForm((prev) => {
+      if (String(prev.toTotal ?? "") === String(newToTotal)) return prev;
+      return { ...prev, toTotal: newToTotal };
+    });
+  }, [totalTargetTo]); 
+
+  useEffect(() => {
+    if (totalTargetToEurPreview === null) return;
+    const newToTotalLocal = totalTargetToEurPreview > 0 ? totalTargetToEurPreview / 1000 : "";
+    setForm((prev) => {
+      if (String(prev.toTotalLocal ?? "") === String(newToTotalLocal)) return prev;
+      return { ...prev, toTotalLocal: newToTotalLocal };
+    });
+  }, [totalTargetToEurPreview]); 
+
   const sharedTurnoverUnit = sharedProductCurrency
     ? `k${sharedProductCurrency}`
     : "k";

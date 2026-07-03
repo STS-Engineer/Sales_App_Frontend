@@ -5,7 +5,7 @@ import { Pencil } from "lucide-react";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
-import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem } from "../api";
+import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem, listAllUsers } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
 
@@ -207,9 +207,13 @@ const buildPageItems = (currentPage, totalPages) => {
 const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
   "old_rfq_id",
   "excel_row_number",
-  "creation_journal",
   "creation_log",
   "monday_id",
+  "import_batch",
+  "import_source_file",
+  "import_source_row",
+  "button",
+  "subitems_count",
 ]);
 
 const OLD_RFQ_PROJECT_COLUMN_ORDER = [
@@ -221,7 +225,13 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "customer_project_name",
   "application",
   "customer_application",
+  "project_condition",
+  "total_qty",
   "type_business",
+  "costing_number",
+  "quote_type",
+  "final_delivery",
+  "plant_to_deliver",
   "subitems_est_price_eur",
   "subelements_sales_limit_3",
   "twc_keur",
@@ -230,7 +240,6 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "capex_keur",
   "capital_keur",
   "gmdc_project_keur",
-  "costing_number",
   "sales_project",
   "requester",
   "project_sales_keur",
@@ -254,7 +263,6 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "year_to_sop",
   "lifetime_index",
   "lifetime_year",
-  "plant_to_deliver",
   "element_identifier",
   "chiffres_id",
   "text_volume_profile",
@@ -269,21 +277,25 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "sop_percent_8",
   "sop_percent_9",
   "readiness",
-  "project_condition",
   "product_testing",
   "plant_audited",
   "iteration",
   "integration",
-  "final_delivery",
   "duplicate_of_pipeline",
   "duplicate_of_pipeline_record_change",
   "id_test",
   "status_name",
   "duplicate_of_development_axis",
-  "total_qty",
   "note",
   "mirror",
-  "subitems_count",
+  "approval_status",
+  "date_of_approval",
+  "expected_date_of_answer",
+  "calculated_date",
+  "acknowledge_input",
+  "costing_leader",
+  "feasibility_leader",
+  "creation_journal",
 ];
 
 const OLD_RFQ_PROJECT_COLUMN_LABELS = {
@@ -328,7 +340,7 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
   lifetime_index: "Lifetime Index",
   lifetime_year: "Lifetime Year",
   monday_id: "Monday ID",
-  costing_number: "Chiffrage Number",
+  costing_number: "Request ID",
   plant_to_deliver: "Plant To Deliver",
   element_identifier: "Element Identifier",
   chiffres_id: "RFQ ID",
@@ -358,18 +370,28 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
   total_qty: "Total Quantity",
   note: "Note",
   mirror: "Mirror",
+  quote_type: "Quote Type",
+  approval_status: "Approval Status",
+  date_of_approval: "Date of Approval",
+  expected_date_of_answer: "Expected Date of Answer",
+  calculated_date: "Calculated Date",
+  acknowledge_input: "Acknowledge Input",
+  costing_leader: "Costing Leader",
+  feasibility_leader: "Feasibility Leader",
+  creation_journal: "Creation Date",
   subitems_count: "Subitems",
 };
 
 const buildOrderedOldRfqProjectColumns = (apiColumns = []) => {
-  const visibleColumns = apiColumns.filter(
+  // Columns defined in the order list are always shown (unless explicitly hidden)
+  const orderedColumns = OLD_RFQ_PROJECT_COLUMN_ORDER.filter(
     (col) => !HIDDEN_OLD_RFQ_PROJECT_COLUMNS.has(col)
   );
-  const orderedColumns = OLD_RFQ_PROJECT_COLUMN_ORDER.filter((col) =>
-    visibleColumns.includes(col)
-  );
-  const remainingColumns = visibleColumns.filter(
-    (col) => !OLD_RFQ_PROJECT_COLUMN_ORDER.includes(col)
+  // Any extra columns returned by the API but not in the defined order are appended
+  const remainingColumns = apiColumns.filter(
+    (col) =>
+      !HIDDEN_OLD_RFQ_PROJECT_COLUMNS.has(col) &&
+      !OLD_RFQ_PROJECT_COLUMN_ORDER.includes(col)
   );
   return [...orderedColumns, ...remainingColumns];
 };
@@ -383,7 +405,33 @@ const HIDDEN_OLD_RFQ_SUBITEM_COLUMNS = new Set([
   "excel_row_number",
   "subitem_order",
   "parent_id",
+  "import_batch",
+  "import_source_file",
+  "import_source_row",
+  "year1",
+  "year2",
+  "year3",
+  "year4",
+  "year5",
+  "year6",
+  "year7",
+  "year8",
+  "year9",
+  "year10",
+  "year1_value",
+  "year2_value",
+  "year3_value",
+  "year4_value",
+  "year5_value",
+  "year6_value",
+  "year7_value",
+  "year8_value",
+  "year9_value",
+  "year10_value",
+  "volume_title",
 ]);
+
+const QTY_YEAR_COLUMNS = Array.from({ length: 10 }, (_, i) => `qty_year_${i + 1}`);
 
 const OLD_RFQ_SUBITEM_COLUMN_ORDER = [
   "name",
@@ -429,6 +477,28 @@ const OLD_RFQ_SUBITEM_COLUMN_ORDER = [
   "chiffre_subitem_id",
   "sales_limit_1",
   "sales_limit_3",
+  "prototype_a_sample_qty",
+  "prototypes_b_sample_qty",
+  "quotation_currency",
+  "target_price",
+  "qty_year_1",
+  "qty_year_2",
+  "qty_year_3",
+  "qty_year_4",
+  "qty_year_5",
+  "qty_year_6",
+  "qty_year_7",
+  "qty_year_8",
+  "qty_year_9",
+  "qty_year_10",
+  "maximum_value",
+  "scenario_note",
+  "created",
+  "created_by",
+  "modified",
+  "modified_by",
+  "scenario_id",
+  "volume_title",
 ];
 
 const OLD_RFQ_SUBITEM_COLUMN_LABELS = {
@@ -475,12 +545,38 @@ const OLD_RFQ_SUBITEM_COLUMN_LABELS = {
   chiffre_subitem_id: "Chiffre Subitem ID",
   sales_limit_1: "Sales Limit 1",
   sales_limit_3: "Sales Limit 3",
+  prototype_a_sample_qty: "Prototype A Sample Qty",
+  prototypes_b_sample_qty: "Prototypes B Sample Qty",
+  quotation_currency: "Quotation Currency",
+  target_price: "Target Price",
+  qty_year_1: "Qty/Year 1",
+  qty_year_2: "Qty/Year 2",
+  qty_year_3: "Qty/Year 3",
+  qty_year_4: "Qty/Year 4",
+  qty_year_5: "Qty/Year 5",
+  qty_year_6: "Qty/Year 6",
+  qty_year_7: "Qty/Year 7",
+  qty_year_8: "Qty/Year 8",
+  qty_year_9: "Qty/Year 9",
+  qty_year_10: "Qty/Year 10",
+  maximum_value: "Maximum Value",
+  scenario_note: "Scenario Note",
+  created: "Created",
+  created_by: "Created By",
+  modified: "Modified",
+  modified_by: "Modified By",
+  scenario_id: "Scenario ID",
+  volume_title: "Volume Title",
 };
 
 const buildOrderedOldRfqSubitemColumns = (apiColumns = []) => {
   const visibleColumns = apiColumns.filter(
     (col) => !HIDDEN_OLD_RFQ_SUBITEM_COLUMNS.has(col)
   );
+  // Inject the 10 virtual qty_year columns (always present)
+  QTY_YEAR_COLUMNS.forEach((col) => {
+    if (!visibleColumns.includes(col)) visibleColumns.push(col);
+  });
   const orderedColumns = OLD_RFQ_SUBITEM_COLUMN_ORDER.filter((col) =>
     visibleColumns.includes(col)
   );
@@ -492,6 +588,18 @@ const buildOrderedOldRfqSubitemColumns = (apiColumns = []) => {
 
 const getOldRfqSubitemColumnLabel = (columnName) =>
   OLD_RFQ_SUBITEM_COLUMN_LABELS[columnName] || columnName;
+
+const formatVolumeYears = (subitem) => {
+  const rows = [];
+  for (let i = 1; i <= 10; i += 1) {
+    const year = String(subitem?.[`year${i}`] || "").trim();
+    const value = String(subitem?.[`year${i}_value`] || "").trim();
+    if (year && value) {
+      rows.push(`${year} : ${value}`);
+    }
+  }
+  return rows.length > 0 ? rows.join("\n") : "-";
+};
 
 const TruncatedCell = ({ value }) => {
   const textRef = useRef(null);
@@ -562,7 +670,230 @@ const TruncatedCell = ({ value }) => {
   );
 };
 
-const HISTORY_BADGE_COLUMNS = new Set(["old_new", "sector", "type_business"]);
+const formatCreationJournal = (value) => {
+  if (!value || String(value).trim() === "") return "-";
+  const str = String(value).trim();
+  // Format: "Name Month DD, YYYY H:MM AM/PM"  e.g. "Taha Khiari Sep 5, 2024 4:09 PM"
+  const namedMatch = str.match(
+    /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)/i
+  );
+  if (namedMatch) return namedMatch[0].trim();
+  // Format: "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DDTHH:MM:SS"
+  const isoMatch = str.match(/\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}(?::\d{2})?/);
+  if (isoMatch) return isoMatch[0].replace("T", " ");
+  return str;
+};
+
+// Canonical key for name deduplication: sort words so "John Doe" === "Doe John"
+const wordSortKey = (s) => String(s ?? "").trim().toLowerCase().split(/\s+/).sort().join(" ");
+
+// Date columns that should use a date picker in edit mode
+const OLD_RFQ_DATE_COLUMNS = new Set(["sop", "date_of_approval", "expected_date_of_answer", "calculated_date"]);
+const SUBITEM_DATE_COLUMNS = new Set(["created", "modified"]);
+
+// Convert any stored date string to YYYY-MM-DD for <input type="date">
+const toDateInputValue = (val) => {
+  if (!val) return "";
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return "";
+};
+
+const extractHrefFromHtml = (htmlStr) => {
+  if (!htmlStr || typeof htmlStr !== "string") return null;
+  const match = htmlStr.match(/href=["']([^"']+)["']/i);
+  return match ? match[1] : null;
+};
+
+const NoteCell = ({ value }) => {
+  const href = extractHrefFromHtml(value);
+  if (!href) return <TruncatedCell value={value} />;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="history-note-link-btn"
+    >
+      ↗ Link
+    </a>
+  );
+};
+
+const OLD_NEW_OPTIONS = ["Old", "New"];
+
+const PRODUCT_TESTING_OPTIONS = ["On going", "NOK", "OK"];
+
+const TYPE_BUSINESS_OPTIONS = ["Base Business", "Business increase", "New business", "Carry over"];
+
+const IMPORTANCE_OPTIONS = ["Must take", "High", "Normal"];
+
+const SECTOR_OPTIONS = ["Automotive", "Non Automotive", "Power Tools & consumers", "Industry"];
+
+const VOLUME_PROFILE_OPTIONS = ["Normal", "Base business", "Fast", "Slow"];
+
+const INTEGRATION_OPTIONS = ["Integrated", "Delete"];
+
+const QUOTE_TYPE_OPTIONS = ["RFQ", "RFI"];
+
+const PRODUCT_LINE_LABELS_OPTIONS = ["Assembly", "Friction", "Injection", "Brushes", "Chockes", "Seals"];
+
+const DELIVERY_TO_OPTIONS = ["Assembly plant", "Final Customer"];
+
+const APPLICATION_OPTIONS = [
+  "Electronics",
+  "Electric pumps",
+  "Dynamic Sealing",
+  "Micro-Motors",
+  "Traction",
+  "FHP and others",
+  "Comfort and auxiliary motors",
+];
+
+const ApplicationEditCell = ({ value, onChange }) => {
+  const isStandard = APPLICATION_OPTIONS.includes(value ?? "");
+  const [othersMode, setOthersMode] = useState(
+    !isStandard && (value ?? "") !== ""
+  );
+
+  if (othersMode) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <input
+          type="text"
+          className="history-inline-edit-input"
+          placeholder="Type custom value..."
+          value={value ?? ""}
+          autoFocus
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          title="Back to list"
+          style={{ flexShrink: 0, fontSize: "12px", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+          onClick={() => { setOthersMode(false); onChange(""); }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      className="history-inline-edit-input"
+      value={value ?? ""}
+      onChange={(e) => {
+        if (e.target.value === "__others__") {
+          setOthersMode(true);
+          onChange("");
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+    >
+      <option value="">— select —</option>
+      {APPLICATION_OPTIONS.map((opt) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
+      <option value="__others__">Others</option>
+    </select>
+  );
+};
+
+const KamEditCell = ({ value, onChange, options }) => {
+  const isStandard = options.some((o) => wordSortKey(o) === wordSortKey(value ?? ""));
+  const [othersMode, setOthersMode] = useState(!isStandard && (value ?? "") !== "");
+
+  if (othersMode) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <input
+          type="text"
+          className="history-inline-edit-input"
+          placeholder="Type custom name..."
+          value={value ?? ""}
+          autoFocus
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          title="Back to list"
+          style={{ flexShrink: 0, fontSize: "12px", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+          onClick={() => { setOthersMode(false); onChange(""); }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      className="history-inline-edit-input"
+      value={value ?? ""}
+      onChange={(e) => {
+        if (e.target.value === "__others__") {
+          setOthersMode(true);
+          onChange("");
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+    >
+      <option value="">— select —</option>
+      {options.map((opt) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
+      <option value="__others__">Others</option>
+    </select>
+  );
+};
+
+const FINAL_DELIVERY_OPTIONS = [
+  "Asie",
+  "Europe",
+  "Korea/Japan",
+  "South America",
+  "India",
+  "North America",
+  "Africa",
+];
+
+const PLANT_OPTIONS = [
+  "Tunisia",
+  "Poitiers",
+  "Amiens",
+  "Frankfurt",
+  "Monterrey",
+  "Chennai",
+  "Kunshan",
+  "Tianjin",
+  "Daegu",
+  "All Plants",
+];
+
+const QUOTATION_CURRENCY_OPTIONS = ["EUR", "USD", "GBP", "CNY", "MXN", "JPL", "BRL", "INR", "RMB"];
+
+const PROJECT_CONDITION_OPTIONS = [
+  "1 On boarding",
+  "2 RFI",
+  "3 Prototyping",
+  "4 RFQ",
+  "5 Costing",
+  "6 Generate Offer",
+  "7 Negociation",
+  "8 PO Signed",
+  "9 LOST",
+  "10 APQP Process",
+  "11 In production",
+  "12 On Hold",
+  "Base Line",
+];
+
+const HISTORY_BADGE_COLUMNS = new Set(["old_new", "sector", "type_business", "quote_type", "importance", "volume_profile", "project_condition", "approval_status"]);
 
 const getHistoryBadgeClass = (columnName, value) => {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -583,6 +914,67 @@ const getHistoryBadgeClass = (columnName, value) => {
     if (normalized.includes("new")) return "badge border-green-300 bg-green-50 text-green-700";
     if (normalized.includes("replacement")) return "badge border-rose-300 bg-rose-50 text-rose-600";
     if (normalized.includes("serial")) return "badge border-sky-300 bg-sky-50 text-sky-600";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "quote_type") {
+    if (normalized === "rfi") return "badge border-coral/30 bg-coral/10 text-coral";
+    if (normalized === "potential") return "badge border-sun/40 bg-sun/15 text-sun";
+    if (normalized === "rfq") return "badge border-tide/30 bg-tide/10 text-tide";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "importance") {
+    if (normalized.includes("high") || normalized.includes("critical") || normalized.includes("urgent")) return "badge border-rose-300 bg-rose-50 text-rose-600";
+    if (normalized.includes("medium") || normalized.includes("normal") || normalized.includes("moderate")) return "badge border-sun/40 bg-sun/15 text-sun";
+    if (normalized.includes("low") || normalized.includes("minor")) return "badge border-green-300 bg-green-50 text-green-700";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "volume_profile") {
+    if (normalized.includes("high") || normalized.includes("large") || normalized.includes("grow")) return "badge border-green-300 bg-green-50 text-green-700";
+    if (normalized.includes("medium") || normalized.includes("mid") || normalized.includes("stable")) return "badge border-sun/40 bg-sun/15 text-sun";
+    if (normalized.includes("low") || normalized.includes("small") || normalized.includes("declin")) return "badge border-rose-300 bg-rose-50 text-rose-600";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "approval_status") {
+    if (normalized.includes("approved") || normalized.includes("accepted")) return "badge border-green-300 bg-green-50 text-green-700";
+    if (normalized.includes("rejected") || normalized.includes("declined") || normalized.includes("refused")) return "badge border-rose-300 bg-rose-50 text-rose-600";
+    if (normalized.includes("pending") || normalized.includes("waiting") || normalized.includes("in review") || normalized.includes("review")) return "badge border-sun/40 bg-sun/15 text-sun";
+    if (normalized.includes("cancelled") || normalized.includes("canceled")) return "badge border-slate-300 bg-slate-100 text-slate-600";
+    if (normalized.includes("on hold") || normalized.includes("hold")) return "badge border-amber-300 bg-amber-50 text-amber-700";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "project_condition") {
+    if (normalized.includes("on boarding") || normalized.includes("onboarding")) return "badge border-tide/30 bg-tide/10 text-tide";
+    if (normalized.includes("2 rfi") || normalized === "rfi") return "badge border-coral/30 bg-coral/10 text-coral";
+    if (normalized.includes("prototyping")) return "badge border-violet-300 bg-violet-50 text-violet-600";
+    if (normalized.includes("4 rfq") || normalized === "rfq") return "badge border-sky-300 bg-sky-50 text-sky-600";
+    if (normalized.includes("costing")) return "badge border-sun/40 bg-sun/15 text-sun";
+    if (normalized.includes("generate offer") || normalized.includes("offer")) return "badge border-mint/40 bg-mint/15 text-mint";
+    if (normalized.includes("negociation") || normalized.includes("negotiation")) return "badge border-indigo-300 bg-indigo-50 text-indigo-600";
+    if (normalized.includes("po signed")) return "badge border-green-300 bg-green-50 text-green-700";
+    if (normalized.includes("lost")) return "badge border-slate-300 bg-slate-100 text-slate-600";
+    if (normalized.includes("apqp")) return "badge border-orange-300 bg-orange-50 text-orange-600";
+    if (normalized.includes("in production")) return "badge border-emerald-200 bg-emerald-50 text-emerald-700";
+    if (normalized.includes("on hold")) return "badge border-amber-300 bg-amber-50 text-amber-700";
+    if (normalized.includes("base line") || normalized.includes("baseline")) return "badge border-rose-300 bg-rose-50 text-rose-600";
+    return "badge border-slate-300 bg-slate-100 text-slate-600";
+  }
+
+  if (columnName === "plant") {
+    if (normalized.includes("tunisia"))    return "badge border-tide/30 bg-tide/10 text-tide";
+    if (normalized.includes("poitiers"))   return "badge border-coral/30 bg-coral/10 text-coral";
+    if (normalized.includes("amiens"))     return "badge border-violet-300 bg-violet-50 text-violet-600";
+    if (normalized.includes("frankfurt"))  return "badge border-sky-300 bg-sky-50 text-sky-600";
+    if (normalized.includes("monterrey"))  return "badge border-sun/40 bg-sun/15 text-sun";
+    if (normalized.includes("chennai"))    return "badge border-mint/40 bg-mint/15 text-mint";
+    if (normalized.includes("kunshan"))    return "badge border-indigo-300 bg-indigo-50 text-indigo-600";
+    if (normalized.includes("tianjin"))    return "badge border-rose-300 bg-rose-50 text-rose-600";
+    if (normalized.includes("daegu"))      return "badge border-emerald-300 bg-emerald-50 text-emerald-700";
+    if (normalized.includes("all plants")) return "badge border-slate-400 bg-slate-200 text-slate-700";
     return "badge border-slate-300 bg-slate-100 text-slate-600";
   }
 
@@ -641,6 +1033,9 @@ export default function Dashboard() {
   const [oldStatusFilter, setOldStatusFilter] = useState("");
   const [selectedOldProject, setSelectedOldProject] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [commercialUsers, setCommercialUsers] = useState([]);
+  const [costingUsers, setCostingUsers] = useState([]);
+  const [rndUsers, setRndUsers] = useState([]);
   const [teamData, setTeamData] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -695,6 +1090,54 @@ export default function Dashboard() {
       .then((data) => setTeamMembers(Array.isArray(data) ? data : []))
       .catch(() => setTeamMembers([]));
   }, [canSeeTeamView]);
+
+  // Load commercial users for KAM dropdown (best-effort: only owners can call this endpoint)
+  useEffect(() => {
+    listAllUsers()
+      .then((users) => {
+        const names = (Array.isArray(users) ? users : [])
+          .filter((u) => {
+            const roles = Array.isArray(u.roles) ? u.roles : [u.role];
+            return roles.some((r) => { const rv = String(r).toUpperCase(); return rv.includes("COMMERCIAL") || rv.includes("ZONE_MANAGER"); });
+          })
+          .map((u) => u.full_name || u.email)
+          .filter(Boolean);
+        setCommercialUsers(names);
+      })
+      .catch(() => setCommercialUsers([]));
+  }, []);
+
+  // Load costing team users for Costing Leader dropdown (best-effort)
+  useEffect(() => {
+    listAllUsers()
+      .then((users) => {
+        const names = (Array.isArray(users) ? users : [])
+          .filter((u) => {
+            const roles = Array.isArray(u.roles) ? u.roles : [u.role];
+            return roles.some((r) => String(r).toUpperCase().includes("COSTING_TEAM"));
+          })
+          .map((u) => u.full_name || u.email)
+          .filter(Boolean);
+        setCostingUsers(names);
+      })
+      .catch(() => setCostingUsers([]));
+  }, []);
+
+  // Load R&D users for Feasibility Leader dropdown (best-effort)
+  useEffect(() => {
+    listAllUsers()
+      .then((users) => {
+        const names = (Array.isArray(users) ? users : [])
+          .filter((u) => {
+            const roles = Array.isArray(u.roles) ? u.roles : [u.role];
+            return roles.some((r) => String(r).toUpperCase() === "RND");
+          })
+          .map((u) => u.full_name || u.email)
+          .filter(Boolean);
+        setRndUsers(names);
+      })
+      .catch(() => setRndUsers([]));
+  }, []);
 
   useEffect(() => {
     if (viewMode !== "history") return;
@@ -845,12 +1288,17 @@ export default function Dashboard() {
     [oldRfqs]
   );
 
-  const filterOldOpts = (vals) =>
-    Array.from(new Set(vals.filter((v) => {
-      if (v === null || v === undefined) return false;
+  const filterOldOpts = (vals) => {
+    const seen = new Map();
+    vals.forEach((v) => {
+      if (v === null || v === undefined) return;
       const s = String(v).trim();
-      return s !== "" && s !== "-" && s.toLowerCase() !== "empty";
-    }))).sort((a, b) => String(a).localeCompare(String(b)));
+      if (s === "" || s === "-" || s.toLowerCase() === "empty") return;
+      const key = wordSortKey(s);
+      if (!seen.has(key)) seen.set(key, s);
+    });
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  };
 
   const oldCustomerOptions = useMemo(
     () => filterOldOpts(oldRfqProjects.map((p) => p.customers)),
@@ -859,6 +1307,21 @@ export default function Dashboard() {
   const oldKamOptions = useMemo(
     () => filterOldOpts(oldRfqProjects.map((p) => p.kam)),
     [oldRfqProjects]
+  );
+  // KAM edit options: prefer commercial users from API, fall back to unique KAMs from data
+  const kamEditOptions = useMemo(
+    () => commercialUsers.length > 0 ? commercialUsers : oldKamOptions,
+    [commercialUsers, oldKamOptions]
+  );
+  // Costing Leader edit options: prefer costing team users from API, fall back to unique values from data
+  const costingLeaderOptions = useMemo(
+    () => costingUsers.length > 0 ? costingUsers : filterOldOpts(oldRfqProjects.map((p) => p.costing_leader)),
+    [costingUsers, oldRfqProjects]
+  );
+  // Feasibility Leader edit options: prefer R&D users from API, fall back to unique values from data
+  const feasibilityLeaderOptions = useMemo(
+    () => rndUsers.length > 0 ? rndUsers : filterOldOpts(oldRfqProjects.map((p) => p.feasibility_leader)),
+    [rndUsers, oldRfqProjects]
   );
   const oldSectorOptions = useMemo(
     () => filterOldOpts(oldRfqProjects.map((p) => p.sector)),
@@ -881,12 +1344,12 @@ export default function Dashboard() {
     const search = oldSearchTerm.trim().toLowerCase();
 
     return oldRfqProjects.filter((project) => {
-      if (oldCustomerFilter && project.customers !== oldCustomerFilter) return false;
-      if (oldKamFilter && project.kam !== oldKamFilter) return false;
-      if (oldSectorFilter && project.sector !== oldSectorFilter) return false;
-      if (oldApplicationFilter && project.application !== oldApplicationFilter) return false;
-      if (oldBusinessTypeFilter && project.type_business !== oldBusinessTypeFilter) return false;
-      if (oldStatusFilter && project.status_name !== oldStatusFilter) return false;
+      if (oldCustomerFilter && wordSortKey(project.customers) !== wordSortKey(oldCustomerFilter)) return false;
+      if (oldKamFilter && wordSortKey(project.kam) !== wordSortKey(oldKamFilter)) return false;
+      if (oldSectorFilter && wordSortKey(project.sector) !== wordSortKey(oldSectorFilter)) return false;
+      if (oldApplicationFilter && wordSortKey(project.application) !== wordSortKey(oldApplicationFilter)) return false;
+      if (oldBusinessTypeFilter && wordSortKey(project.type_business) !== wordSortKey(oldBusinessTypeFilter)) return false;
+      if (oldStatusFilter && wordSortKey(project.status_name) !== wordSortKey(oldStatusFilter)) return false;
       if (!search) return true;
       const projectText = Object.values(project)
         .filter((v) => v !== null && v !== undefined && !Array.isArray(v) && typeof v !== "object")
@@ -948,10 +1411,15 @@ export default function Dashboard() {
     try {
       const payload = {};
       oldRfqSubitemColumns.forEach((columnName) => {
-        if (isSubitemColumnEditable(columnName)) {
+        if (isSubitemColumnEditable(columnName) && !QTY_YEAR_COLUMNS.includes(columnName)) {
           payload[columnName] = editingSubitemData?.[columnName] ?? null;
         }
       });
+      // Virtual qty_year_N columns map to actual DB columns year{N} and year{N}_value
+      for (let n = 1; n <= 10; n++) {
+        payload[`year${n}`] = editingSubitemData?.[`year${n}`] ?? null;
+        payload[`year${n}_value`] = editingSubitemData?.[`year${n}_value`] ?? null;
+      }
 
       const response = await updateOldRfqSubitem(subitemId, payload);
       const updatedItem = response?.item || editingSubitemData;
@@ -1867,14 +2335,160 @@ export default function Dashboard() {
                                   return (
                                   <td key={colName} className={colName === "name" ? "history-sticky-name-cell" : ""}>
                                     {isEditingThisRow && isEditableColumn ? (
-                                      <input
-                                        type="text"
-                                        className="history-inline-edit-input"
-                                        value={editingOldRfqData?.[colName] ?? ""}
-                                        onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
-                                      />
+                                      colName === "project_condition" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {PROJECT_CONDITION_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "final_delivery" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {FINAL_DELIVERY_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "old_new" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {OLD_NEW_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "product_testing" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {PRODUCT_TESTING_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "type_business" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {TYPE_BUSINESS_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "importance" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {IMPORTANCE_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "costing_leader" ? (
+                                        <KamEditCell
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(val) => handleOldRfqEditFieldChange(colName, val)}
+                                          options={costingLeaderOptions}
+                                        />
+                                      ) : colName === "feasibility_leader" ? (
+                                        <KamEditCell
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(val) => handleOldRfqEditFieldChange(colName, val)}
+                                          options={feasibilityLeaderOptions}
+                                        />
+                                      ) : colName === "kam" || colName === "requester" || colName === "duplicate_of_old_new" ? (
+                                        <KamEditCell
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(val) => handleOldRfqEditFieldChange(colName, val)}
+                                          options={kamEditOptions}
+                                        />
+                                      ) : colName === "application" ? (
+                                        <ApplicationEditCell
+                                          value={editingOldRfqData?.["application"] ?? ""}
+                                          onChange={(val) => handleOldRfqEditFieldChange("application", val)}
+                                        />
+                                      ) : colName === "sector" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {SECTOR_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "volume_profile" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {VOLUME_PROFILE_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "quote_type" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {QUOTE_TYPE_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : colName === "integration" ? (
+                                        <select
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        >
+                                          <option value="">— select —</option>
+                                          {INTEGRATION_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      ) : OLD_RFQ_DATE_COLUMNS.has(colName) ? (
+                                        <input
+                                          type="date"
+                                          className="history-inline-edit-input"
+                                          value={toDateInputValue(editingOldRfqData?.[colName])}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        />
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          className="history-inline-edit-input"
+                                          value={editingOldRfqData?.[colName] ?? ""}
+                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                        />
+                                      )
                                     ) : HISTORY_BADGE_COLUMNS.has(colName) ? (
                                       <HistoryValueBadge columnName={colName} value={project[colName]} />
+                                    ) : colName === "note" ? (
+                                      <NoteCell value={project[colName]} />
+                                    ) : colName === "creation_journal" ? (
+                                      <TruncatedCell value={formatCreationJournal(project[colName])} />
                                     ) : (
                                       <TruncatedCell value={project[colName]} />
                                     )}
@@ -2153,16 +2767,160 @@ export default function Dashboard() {
                             className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingThisSubitem ? "bg-blue-50/40" : "hover:bg-white/70"}`}
                           >
                             {oldRfqSubitemColumns.map((colName) => {
+                              const qtyYearMatch = colName.match(/^qty_year_(\d+)$/);
+                              if (qtyYearMatch) {
+                                const n = parseInt(qtyYearMatch[1]);
+                                if (isEditingThisSubitem) {
+                                  return (
+                                    <td key={colName}>
+                                      <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                                        <input
+                                          type="text"
+                                          className="history-inline-edit-input"
+                                          placeholder="Year"
+                                          value={editingSubitemData?.[`year${n}`] ?? ""}
+                                          onChange={(e) => handleSubitemEditFieldChange(`year${n}`, e.target.value)}
+                                          style={{ width: "60px" }}
+                                        />
+                                        <span style={{ color: "#94a3b8", fontSize: "12px" }}>:</span>
+                                        <input
+                                          type="text"
+                                          className="history-inline-edit-input"
+                                          placeholder="Qty"
+                                          value={editingSubitemData?.[`year${n}_value`] ?? ""}
+                                          onChange={(e) => handleSubitemEditFieldChange(`year${n}_value`, e.target.value)}
+                                        />
+                                      </div>
+                                    </td>
+                                  );
+                                }
+                                const yr = String(subitem?.[`year${n}`] ?? "").trim();
+                                const qty = String(subitem?.[`year${n}_value`] ?? "").trim();
+                                const display = yr && qty ? `${yr}: ${qty}` : yr || qty || "-";
+                                return (
+                                  <td key={colName}>
+                                    <TruncatedCell value={display} />
+                                  </td>
+                                );
+                              }
                               const editable = isSubitemColumnEditable(colName);
                               return (
                                 <td key={colName}>
                                   {isEditingThisSubitem && editable ? (
-                                    <input
-                                      type="text"
-                                      className="history-inline-edit-input"
-                                      value={editingSubitemData?.[colName] ?? ""}
-                                      onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
-                                    />
+                                    colName === "product_line_labels" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {PRODUCT_LINE_LABELS_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "delivery_to" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {DELIVERY_TO_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "application" ? (
+                                      <ApplicationEditCell
+                                        value={editingSubitemData?.["application"] ?? ""}
+                                        onChange={(val) => handleSubitemEditFieldChange("application", val)}
+                                      />
+                                    ) : colName === "final_delivery" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {FINAL_DELIVERY_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "plant" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {PLANT_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "status" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {PROJECT_CONDITION_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "importance" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {IMPORTANCE_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "pipeline" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {INTEGRATION_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : colName === "quotation_currency" ? (
+                                      <select
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      >
+                                        <option value="">— select —</option>
+                                        {QUOTATION_CURRENCY_OPTIONS.map((opt) => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : SUBITEM_DATE_COLUMNS.has(colName) ? (
+                                      <input
+                                        type="date"
+                                        className="history-inline-edit-input"
+                                        value={toDateInputValue(editingSubitemData?.[colName])}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      />
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        className="history-inline-edit-input"
+                                        value={editingSubitemData?.[colName] ?? ""}
+                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                      />
+                                    )
+                                  ) : colName === "status" ? (
+                                    <HistoryValueBadge columnName="project_condition" value={subitem[colName]} />
+                                  ) : colName === "importance" ? (
+                                    <HistoryValueBadge columnName="importance" value={subitem[colName]} />
+                                  ) : colName === "plant" ? (
+                                    <HistoryValueBadge columnName="plant" value={subitem[colName]} />
                                   ) : (
                                     <TruncatedCell value={subitem[colName]} />
                                   )}

@@ -206,6 +206,20 @@ export default function RoutingSettings() {
     [productOptions]
   );
 
+  // Unique product line names for dropdowns (no duplicates)
+  const uniqueProductLineNames = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    for (const p of sortedProductOptions) {
+      const pl = String(p?.product_line || "").trim();
+      if (pl && !seen.has(pl.toLowerCase())) {
+        seen.add(pl.toLowerCase());
+        result.push(pl);
+      }
+    }
+    return result;
+  }, [sortedProductOptions]);
+
   // Helper: currently-assigned leader emails for a group
   const getLeaderEmails = (productLine, role) => {
     if (!productLine || !role) return [];
@@ -557,9 +571,9 @@ export default function RoutingSettings() {
                           disabled={isSavingLeader}
                         >
                           <option value="">Select a product line</option>
-                          {sortedProductOptions.map((opt) => (
-                            <option key={opt.product_line} value={opt.product_line}>
-                              {opt.product_line}
+                          {uniqueProductLineNames.map((pl) => (
+                            <option key={pl} value={pl}>
+                              {pl}
                             </option>
                           ))}
                         </select>
@@ -642,9 +656,9 @@ export default function RoutingSettings() {
                           disabled={isSavingViewer}
                         >
                           <option value="">Select a product line</option>
-                          {sortedProductOptions.map((opt) => (
-                            <option key={opt.product_line} value={opt.product_line}>
-                              {opt.product_line}
+                          {uniqueProductLineNames.map((pl) => (
+                            <option key={pl} value={pl}>
+                              {pl}
                             </option>
                           ))}
                         </select>
