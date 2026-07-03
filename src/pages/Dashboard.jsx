@@ -1849,7 +1849,7 @@ export default function Dashboard() {
                           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
                             <tr>
                               {oldRfqProjectColumns.map((colName) => (
-                                <th key={colName}>{getOldRfqProjectColumnLabel(colName)}</th>
+                                <th key={colName} className={colName === "name" ? "history-sticky-name-header" : ""}>{getOldRfqProjectColumnLabel(colName)}</th>
                               ))}
                               <th>Actions</th>
                             </tr>
@@ -1865,7 +1865,7 @@ export default function Dashboard() {
                                 {oldRfqProjectColumns.map((colName) => {
                                   const isEditableColumn = isOldRfqColumnEditable(colName);
                                   return (
-                                  <td key={colName}>
+                                  <td key={colName} className={colName === "name" ? "history-sticky-name-cell" : ""}>
                                     {isEditingThisRow && isEditableColumn ? (
                                       <input
                                         type="text"

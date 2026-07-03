@@ -969,6 +969,30 @@ body {
   background: #f1f5f9;
 }
 
+.history-table th.history-sticky-name-header {
+  position: sticky;
+  left: 0;
+  z-index: 30;
+  background: #f1f5f9;
+  box-shadow: 4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+.history-table td.history-sticky-name-cell {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: #ffffff;
+  box-shadow: 4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+.history-table tbody tr:hover .history-sticky-name-cell {
+  background: #f8fafc;
+}
+
+.history-sticky-name-cell .history-inline-edit-input {
+  width: 100%;
+}
+
 .history-subitems-scroll {
   width: 100%;
   overflow-x: auto;
