@@ -601,10 +601,13 @@ export const mapRfqDataToForm = (rfq) => {
       data.targetPriceCurrency
     ),
     targetPriceNote: pickText(data.target_price_note, data.targetPriceNote),
-    expectedDeliveryConditions: pickText(
+    deliveryIncoterm: pickText(
+      data.delivery_incoterm,
+      data.deliveryIncoterm,
       data.expected_delivery_conditions,
       data.expectedDeliveryConditions
     ),
+    incotermLocation: pickText(data.incoterm_location, data.incotermLocation),
     expectedPaymentTerms: pickText(
       data.expected_payment_terms,
       data.expectedPaymentTerms

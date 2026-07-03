@@ -121,7 +121,8 @@ const initialForm = {
   targetPriceCurrency: "",
   targetPriceIsEstimated: null,
   targetPriceNote: "",
-  expectedDeliveryConditions: "",
+  deliveryIncoterm: "",
+  incotermLocation: "",
   expectedPaymentTerms: "",
   typeOfPackaging: "",
   businessTrigger: "",
@@ -176,7 +177,7 @@ const initialForm = {
 const STEPS = [
   {
     id: "step-client",
-    label: "Client Data Collection, Delivery, and Contact",
+    label: "Customer Data & Delivery Details",
     accent: "tide"
   },
   {
@@ -225,8 +226,9 @@ const RFQ_STEP_REQUIREMENTS = {
     optional: ["costingData", "ppapDate"]
   },
   "step-request": {
-    required: ["expectedDeliveryConditions", "expectedPaymentTerms"],
+    required: ["deliveryIncoterm", "expectedPaymentTerms"],
     optional: [
+      "incotermLocation",
       "typeOfPackaging",
       "businessTrigger",
       "customerToolingConditions",
@@ -370,6 +372,175 @@ const renderRequirementLabel = (label, { required = false, optional = false } = 
     ) : null}
   </span>
 );
+
+function ResponsibilityField({ label, name, value, customer, onChange, readOnly, required, optional }) {
+  const isPredefinedValue = (v) =>
+    !v || v === "AVOCarbon" || (customer && v === customer);
+
+  const [otherMode, setOtherMode] = useState(
+    () => Boolean(value && !isPredefinedValue(value))
+  );
+  const [editingOther, setEditingOther] = useState(false);
+
+  // Sync when value changes externally (e.g. loading a saved RFQ)
+  const prevValueRef = useRef(value);
+  if (prevValueRef.current !== value) {
+    prevValueRef.current = value;
+    const shouldBeOther = Boolean(value && !isPredefinedValue(value));
+    if (shouldBeOther !== otherMode) {
+      setOtherMode(shouldBeOther);
+      if (!shouldBeOther) setEditingOther(false);
+    }
+  }
+
+  const selectValue =
+    otherMode ? "__other__" :
+    !value ? "" :
+    value === "AVOCarbon" ? "AVOCarbon" :
+    (customer && value === customer) ? "__customer__" : "";
+
+  const handleSelectChange = (e) => {
+    const v = e.target.value;
+    if (v === "__customer__") {
+      setOtherMode(false); setEditingOther(false);
+      onChange({ target: { name, value: customer } });
+    } else if (v === "AVOCarbon") {
+      setOtherMode(false); setEditingOther(false);
+      onChange({ target: { name, value: "AVOCarbon" } });
+    } else if (v === "") {
+      setOtherMode(false); setEditingOther(false);
+      onChange({ target: { name, value: "" } });
+    } else {
+      setOtherMode(true); setEditingOther(true);
+      if (isPredefinedValue(value)) onChange({ target: { name, value: "" } });
+    }
+  };
+
+  const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
+
+  return (
+    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{label}</span>
+        {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
+        {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
+      </span>
+      {readOnly ? (
+        <div className={"input-field " + lockedCls}>{value || "—"}</div>
+      ) : editingOther ? (
+        <input
+          className="input-field"
+          type="text"
+          placeholder="Please specify..."
+          value={value}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "") { setOtherMode(false); setEditingOther(false); }
+            onChange({ target: { name, value: v } });
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
+          onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+        />
+      ) : (
+        <select
+          className="input-field appearance-none"
+          name={name}
+          value={selectValue}
+          onChange={handleSelectChange}
+          onMouseDown={(e) => {
+            if (otherMode) { e.preventDefault(); setEditingOther(true); }
+          }}
+        >
+          <option value="">— Select —</option>
+          {customer ? <option value="__customer__">{customer}</option> : null}
+          <option value="AVOCarbon">AVOCarbon</option>
+          <option value="__other__">{otherMode && value ? value : "Other"}</option>
+        </select>
+      )}
+    </label>
+  );
+}
+
+function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
+  const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
+
+  const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
+  const [editingOther, setEditingOther] = useState(false);
+
+  const prevValueRef = useRef(value);
+  if (prevValueRef.current !== value) {
+    prevValueRef.current = value;
+    const shouldBeOther = Boolean(value && !isPredefined(value));
+    if (shouldBeOther !== otherMode) {
+      setOtherMode(shouldBeOther);
+      if (!shouldBeOther) setEditingOther(false);
+    }
+  }
+
+  const selectValue = otherMode ? "__other__" : (value || "");
+
+  const handleSelectChange = (e) => {
+    const v = e.target.value;
+    if (v === "__other__") {
+      setOtherMode(true); setEditingOther(true);
+      if (isPredefined(value)) onChange({ target: { name, value: "" } });
+    } else {
+      setOtherMode(false); setEditingOther(false);
+      onChange({ target: { name, value: v } });
+    }
+  };
+
+  const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
+
+  return (
+    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+      <span className="flex flex-wrap items-center gap-1">
+        <span>{label}</span>
+        {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
+        {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
+      </span>
+      {readOnly ? (
+        <div className={"input-field " + lockedCls}>{value || "—"}</div>
+      ) : editingOther ? (
+        <input
+          className="input-field"
+          type="text"
+          placeholder="Please specify..."
+          value={value}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "") { setOtherMode(false); setEditingOther(false); }
+            onChange({ target: { name, value: v } });
+          }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
+          onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+        />
+      ) : (
+        <select
+          className="input-field appearance-none"
+          name={name}
+          value={selectValue}
+          onChange={handleSelectChange}
+          onMouseDown={(e) => {
+            if (otherMode) { e.preventDefault(); setEditingOther(true); }
+          }}
+        >
+          <option value="">— Select —</option>
+          {options.map(opt => {
+            const v = typeof opt === "string" ? opt : opt.value;
+            const l = typeof opt === "string" ? opt : opt.label;
+            return <option key={v} value={v}>{l}</option>;
+          })}
+          <option value="__other__">{otherMode && value ? value : "Other"}</option>
+        </select>
+      )}
+    </label>
+  );
+}
 
 const PIPELINE_STAGES = [
   {
@@ -2042,7 +2213,8 @@ const buildRfqDataPayloadFromForm = (form = {}) => {
     target_price_is_estimated:
       firstProduct.target_price_is_estimated ?? form.targetPriceIsEstimated ?? null,
     target_price_note: form.targetPriceNote || "",
-    expected_delivery_conditions: form.expectedDeliveryConditions || "",
+    delivery_incoterm: form.deliveryIncoterm || "",
+    incoterm_location: form.incotermLocation || "",
     expected_payment_terms: form.expectedPaymentTerms || "",
     type_of_packaging: form.typeOfPackaging || "",
     business_trigger: form.businessTrigger || "",
@@ -2763,6 +2935,7 @@ export default function NewRfq() {
   const [optimisticRevisionMode, setOptimisticRevisionMode] = useState(false);
   const [revisionGreetingIndex, setRevisionGreetingIndex] = useState(null);
   const revisionModeActiveRef = useRef(false);
+  const rfqValidationReachedRef = useRef(false);
   const [templateDownloadPending, setTemplateDownloadPending] = useState(false);
   const [templatePreviewPending, setTemplatePreviewPending] = useState(false);
   const [templatePreviewUrl, setTemplatePreviewUrl] = useState("");
@@ -3541,6 +3714,8 @@ export default function NewRfq() {
     }
   }, [isRfqFormView]);
 
+  rfqValidationReachedRef.current = rfqValidationReached;
+
   useEffect(() => {
     const nextSelectedStage = resolveVisiblePipelineStageKey(
       normalizePipelineStageKey(activeStage) || firstPipelineStageKey
@@ -3556,11 +3731,12 @@ export default function NewRfq() {
       // If the user has already been navigated to Validation (rfqValidationReached=true),
       // don't let background syncs (file uploads, auto-saves) force them back to "Validation"
       // when they may have navigated to the form editor.
-      if (rfqValidationReached && nextSubPhase === "Validation") {
+      if (rfqValidationReachedRef.current && nextSubPhase === "Validation") {
         return;
       }
       setSelectedSubPhase(nextSubPhase);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeStage,
     firstPipelineStageKey,
@@ -3570,7 +3746,6 @@ export default function NewRfq() {
     pipelineStages,
     persistValidationView,
     persistCostingReviewView,
-    rfqValidationReached,
   ]);
 
   useEffect(() => {
@@ -4617,7 +4792,7 @@ export default function NewRfq() {
     form.contactPhone,
     form.customer,
     form.customerPn,
-    form.expectedDeliveryConditions,
+    form.deliveryIncoterm,
     form.expectedPaymentTerms,
     form.productName,
     form.projectName,
@@ -5971,10 +6146,7 @@ export default function NewRfq() {
     setRfqError("");
     try {
       await validateRfq(rfqId, { approved: true });
-      await syncRfq(rfqId);
-      setPersistValidationView(true);
-      setSelectedStage("RFQ");
-      setSelectedSubPhase("Validation");
+      await syncRfq(rfqId, { preserveNavigationState: false });
       setValidationSuccess(`${formalDocumentLabel} approved successfully.`);
       waitForSharePointUrl(rfqId);
     } catch (error) {
@@ -9839,15 +10011,15 @@ export default function NewRfq() {
                             <div id="rfq-logistics" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                                <FormField label="PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("poDate")} />
-                                <FormField label="Ppap date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("ppapDate")} />
+                                <FormField label="Expected PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("poDate")} />
+                                <FormField label="Expected PPAP date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("ppapDate")} />
                                 <FormField label={`${formalDocumentLabel} reception date`} name="rfqReceptionDate" type="date" value={form.rfqReceptionDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("rfqReceptionDate")} />
                                 <FormField label="Expected quotation date" name="expectedQuotationDate" type="date" value={form.expectedQuotationDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("expectedQuotationDate")} />
                               </div>
                             </div>
 
                             <div id="rfq-contact" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
-                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Contact details</h3>
+                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer contact details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
@@ -9865,7 +10037,8 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 lg:grid-cols-2">
-                            <FormField label="Expected Delivery Conditions" name="expectedDeliveryConditions" value={form.expectedDeliveryConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedDeliveryConditions")} />
+                            <FormField label="Delivery Incoterm" name="deliveryIncoterm" value={form.deliveryIncoterm} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("deliveryIncoterm")} />
+                            <FormField label="Incoterm Location" name="incotermLocation" value={form.incotermLocation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("incotermLocation")} />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedPaymentTerms")} />
                             <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
                               {renderRequirementLabel("Type of Packaging", getRfqFieldRequirementProps("typeOfPackaging"))}
@@ -9879,7 +10052,7 @@ export default function NewRfq() {
                                   onChange={handleChange}
                                 >
                                   <option value="">— Select —</option>
-                                  <option value="Carboard divider">Carboard divider</option>
+                                  <option value="Cardboard divider">Cardboard divider</option>
                                   <option value="One way tray">One way tray</option>
                                   <option value="Returnable plastic tray">Returnable plastic tray</option>
                                 </select>
@@ -9898,12 +10071,12 @@ export default function NewRfq() {
                           className="scroll-mt-28 space-y-4 rounded-2xl border border-slate-200/70 bg-white/80 p-5"
                         >
                           <div className="grid gap-4 lg:grid-cols-2">
-                            <FormField label="Design responsible" name="designResponsible" value={form.designResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designResponsible")} />
-                            <FormField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validationResponsible")} />
-                            <FormField label="Design owner" name="designOwner" value={form.designOwner} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designOwner")} />
-                            <FormField label="Development costs" name="developmentCosts" value={form.developmentCosts} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("developmentCosts")} />
-                            <FormField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("technicalCapacity")} />
-                            <FormField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("scope")} />
+                            <ResponsibilityField label="Design responsible" name="designResponsible" value={form.designResponsible} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designResponsible")} />
+                            <ResponsibilityField label="Validation responsible" name="validationResponsible" value={form.validationResponsible} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("validationResponsible")} />
+                            <ResponsibilityField label="Design owner" name="designOwner" value={form.designOwner} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("designOwner")} />
+                            <ResponsibilityField label="Development costs" name="developmentCosts" value={form.developmentCosts} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("developmentCosts")} />
+                            <SelectOrOtherField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={["Yes", "No"]} {...getRfqFieldRequirementProps("technicalCapacity")} />
+                            <SelectOrOtherField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={["Yes", "No"]} {...getRfqFieldRequirementProps("scope")} />
                             <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("strategicNote")} />
                             <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("finalRecommendation")} />
                           </div>
@@ -10108,16 +10281,6 @@ export default function NewRfq() {
                                     </span>
                                   ))}
                                 </div>
-                              </div>
-                            )}
-                            {!aiApproved && aiFields.length > 0 && (
-                              <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Fields to correct</p>
-                                <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-red-600">
-                                  {aiFields.map((f, i) => (
-                                    <li key={i}>{f}</li>
-                                  ))}
-                                </ul>
                               </div>
                             )}
                           </div>
