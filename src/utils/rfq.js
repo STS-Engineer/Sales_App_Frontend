@@ -655,7 +655,15 @@ export const mapRfqDataToForm = (rfq) => {
       data.finalRecommendation
     ),
     toTotal: sanitizeNumberForInput(
-      pickFirst(data.to_total, data.toTotal, totalTargetTo !== undefined ? Number(totalTargetTo) / 1000 : undefined)
+      pickFirst(
+        data.to_total,
+        data.toTotal,
+        // Only use derived totalTargetTo when it's strictly > 0 — a zero value means
+        // products have no prices yet, which should leave toTotal empty (Draft), not 0.
+        totalTargetTo !== undefined && Number(totalTargetTo) > 0
+          ? Number(totalTargetTo) / 1000
+          : undefined
+      )
     ),
     toTotalLocal: sanitizeNumberForInput(
       pickFirst(data.to_total_local, data.toTotalLocal)
