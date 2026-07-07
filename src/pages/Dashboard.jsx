@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
-import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem, listAllUsers } from "../api";
+import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem, deleteOldRfq, deleteOldRfqSubitem, listAllUsers, getKamOptions, getCustomerOptions } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
 
@@ -226,6 +226,9 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "application",
   "customer_application",
   "project_condition",
+  "explication",
+  "importance",
+  "comment",
   "total_qty",
   "type_business",
   "costing_number",
@@ -247,7 +250,6 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "old_new",
   "duplicate_of_old_new",
   "customer_text",
-  "importance",
   "sector",
   "pre_sales_project_manager",
   "gmdc_proj",
@@ -324,6 +326,7 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
   duplicate_of_old_new: "Duplicate Of Old/New",
   customer_text: "Customer Text",
   importance: "Importance",
+  comment: "Comment",
   sector: "Sector",
   pre_sales_project_manager: "Pre-Sales Project Manager",
   gmdc_proj: "GMDC Project",
@@ -357,6 +360,7 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
   sop_percent_9: "SOP % 9",
   readiness: "Readiness",
   project_condition: "Project Condition",
+  explication: "Explication",
   product_testing: "Product Testing",
   plant_audited: "Plant Audited",
   iteration: "Iteration",
@@ -766,7 +770,6 @@ const ApplicationEditCell = ({ value, onChange }) => {
           className="history-inline-edit-input"
           placeholder="Type custom value..."
           value={value ?? ""}
-          autoFocus
           onChange={(e) => onChange(e.target.value)}
         />
         <button
@@ -804,51 +807,139 @@ const ApplicationEditCell = ({ value, onChange }) => {
 };
 
 const KamEditCell = ({ value, onChange, options }) => {
-  const isStandard = options.some((o) => wordSortKey(o) === wordSortKey(value ?? ""));
-  const [othersMode, setOthersMode] = useState(!isStandard && (value ?? "") !== "");
+  const [inputValue, setInputValue] = useState(value ?? "");
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [portalPos, setPortalPos] = useState(null);
+  const inputRef = useRef(null);
+  const portalRef = useRef(null);
 
-  if (othersMode) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-        <input
-          type="text"
-          className="history-inline-edit-input"
-          placeholder="Type custom name..."
-          value={value ?? ""}
-          autoFocus
-          onChange={(e) => onChange(e.target.value)}
-        />
-        <button
-          type="button"
-          title="Back to list"
-          style={{ flexShrink: 0, fontSize: "12px", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
-          onClick={() => { setOthersMode(false); onChange(""); }}
-        >
-          ✕
-        </button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    setInputValue(value ?? "");
+  }, [value]);
+
+  const term = inputValue.trim().toLowerCase();
+  const filtered = term ? options.filter((o) => o.toLowerCase().includes(term)) : options;
+
+  const openDropdown = () => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setPortalPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setIsOpen(true);
+    setHighlightedIndex(-1);
+  };
+
+  const closeDropdown = () => {
+    setIsOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (e) => {
+      if (
+        inputRef.current && !inputRef.current.contains(e.target) &&
+        portalRef.current && !portalRef.current.contains(e.target)
+      ) {
+        closeDropdown();
+      }
+    };
+    const handleScroll = (e) => {
+      if (portalRef.current && portalRef.current.contains(e.target)) return;
+      closeDropdown();
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", closeDropdown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", closeDropdown);
+    };
+  }, [isOpen]);
+
+  const handleSelect = (opt) => {
+    setInputValue(opt);
+    onChange(opt);
+    closeDropdown();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!isOpen) { openDropdown(); return; }
+      setHighlightedIndex((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      if (isOpen && highlightedIndex >= 0 && filtered[highlightedIndex]) {
+        e.preventDefault();
+        handleSelect(filtered[highlightedIndex]);
+      } else {
+        closeDropdown();
+      }
+    } else if (e.key === "Escape") {
+      closeDropdown();
+    }
+  };
 
   return (
-    <select
-      className="history-inline-edit-input"
-      value={value ?? ""}
-      onChange={(e) => {
-        if (e.target.value === "__others__") {
-          setOthersMode(true);
-          onChange("");
-        } else {
+    <div style={{ position: "relative", width: "100%" }}>
+      <input
+        ref={inputRef}
+        type="text"
+        className="history-inline-edit-input"
+        style={{ paddingRight: "22px" }}
+        value={inputValue}
+        onFocus={openDropdown}
+        onClick={openDropdown}
+        onChange={(e) => {
+          setInputValue(e.target.value);
           onChange(e.target.value);
-        }
-      }}
-    >
-      <option value="">— select —</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>{opt}</option>
-      ))}
-      <option value="__others__">Others</option>
-    </select>
+          if (!isOpen) openDropdown();
+          else setHighlightedIndex(-1);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#64748b"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+      >
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+      {isOpen && portalPos && createPortal(
+        <div
+          ref={portalRef}
+          className="kam-combobox-portal"
+          style={{ top: `${portalPos.top}px`, left: `${portalPos.left}px`, width: `${portalPos.width}px` }}
+        >
+          {filtered.length > 0 ? (
+            filtered.map((opt, idx) => (
+              <div
+                key={opt}
+                className={`kam-combobox-item${idx === highlightedIndex ? " kam-combobox-item--active" : ""}`}
+                onMouseDown={(e) => { e.preventDefault(); handleSelect(opt); }}
+                onMouseEnter={() => setHighlightedIndex(idx)}
+              >
+                {opt}
+              </div>
+            ))
+          ) : (
+            <div className="kam-combobox-empty">Aucune correspondance — valeur libre conservée</div>
+          )}
+        </div>,
+        document.body
+      )}
+    </div>
   );
 };
 
@@ -1022,9 +1113,21 @@ export default function Dashboard() {
   const [editingOldRfqId, setEditingOldRfqId] = useState(null);
   const [editingOldRfqData, setEditingOldRfqData] = useState({});
   const [savingOldRfqId, setSavingOldRfqId] = useState(null);
+  const [isEditingAllRows, setIsEditingAllRows] = useState(false);
+  const [editingAllRowsData, setEditingAllRowsData] = useState({});
+  const [isSavingAll, setIsSavingAll] = useState(false);
   const [editingSubitemId, setEditingSubitemId] = useState(null);
   const [editingSubitemData, setEditingSubitemData] = useState({});
   const [savingSubitemId, setSavingSubitemId] = useState(null);
+  const [subitemGlobalEditMode, setSubitemGlobalEditMode] = useState(false);
+  const [subitemGlobalEditData, setSubitemGlobalEditData] = useState({});
+  const [savingSubitemsGlobal, setSavingSubitemsGlobal] = useState(false);
+  const [fillDrag, setFillDrag] = useState(null);
+  const [focusedFillCell, setFocusedFillCell] = useState(null);
+  const [deletingOldRfqId, setDeletingOldRfqId] = useState(null);
+  const [deletingSubitemId, setDeletingSubitemId] = useState(null);
+  const [deleteRowConfirm, setDeleteRowConfirm] = useState(null);
+  const [deleteSubitemConfirm, setDeleteSubitemConfirm] = useState(null);
   const [oldSearchTerm, setOldSearchTerm] = useState("");
   const [oldCustomerFilter, setOldCustomerFilter] = useState("");
   const [oldKamFilter, setOldKamFilter] = useState("");
@@ -1035,6 +1138,7 @@ export default function Dashboard() {
   const [selectedOldProject, setSelectedOldProject] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
   const [commercialUsers, setCommercialUsers] = useState([]);
+  const [customerDbNames, setCustomerDbNames] = useState([]);
   const [costingUsers, setCostingUsers] = useState([]);
   const [rndUsers, setRndUsers] = useState([]);
   const [teamData, setTeamData] = useState([]);
@@ -1042,6 +1146,14 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [hiddenProjectColumns, setHiddenProjectColumns] = useState(new Set());
+  const [showProjectColsMenu, setShowProjectColsMenu] = useState(false);
+  const [hiddenSubitemColumns, setHiddenSubitemColumns] = useState(new Set());
+  const [showSubitemColsMenu, setShowSubitemColsMenu] = useState(false);
+  const [compactedProjectColumns, setCompactedProjectColumns] = useState(new Set());
+  const [compactedSubitemColumns, setCompactedSubitemColumns] = useState(new Set());
+  const projectColsMenuRef = useRef(null);
+  const subitemColsMenuRef = useRef(null);
 
   useEffect(() => {
     const load = async () => {
@@ -1092,22 +1204,25 @@ export default function Dashboard() {
       .catch(() => setTeamMembers([]));
   }, [canSeeTeamView]);
 
-  // Load commercial users for KAM dropdown (best-effort: only owners can call this endpoint)
+  // Load commercial names from v_sales_organisation (KPI_DB_Final) for KAM dropdown
   useEffect(() => {
-    if (!isOwner) return;
-    listAllUsers()
-      .then((users) => {
-        const names = (Array.isArray(users) ? users : [])
-          .filter((u) => {
-            const roles = Array.isArray(u.roles) ? u.roles : [u.role];
-            return roles.some((r) => { const rv = String(r).toUpperCase(); return rv.includes("COMMERCIAL") || rv.includes("ZONE_MANAGER"); });
-          })
-          .map((u) => u.full_name || u.email)
-          .filter(Boolean);
+    getKamOptions()
+      .then((data) => {
+        const names = Array.isArray(data?.names) ? data.names.filter(Boolean) : [];
         setCommercialUsers(names);
       })
       .catch(() => setCommercialUsers([]));
-  }, [isOwner]);
+  }, []);
+
+  // Load customer names from v_sales_customer_directory (KPI_DB_Final) for Customer dropdown
+  useEffect(() => {
+    getCustomerOptions()
+      .then((data) => {
+        const names = Array.isArray(data?.names) ? data.names.filter(Boolean) : [];
+        setCustomerDbNames(names);
+      })
+      .catch(() => setCustomerDbNames([]));
+  }, []);
 
   // Load costing team users for Costing Leader dropdown (best-effort)
   useEffect(() => {
@@ -1185,6 +1300,28 @@ export default function Dashboard() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedOldProject]);
+
+  useEffect(() => {
+    if (!showProjectColsMenu) return undefined;
+    const handle = (e) => {
+      if (projectColsMenuRef.current && !projectColsMenuRef.current.contains(e.target)) {
+        setShowProjectColsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [showProjectColsMenu]);
+
+  useEffect(() => {
+    if (!showSubitemColsMenu) return undefined;
+    const handle = (e) => {
+      if (subitemColsMenuRef.current && !subitemColsMenuRef.current.contains(e.target)) {
+        setShowSubitemColsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [showSubitemColsMenu]);
 
   useEffect(() => {
     if (viewMode !== "history") {
@@ -1292,6 +1429,57 @@ export default function Dashboard() {
     [oldRfqs]
   );
 
+  const visibleProjectColumns = useMemo(
+    () => oldRfqProjectColumns.filter((col) => !hiddenProjectColumns.has(col)),
+    [oldRfqProjectColumns, hiddenProjectColumns]
+  );
+
+  const visibleSubitemColumns = useMemo(
+    () => oldRfqSubitemColumns.filter((col) => !hiddenSubitemColumns.has(col)),
+    [oldRfqSubitemColumns, hiddenSubitemColumns]
+  );
+
+  const subitemRowIds = useMemo(
+    () => (selectedOldProject?.subitems || []).map((s) => s.old_rfq_subitem_id),
+    [selectedOldProject]
+  );
+
+  const toggleProjectColumn = (col) => {
+    setHiddenProjectColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  };
+
+  const toggleSubitemColumn = (col) => {
+    setHiddenSubitemColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  };
+
+  const toggleCompactProjectColumn = (col) => {
+    setCompactedProjectColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  };
+
+  const toggleCompactSubitemColumn = (col) => {
+    setCompactedSubitemColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  };
+
   const filterOldOpts = (vals) => {
     const seen = new Map();
     vals.forEach((v) => {
@@ -1317,6 +1505,11 @@ export default function Dashboard() {
     () => commercialUsers.length > 0 ? commercialUsers : oldKamOptions,
     [commercialUsers, oldKamOptions]
   );
+  // Customer edit options: prefer DB names, fall back to unique customers from data
+  const customerEditOptions = useMemo(
+    () => customerDbNames.length > 0 ? customerDbNames : filterOldOpts(oldRfqProjects.map((p) => p.customers)),
+    [customerDbNames, oldRfqProjects]
+  );
   // Costing Leader edit options: prefer costing team users from API, fall back to unique values from data
   const costingLeaderOptions = useMemo(
     () => costingUsers.length > 0 ? costingUsers : filterOldOpts(oldRfqProjects.map((p) => p.costing_leader)),
@@ -1340,7 +1533,7 @@ export default function Dashboard() {
     [oldRfqProjects]
   );
   const oldStatusOptions = useMemo(
-    () => filterOldOpts(oldRfqProjects.map((p) => p.status_name)),
+    () => filterOldOpts(oldRfqProjects.map((p) => p.project_condition)),
     [oldRfqProjects]
   );
 
@@ -1353,7 +1546,7 @@ export default function Dashboard() {
       if (oldSectorFilter && wordSortKey(project.sector) !== wordSortKey(oldSectorFilter)) return false;
       if (oldApplicationFilter && wordSortKey(project.application) !== wordSortKey(oldApplicationFilter)) return false;
       if (oldBusinessTypeFilter && wordSortKey(project.type_business) !== wordSortKey(oldBusinessTypeFilter)) return false;
-      if (oldStatusFilter && wordSortKey(project.status_name) !== wordSortKey(oldStatusFilter)) return false;
+      if (oldStatusFilter && wordSortKey(project.project_condition) !== wordSortKey(oldStatusFilter)) return false;
       if (!search) return true;
       const projectText = Object.values(project)
         .filter((v) => v !== null && v !== undefined && !Array.isArray(v) && typeof v !== "object")
@@ -1404,6 +1597,67 @@ export default function Dashboard() {
     setEditingSubitemId(null);
     setEditingSubitemData({});
     setSavingSubitemId(null);
+  };
+
+  const handleStartSubitemGlobalEdit = () => {
+    const data = {};
+    (selectedOldProject?.subitems || []).forEach((s) => {
+      data[s.old_rfq_subitem_id] = { ...s };
+    });
+    setSubitemGlobalEditData(data);
+    setSubitemGlobalEditMode(true);
+  };
+
+  const handleSubitemGlobalFieldChange = (subitemId, colName, val) => {
+    setSubitemGlobalEditData((prev) => ({
+      ...prev,
+      [subitemId]: { ...(prev[subitemId] || {}), [colName]: val },
+    }));
+  };
+
+  const handleCancelSubitemsGlobal = () => {
+    setSubitemGlobalEditMode(false);
+    setSubitemGlobalEditData({});
+  };
+
+  const handleSaveSubitemsGlobal = async () => {
+    setSavingSubitemsGlobal(true);
+    try {
+      await Promise.all(
+        (selectedOldProject?.subitems || []).map(async (subitem) => {
+          const editData = subitemGlobalEditData[subitem.old_rfq_subitem_id];
+          if (!editData) return;
+          const payload = {};
+          oldRfqSubitemColumns.forEach((col) => {
+            if (isSubitemColumnEditable(col) && !QTY_YEAR_COLUMNS.includes(col)) {
+              payload[col] = editData[col] ?? null;
+            }
+          });
+          for (let n = 1; n <= 10; n++) {
+            payload[`year${n}`] = editData[`year${n}`] ?? null;
+            payload[`year${n}_value`] = editData[`year${n}_value`] ?? null;
+          }
+          const response = await updateOldRfqSubitem(subitem.old_rfq_subitem_id, payload);
+          const updatedItem = response?.item || editData;
+          setSelectedOldProject((prev) =>
+            prev ? { ...prev, subitems: (prev.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) } : prev
+          );
+          setOldRfqs((prev) =>
+            prev.map((p) =>
+              p.old_rfq_id === selectedOldProject.old_rfq_id
+                ? { ...p, subitems: (p.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) }
+                : p
+            )
+          );
+        })
+      );
+      setSubitemGlobalEditMode(false);
+      setSubitemGlobalEditData({});
+    } catch {
+      showToast("error", "Failed to save subitems");
+    } finally {
+      setSavingSubitemsGlobal(false);
+    }
   };
 
   const handleSubitemEditFieldChange = (columnName, value) => {
@@ -1461,49 +1715,180 @@ export default function Dashboard() {
     }
   };
 
-  const handleStartOldRfqEdit = (project) => {
-    setEditingOldRfqId(project.old_rfq_id);
-    setEditingOldRfqData({ ...project });
+  const handleStartGlobalEdit = () => {
+    const dataMap = {};
+    oldRfqProjects.forEach((p) => { dataMap[p.old_rfq_id] = { ...p }; });
+    setEditingAllRowsData(dataMap);
+    setIsEditingAllRows(true);
   };
 
-  const handleCancelOldRfqEdit = () => {
-    setEditingOldRfqId(null);
-    setEditingOldRfqData({});
-    setSavingOldRfqId(null);
+  const handleCancelGlobalEdit = () => {
+    setIsEditingAllRows(false);
+    setEditingAllRowsData({});
   };
 
-  const handleOldRfqEditFieldChange = (columnName, value) => {
-    setEditingOldRfqData((prev) => ({ ...prev, [columnName]: value }));
+  const handleGlobalEditFieldChange = (rfqId, columnName, value) => {
+    setEditingAllRowsData((prev) => ({
+      ...prev,
+      [rfqId]: { ...(prev[rfqId] || {}), [columnName]: value },
+    }));
   };
 
-  const handleSaveOldRfqRow = async (oldRfqId) => {
-    setSavingOldRfqId(oldRfqId);
-    try {
-      const payload = {};
-      oldRfqProjectColumns.forEach((columnName) => {
-        if (isOldRfqColumnEditable(columnName)) {
-          payload[columnName] = editingOldRfqData?.[columnName] ?? null;
+  const startFillDrag = (e, table, colName, sourceId, value, rowIds) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFillDrag({ table, colName, sourceId, value, rowIds, hoverId: sourceId });
+  };
+
+  const handleFillDragEnter = (table, rowId) => {
+    setFillDrag((prev) => (prev && prev.table === table ? { ...prev, hoverId: rowId } : prev));
+  };
+
+  const isCellInFillRange = (table, colName, rowId) => {
+    if (!fillDrag || fillDrag.table !== table || fillDrag.colName !== colName) return false;
+    const sourceIdx = fillDrag.rowIds.indexOf(fillDrag.sourceId);
+    const hoverIdx = fillDrag.rowIds.indexOf(fillDrag.hoverId);
+    const idx = fillDrag.rowIds.indexOf(rowId);
+    if (sourceIdx === -1 || hoverIdx === -1 || idx === -1) return false;
+    const start = Math.min(sourceIdx, hoverIdx);
+    const end = Math.max(sourceIdx, hoverIdx);
+    return idx >= start && idx <= end;
+  };
+
+  useEffect(() => {
+    if (!fillDrag) return;
+    const commitFillDrag = () => {
+      setFillDrag((current) => {
+        if (!current) return null;
+        const { table, colName, sourceId, value, rowIds, hoverId } = current;
+        const sourceIdx = rowIds.indexOf(sourceId);
+        const hoverIdx = rowIds.indexOf(hoverId);
+        if (sourceIdx !== -1 && hoverIdx !== -1) {
+          const start = Math.min(sourceIdx, hoverIdx);
+          const end = Math.max(sourceIdx, hoverIdx);
+          for (let i = start; i <= end; i += 1) {
+            const id = rowIds[i];
+            if (id === sourceId) continue;
+            if (table === "project") {
+              handleGlobalEditFieldChange(id, colName, value);
+            } else {
+              handleSubitemGlobalFieldChange(id, colName, value);
+            }
+          }
         }
+        return null;
       });
+    };
+    window.addEventListener("mouseup", commitFillDrag);
+    return () => window.removeEventListener("mouseup", commitFillDrag);
+  }, [fillDrag]);
 
-      const response = await updateOldRfq(oldRfqId, payload);
-      const updatedItem = response?.item || editingOldRfqData;
+  const handleSaveAllRows = async () => {
+    setIsSavingAll(true);
+    const originalById = {};
+    oldRfqProjects.forEach((p) => { originalById[p.old_rfq_id] = p; });
 
+    const modifiedIds = Object.keys(editingAllRowsData).filter((idStr) => {
+      const id = Number(idStr);
+      const original = originalById[id];
+      const edited = editingAllRowsData[idStr];
+      if (!original) return false;
+      return oldRfqProjectColumns.some(
+        (col) => isOldRfqColumnEditable(col) && String(edited[col] ?? "") !== String(original[col] ?? "")
+      );
+    });
+
+    if (modifiedIds.length === 0) {
+      setIsEditingAllRows(false);
+      setEditingAllRowsData({});
+      setIsSavingAll(false);
+      showToast("No changes to save.", { type: "info", title: "No changes" });
+      return;
+    }
+
+    let savedCount = 0;
+    let errorCount = 0;
+    for (const idStr of modifiedIds) {
+      const id = Number(idStr);
+      setSavingOldRfqId(id);
+      try {
+        const editData = editingAllRowsData[idStr];
+        const payload = {};
+        oldRfqProjectColumns.forEach((columnName) => {
+          if (isOldRfqColumnEditable(columnName)) {
+            payload[columnName] = editData[columnName] ?? null;
+          }
+        });
+        const response = await updateOldRfq(id, payload);
+        const updatedItem = response?.item || editData;
+        setOldRfqs((prev) =>
+          prev.map((p) => p.old_rfq_id === id ? { ...p, ...updatedItem } : p)
+        );
+        savedCount++;
+      } catch {
+        errorCount++;
+      }
+      setSavingOldRfqId(null);
+    }
+
+    setIsEditingAllRows(false);
+    setEditingAllRowsData({});
+    setIsSavingAll(false);
+    if (errorCount === 0) {
+      showToast(`${savedCount} row${savedCount > 1 ? "s" : ""} saved successfully.`, { type: "success", title: "Saved" });
+    } else {
+      showToast(`${savedCount} saved, ${errorCount} failed.`, { type: "error", title: "Partial save" });
+    }
+  };
+
+  const handleDeleteOldRfqRow = (project) => {
+    setDeleteRowConfirm({ rfqId: project.old_rfq_id, subitems_count: project.subitems?.length ?? 0 });
+  };
+
+  const handleConfirmDeleteRow = async () => {
+    if (!deleteRowConfirm) return;
+    const { rfqId } = deleteRowConfirm;
+    setDeletingOldRfqId(rfqId);
+    setDeleteRowConfirm(null);
+    try {
+      await deleteOldRfq(rfqId);
+      setOldRfqs((prev) => prev.filter((p) => p.old_rfq_id !== rfqId));
+      showToast("History row deleted.", { type: "success", title: "Deleted" });
+    } catch {
+      showToast("Unable to delete history row.", { type: "error", title: "Delete failed" });
+    } finally {
+      setDeletingOldRfqId(null);
+    }
+  };
+
+  const handleDeleteSubitem = (subitemId, parentRfqId) => {
+    setDeleteSubitemConfirm({ subitemId, parentRfqId });
+  };
+
+  const handleConfirmDeleteSubitem = async () => {
+    if (!deleteSubitemConfirm) return;
+    const { subitemId, parentRfqId } = deleteSubitemConfirm;
+    setDeletingSubitemId(subitemId);
+    setDeleteSubitemConfirm(null);
+    try {
+      await deleteOldRfqSubitem(subitemId);
+      setSelectedOldProject((prev) =>
+        prev
+          ? { ...prev, subitems: (prev.subitems || []).filter((s) => s.old_rfq_subitem_id !== subitemId) }
+          : prev
+      );
       setOldRfqs((prev) =>
         prev.map((project) =>
-          project.old_rfq_id === oldRfqId
-            ? { ...project, ...updatedItem }
+          project.old_rfq_id === parentRfqId
+            ? { ...project, subitems: (project.subitems || []).filter((s) => s.old_rfq_subitem_id !== subitemId) }
             : project
         )
       );
-
-      setEditingOldRfqId(null);
-      setEditingOldRfqData({});
-      setSavingOldRfqId(null);
-      showToast("RFQ history row updated successfully.", { type: "success", title: "Saved" });
+      showToast("Subitem deleted.", { type: "success", title: "Deleted" });
     } catch {
-      setSavingOldRfqId(null);
-      showToast("Unable to update RFQ history row.", { type: "error", title: "Save failed" });
+      showToast("Unable to delete subitem.", { type: "error", title: "Delete failed" });
+    } finally {
+      setDeletingSubitemId(null);
     }
   };
 
@@ -1554,6 +1939,11 @@ export default function Dashboard() {
   const paginatedRfqs = useMemo(
     () => activeRows.slice(startIndex, endIndex),
     [activeRows, endIndex, startIndex]
+  );
+
+  const paginatedRfqRowIds = useMemo(
+    () => paginatedRfqs.map((p) => p.old_rfq_id),
+    [paginatedRfqs]
   );
 
   const pageItems = useMemo(
@@ -2159,14 +2549,13 @@ export default function Dashboard() {
                 </>
               ) : viewMode === "history" ? (
                 <>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">RFQ History View</p>
-                      <h2 className="font-display text-2xl text-ink">Old projects</h2>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex w-full flex-col gap-1 sm:w-56">
-                        <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">Search</span>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.3em] text-slate-400">RFQ History View</p>
+                        <h2 className="font-display text-2xl text-ink">Old projects</h2>
+                      </div>
+                      <div className="w-full sm:w-[480px]">
                         <div className="relative">
                           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
                             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="3">
@@ -2182,6 +2571,8 @@ export default function Dashboard() {
                           />
                         </div>
                       </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
                       {oldCustomerOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldCustomerFilter">Customer</label>
@@ -2202,7 +2593,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldKamOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-36">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-32">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldKamFilter">KAM</label>
                           <div className="group relative">
                             <select
@@ -2240,7 +2631,7 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldApplicationOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-44">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldApplicationFilter">Application</label>
                           <div className="group relative">
                             <select
@@ -2278,8 +2669,8 @@ export default function Dashboard() {
                         </div>
                       )}
                       {oldStatusOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-36">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldStatusFilter">Status</label>
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400 whitespace-nowrap" htmlFor="oldStatusFilter">Project Condition</label>
                           <div className="group relative">
                             <select
                               id="oldStatusFilter"
@@ -2287,7 +2678,7 @@ export default function Dashboard() {
                               value={oldStatusFilter}
                               onChange={(event) => setOldStatusFilter(event.target.value)}
                             >
-                              <option value="">All Statuses</option>
+                              <option value="">All Conditions</option>
                               {oldStatusOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                             </select>
                             <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
@@ -2299,6 +2690,77 @@ export default function Dashboard() {
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
                         {formatRequestCount(filteredOldRfqs.length)}
                       </span>
+                      <div className="ml-auto flex items-center gap-2 sm:self-end sm:mt-0 mt-3">
+                        <div className="relative" ref={projectColsMenuRef}>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+                            onClick={() => setShowProjectColsMenu((v) => !v)}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                            </svg>
+                            Columns
+                            {hiddenProjectColumns.size > 0 && (
+                              <span className="col-picker-badge">{hiddenProjectColumns.size}</span>
+                            )}
+                          </button>
+                          {showProjectColsMenu && (
+                            <div className="col-picker-dropdown">
+                              <div className="col-picker-header">
+                                <span className="col-picker-title">Show / Hide Columns</span>
+                                <div className="col-picker-actions">
+                                  <button type="button" onClick={() => setHiddenProjectColumns(new Set())}>Show all</button>
+                                  <button type="button" onClick={() => setHiddenProjectColumns(new Set(oldRfqProjectColumns))}>Hide all</button>
+                                </div>
+                              </div>
+                              <div className="col-picker-list">
+                                {oldRfqProjectColumns.map((col) => (
+                                  <label key={col} className="col-picker-item">
+                                    <input
+                                      type="checkbox"
+                                      checked={!hiddenProjectColumns.has(col)}
+                                      onChange={() => toggleProjectColumn(col)}
+                                    />
+                                    <span>{getOldRfqProjectColumnLabel(col)}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {isEditingAllRows ? (
+                          <>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={isSavingAll}
+                              onClick={handleCancelGlobalEdit}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="gradient-button inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={isSavingAll}
+                              onClick={handleSaveAllRows}
+                            >
+                              {isSavingAll ? "Saving..." : "Save All"}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                            style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
+                            disabled={isSavingAll}
+                            onClick={handleStartGlobalEdit}
+                          >
+                            <Pencil size={14} />
+                            Update
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -2320,30 +2782,74 @@ export default function Dashboard() {
                         <table className="history-table text-left text-sm">
                           <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
                             <tr>
-                              {oldRfqProjectColumns.map((colName) => (
-                                <th key={colName} className={colName === "name" ? "history-sticky-name-header" : ""}>{getOldRfqProjectColumnLabel(colName)}</th>
-                              ))}
+                              {visibleProjectColumns.map((colName) => {
+                                const isCompacted = compactedProjectColumns.has(colName);
+                                return (
+                                  <th
+                                    key={colName}
+                                    className={[
+                                      colName === "name" ? "history-sticky-name-header" : "",
+                                      isCompacted ? "col-compacted-th" : ""
+                                    ].filter(Boolean).join(" ")}
+                                  >
+                                    {isCompacted ? (
+                                      <button
+                                        type="button"
+                                        className="col-expand-btn"
+                                        title={`Expand: ${getOldRfqProjectColumnLabel(colName)}`}
+                                        onClick={() => toggleCompactProjectColumn(colName)}
+                                      >▶</button>
+                                    ) : (
+                                      <div className="col-header-inner">
+                                        <span className="col-header-label">{getOldRfqProjectColumnLabel(colName)}</span>
+                                        <button
+                                          type="button"
+                                          className="col-compact-btn"
+                                          title="Compact column"
+                                          onClick={() => toggleCompactProjectColumn(colName)}
+                                        >◀</button>
+                                      </div>
+                                    )}
+                                  </th>
+                                );
+                              })}
                               <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => {
-                              const isEditingThisRow = editingOldRfqId === project.old_rfq_id;
+                              const rowEditData = editingAllRowsData[project.old_rfq_id] || {};
                               return (
                               <tr
                                 key={project.old_rfq_id ?? project.name}
-                                className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingThisRow ? "bg-blue-50/40" : "hover:bg-white/70"}`}
+                                onMouseEnter={() => fillDrag && handleFillDragEnter("project", project.old_rfq_id)}
+                                className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingAllRows ? "bg-blue-50/40" : "hover:bg-white/70"}`}
                               >
-                                {oldRfqProjectColumns.map((colName) => {
+                                {visibleProjectColumns.map((colName) => {
+                                  if (compactedProjectColumns.has(colName)) {
+                                    return (
+                                      <td
+                                        key={colName}
+                                        className={[colName === "name" ? "history-sticky-name-cell" : "", "col-compacted-td"].join(" ")}
+                                      />
+                                    );
+                                  }
                                   const isEditableColumn = isOldRfqColumnEditable(colName);
+                                  const isFillFocused = !!focusedFillCell && focusedFillCell.table === "project" && focusedFillCell.colName === colName && focusedFillCell.rowId === project.old_rfq_id;
+                                  const isFillHighlighted = isCellInFillRange("project", colName, project.old_rfq_id);
                                   return (
                                   <td key={colName} className={colName === "name" ? "history-sticky-name-cell" : ""}>
-                                    {isEditingThisRow && isEditableColumn ? (
+                                  <div
+                                    className={`fill-cell-wrapper${isFillHighlighted ? " fill-cell-highlight" : ""}`}
+                                    onFocus={() => setFocusedFillCell({ table: "project", colName, rowId: project.old_rfq_id })}
+                                    onBlur={() => setFocusedFillCell(null)}
+                                  >
+                                    {isEditingAllRows && isEditableColumn ? (
                                       colName === "project_condition" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {PROJECT_CONDITION_OPTIONS.map((opt) => (
@@ -2353,8 +2859,8 @@ export default function Dashboard() {
                                       ) : colName === "final_delivery" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {FINAL_DELIVERY_OPTIONS.map((opt) => (
@@ -2364,8 +2870,8 @@ export default function Dashboard() {
                                       ) : colName === "old_new" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {OLD_NEW_OPTIONS.map((opt) => (
@@ -2375,8 +2881,8 @@ export default function Dashboard() {
                                       ) : colName === "product_testing" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {PRODUCT_TESTING_OPTIONS.map((opt) => (
@@ -2386,8 +2892,8 @@ export default function Dashboard() {
                                       ) : colName === "type_business" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {TYPE_BUSINESS_OPTIONS.map((opt) => (
@@ -2397,8 +2903,8 @@ export default function Dashboard() {
                                       ) : colName === "importance" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {IMPORTANCE_OPTIONS.map((opt) => (
@@ -2407,32 +2913,38 @@ export default function Dashboard() {
                                         </select>
                                       ) : colName === "costing_leader" ? (
                                         <KamEditCell
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(val) => handleOldRfqEditFieldChange(colName, val)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={costingLeaderOptions}
                                         />
                                       ) : colName === "feasibility_leader" ? (
                                         <KamEditCell
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(val) => handleOldRfqEditFieldChange(colName, val)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={feasibilityLeaderOptions}
+                                        />
+                                      ) : colName === "customers" ? (
+                                        <KamEditCell
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
+                                          options={customerEditOptions}
                                         />
                                       ) : colName === "kam" || colName === "requester" || colName === "duplicate_of_old_new" ? (
                                         <KamEditCell
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(val) => handleOldRfqEditFieldChange(colName, val)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={kamEditOptions}
                                         />
                                       ) : colName === "application" ? (
                                         <ApplicationEditCell
-                                          value={editingOldRfqData?.["application"] ?? ""}
-                                          onChange={(val) => handleOldRfqEditFieldChange("application", val)}
+                                          value={rowEditData["application"] ?? ""}
+                                          onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, "application", val)}
                                         />
                                       ) : colName === "sector" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {SECTOR_OPTIONS.map((opt) => (
@@ -2442,8 +2954,8 @@ export default function Dashboard() {
                                       ) : colName === "volume_profile" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {VOLUME_PROFILE_OPTIONS.map((opt) => (
@@ -2453,8 +2965,8 @@ export default function Dashboard() {
                                       ) : colName === "quote_type" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {QUOTE_TYPE_OPTIONS.map((opt) => (
@@ -2464,8 +2976,8 @@ export default function Dashboard() {
                                       ) : colName === "integration" ? (
                                         <select
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         >
                                           <option value="">— select —</option>
                                           {INTEGRATION_OPTIONS.map((opt) => (
@@ -2476,15 +2988,15 @@ export default function Dashboard() {
                                         <input
                                           type="date"
                                           className="history-inline-edit-input"
-                                          value={toDateInputValue(editingOldRfqData?.[colName])}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={toDateInputValue(rowEditData[colName])}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         />
                                       ) : (
                                         <input
                                           type="text"
                                           className="history-inline-edit-input"
-                                          value={editingOldRfqData?.[colName] ?? ""}
-                                          onChange={(e) => handleOldRfqEditFieldChange(colName, e.target.value)}
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
                                         />
                                       )
                                     ) : HISTORY_BADGE_COLUMNS.has(colName) ? (
@@ -2496,16 +3008,23 @@ export default function Dashboard() {
                                     ) : (
                                       <TruncatedCell value={project[colName]} />
                                     )}
+                                    {isEditingAllRows && isEditableColumn && isFillFocused && (
+                                      <div
+                                        className="fill-handle"
+                                        onMouseDown={(e) => startFillDrag(e, "project", colName, project.old_rfq_id, rowEditData[colName] ?? "", paginatedRfqRowIds)}
+                                      />
+                                    )}
+                                  </div>
                                   </td>
                                   );
                                 })}
                                 <td className="history-action-cell">
-                                  <div className="flex flex-row flex-wrap items-center gap-1">
+                                  <div className="flex flex-row items-center gap-1 pr-2">
                                     {(project.subitems?.length ?? 0) > 0 ? (
                                       <button
                                         type="button"
                                         className="history-subitems-btn inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
-                                        style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
+                                        style={{ borderColor: "#94a3b8", backgroundColor: "#94a3b8" }}
                                         onClick={() => handleOpenSubitemsModal(project)}
                                       >
                                         View subitems ({project.subitems.length})
@@ -2513,44 +3032,29 @@ export default function Dashboard() {
                                     ) : (
                                       <span className="history-muted text-xs font-medium text-slate-400">No subitems</span>
                                     )}
-                                    {isEditingThisRow ? (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="history-save-btn"
-                                          disabled={savingOldRfqId === project.old_rfq_id}
-                                          onClick={() => handleSaveOldRfqRow(project.old_rfq_id)}
-                                        >
-                                          {savingOldRfqId === project.old_rfq_id ? "Saving..." : "Save"}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="history-cancel-btn"
-                                          disabled={savingOldRfqId === project.old_rfq_id}
-                                          onClick={handleCancelOldRfqEdit}
-                                        >
-                                          Cancel
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        className="history-subitems-btn inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                                        style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
-                                        disabled={editingOldRfqId !== null}
-                                        onClick={() => handleStartOldRfqEdit(project)}
-                                      >
-                                        <Pencil size={12} />
-                                        Update
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                      style={{ borderColor: "#dc2626", backgroundColor: "#dc2626" }}
+                                      disabled={isSavingAll || deletingOldRfqId === project.old_rfq_id}
+                                      onClick={() => handleDeleteOldRfqRow(project)}
+                                    >
+                                      {deletingOldRfqId === project.old_rfq_id ? (
+                                        "Deleting..."
+                                      ) : (
+                                        <>
+                                          <Trash2 size={12} />
+                                          Delete
+                                        </>
+                                      )}
+                                    </button>
                                   </div>
                                 </td>
                               </tr>
                               );
                             }) : (
                               <tr>
-                                <td colSpan={oldRfqProjectColumns.length + 1} className="px-4 py-16 text-center text-sm text-slate-400">
+                                <td colSpan={visibleProjectColumns.length + 1} className="px-4 py-16 text-center text-sm text-slate-400">
                                   No old RFQs found
                                 </td>
                               </tr>
@@ -2741,14 +3245,84 @@ export default function Dashboard() {
                     .join(" / ")}
                 </p>
               </div>
-              <button
-                type="button"
-                className="chat-modal-close"
-                onClick={handleCloseSubitemsModal}
-                aria-label="Close subitems modal"
-              >
-                x
-              </button>
+              <div className="flex items-center gap-3">
+                {subitemGlobalEditMode ? (
+                  <>
+                    <button
+                      type="button"
+                      className="history-save-btn"
+                      disabled={savingSubitemsGlobal}
+                      onClick={handleSaveSubitemsGlobal}
+                    >
+                      {savingSubitemsGlobal ? "Saving..." : "Save All"}
+                    </button>
+                    <button
+                      type="button"
+                      className="history-cancel-btn"
+                      disabled={savingSubitemsGlobal}
+                      onClick={handleCancelSubitemsGlobal}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-sm"
+                    style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
+                    onClick={handleStartSubitemGlobalEdit}
+                  >
+                    <Pencil size={12} />
+                    Update
+                  </button>
+                )}
+                <div className="relative" ref={subitemColsMenuRef}>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
+                    onClick={() => setShowSubitemColsMenu((v) => !v)}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/>
+                    </svg>
+                    Columns
+                    {hiddenSubitemColumns.size > 0 && (
+                      <span className="col-picker-badge">{hiddenSubitemColumns.size}</span>
+                    )}
+                  </button>
+                  {showSubitemColsMenu && (
+                    <div className="col-picker-dropdown col-picker-dropdown--right">
+                      <div className="col-picker-header">
+                        <span className="col-picker-title">Show / Hide Columns</span>
+                        <div className="col-picker-actions">
+                          <button type="button" onClick={() => setHiddenSubitemColumns(new Set())}>Show all</button>
+                          <button type="button" onClick={() => setHiddenSubitemColumns(new Set(oldRfqSubitemColumns))}>Hide all</button>
+                        </div>
+                      </div>
+                      <div className="col-picker-list">
+                        {oldRfqSubitemColumns.map((col) => (
+                          <label key={col} className="col-picker-item">
+                            <input
+                              type="checkbox"
+                              checked={!hiddenSubitemColumns.has(col)}
+                              onChange={() => toggleSubitemColumn(col)}
+                            />
+                            <span>{getOldRfqSubitemColumnLabel(col)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="chat-modal-close"
+                  onClick={handleCloseSubitemsModal}
+                  aria-label="Close subitems modal"
+                >
+                  x
+                </button>
+              </div>
             </div>
             <div className="chat-modal-body bg-gradient-to-b from-slate-50/40 to-white">
               {(selectedOldProject.subitems || []).length > 0 ? (
@@ -2756,25 +3330,62 @@ export default function Dashboard() {
                   <table className="history-subitems-table text-left text-sm">
                     <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
                       <tr>
-                        {oldRfqSubitemColumns.map((colName) => (
-                          <th key={colName}>{getOldRfqSubitemColumnLabel(colName)}</th>
-                        ))}
+                        {visibleSubitemColumns.map((colName) => {
+                          const isCompacted = compactedSubitemColumns.has(colName);
+                          return (
+                            <th
+                              key={colName}
+                              className={isCompacted ? "col-compacted-th" : undefined}
+                            >
+                              {isCompacted ? (
+                                <button
+                                  type="button"
+                                  className="col-expand-btn"
+                                  title={`Expand: ${getOldRfqSubitemColumnLabel(colName)}`}
+                                  onClick={() => toggleCompactSubitemColumn(colName)}
+                                >▶</button>
+                              ) : (
+                                <div className="col-header-inner">
+                                  <span className="col-header-label">{getOldRfqSubitemColumnLabel(colName)}</span>
+                                  <button
+                                    type="button"
+                                    className="col-compact-btn"
+                                    title="Compact column"
+                                    onClick={() => toggleCompactSubitemColumn(colName)}
+                                  >◀</button>
+                                </div>
+                              )}
+                            </th>
+                          );
+                        })}
                         <th className="history-subitem-action-cell">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(selectedOldProject.subitems || []).map((subitem, index) => {
                         const isEditingThisSubitem = editingSubitemId === subitem.old_rfq_subitem_id;
+                        const isInEditMode = isEditingThisSubitem || subitemGlobalEditMode;
+                        const subitemEditData = subitemGlobalEditMode
+                          ? subitemGlobalEditData[subitem.old_rfq_subitem_id]
+                          : editingSubitemData;
+                        const subitemOnChange = (colName, val) =>
+                          subitemGlobalEditMode
+                            ? handleSubitemGlobalFieldChange(subitem.old_rfq_subitem_id, colName, val)
+                            : handleSubitemEditFieldChange(colName, val);
                         return (
                           <tr
                             key={`${selectedOldProject.old_rfq_id}-subitem-${index}`}
-                            className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingThisSubitem ? "bg-blue-50/40" : "hover:bg-white/70"}`}
+                            onMouseEnter={() => fillDrag && handleFillDragEnter("subitem", subitem.old_rfq_subitem_id)}
+                            className={`border-t border-slate-200/60 text-slate-600 transition ${isInEditMode ? "bg-blue-50/40" : "hover:bg-white/70"}`}
                           >
-                            {oldRfqSubitemColumns.map((colName) => {
+                            {visibleSubitemColumns.map((colName) => {
+                              if (compactedSubitemColumns.has(colName)) {
+                                return <td key={colName} className="col-compacted-td" />;
+                              }
                               const qtyYearMatch = colName.match(/^qty_year_(\d+)$/);
                               if (qtyYearMatch) {
                                 const n = parseInt(qtyYearMatch[1]);
-                                if (isEditingThisSubitem) {
+                                if (isInEditMode) {
                                   return (
                                     <td key={colName}>
                                       <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
@@ -2782,8 +3393,8 @@ export default function Dashboard() {
                                           type="text"
                                           className="history-inline-edit-input"
                                           placeholder="Year"
-                                          value={editingSubitemData?.[`year${n}`] ?? ""}
-                                          onChange={(e) => handleSubitemEditFieldChange(`year${n}`, e.target.value)}
+                                          value={subitemEditData?.[`year${n}`] ?? ""}
+                                          onChange={(e) => subitemOnChange(`year${n}`, e.target.value)}
                                           style={{ width: "60px" }}
                                         />
                                         <span style={{ color: "#94a3b8", fontSize: "12px" }}>:</span>
@@ -2791,8 +3402,8 @@ export default function Dashboard() {
                                           type="text"
                                           className="history-inline-edit-input"
                                           placeholder="Qty"
-                                          value={editingSubitemData?.[`year${n}_value`] ?? ""}
-                                          onChange={(e) => handleSubitemEditFieldChange(`year${n}_value`, e.target.value)}
+                                          value={subitemEditData?.[`year${n}_value`] ?? ""}
+                                          onChange={(e) => subitemOnChange(`year${n}_value`, e.target.value)}
                                         />
                                       </div>
                                     </td>
@@ -2808,14 +3419,21 @@ export default function Dashboard() {
                                 );
                               }
                               const editable = isSubitemColumnEditable(colName);
+                              const isFillFocused = !!focusedFillCell && focusedFillCell.table === "subitem" && focusedFillCell.colName === colName && focusedFillCell.rowId === subitem.old_rfq_subitem_id;
+                              const isFillHighlighted = isCellInFillRange("subitem", colName, subitem.old_rfq_subitem_id);
                               return (
                                 <td key={colName}>
-                                  {isEditingThisSubitem && editable ? (
+                                <div
+                                  className={`fill-cell-wrapper${isFillHighlighted ? " fill-cell-highlight" : ""}`}
+                                  onFocus={() => setFocusedFillCell({ table: "subitem", colName, rowId: subitem.old_rfq_subitem_id })}
+                                  onBlur={() => setFocusedFillCell(null)}
+                                >
+                                  {isInEditMode && editable ? (
                                     colName === "product_line_labels" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {PRODUCT_LINE_LABELS_OPTIONS.map((opt) => (
@@ -2825,8 +3443,8 @@ export default function Dashboard() {
                                     ) : colName === "delivery_to" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {DELIVERY_TO_OPTIONS.map((opt) => (
@@ -2835,14 +3453,14 @@ export default function Dashboard() {
                                       </select>
                                     ) : colName === "application" ? (
                                       <ApplicationEditCell
-                                        value={editingSubitemData?.["application"] ?? ""}
-                                        onChange={(val) => handleSubitemEditFieldChange("application", val)}
+                                        value={subitemEditData?.["application"] ?? ""}
+                                        onChange={(val) => subitemOnChange("application", val)}
                                       />
                                     ) : colName === "final_delivery" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {FINAL_DELIVERY_OPTIONS.map((opt) => (
@@ -2852,8 +3470,8 @@ export default function Dashboard() {
                                     ) : colName === "plant" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {PLANT_OPTIONS.map((opt) => (
@@ -2863,8 +3481,8 @@ export default function Dashboard() {
                                     ) : colName === "status" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {PROJECT_CONDITION_OPTIONS.map((opt) => (
@@ -2874,8 +3492,8 @@ export default function Dashboard() {
                                     ) : colName === "importance" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {IMPORTANCE_OPTIONS.map((opt) => (
@@ -2885,8 +3503,8 @@ export default function Dashboard() {
                                     ) : colName === "pipeline" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {INTEGRATION_OPTIONS.map((opt) => (
@@ -2896,27 +3514,39 @@ export default function Dashboard() {
                                     ) : colName === "quotation_currency" ? (
                                       <select
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       >
                                         <option value="">— select —</option>
                                         {QUOTATION_CURRENCY_OPTIONS.map((opt) => (
                                           <option key={opt} value={opt}>{opt}</option>
                                         ))}
                                       </select>
+                                    ) : colName === "customer" || colName === "customers" ? (
+                                      <KamEditCell
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(val) => subitemOnChange(colName, val)}
+                                        options={customerEditOptions}
+                                      />
+                                    ) : colName === "created_by" || colName === "modified_by" ? (
+                                      <KamEditCell
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(val) => subitemOnChange(colName, val)}
+                                        options={kamEditOptions}
+                                      />
                                     ) : SUBITEM_DATE_COLUMNS.has(colName) ? (
                                       <input
                                         type="date"
                                         className="history-inline-edit-input"
-                                        value={toDateInputValue(editingSubitemData?.[colName])}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={toDateInputValue(subitemEditData?.[colName])}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       />
                                     ) : (
                                       <input
                                         type="text"
                                         className="history-inline-edit-input"
-                                        value={editingSubitemData?.[colName] ?? ""}
-                                        onChange={(e) => handleSubitemEditFieldChange(colName, e.target.value)}
+                                        value={subitemEditData?.[colName] ?? ""}
+                                        onChange={(e) => subitemOnChange(colName, e.target.value)}
                                       />
                                     )
                                   ) : colName === "status" ? (
@@ -2928,12 +3558,36 @@ export default function Dashboard() {
                                   ) : (
                                     <TruncatedCell value={subitem[colName]} />
                                   )}
+                                  {subitemGlobalEditMode && editable && isFillFocused && (
+                                    <div
+                                      className="fill-handle"
+                                      onMouseDown={(e) => startFillDrag(e, "subitem", colName, subitem.old_rfq_subitem_id, subitemEditData?.[colName] ?? "", subitemRowIds)}
+                                    />
+                                  )}
+                                </div>
                                 </td>
                               );
                             })}
                             <td className="history-subitem-action-cell">
-                              <div className="flex flex-row flex-wrap items-center gap-1">
-                                {isEditingThisSubitem ? (
+                              <div className="flex flex-row items-center gap-1 pr-2">
+                                {subitemGlobalEditMode ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                    style={{ borderColor: "#dc2626", backgroundColor: "#dc2626" }}
+                                    disabled={savingSubitemsGlobal || deletingSubitemId === subitem.old_rfq_subitem_id}
+                                    onClick={() => handleDeleteSubitem(subitem.old_rfq_subitem_id, selectedOldProject.old_rfq_id)}
+                                  >
+                                    {deletingSubitemId === subitem.old_rfq_subitem_id ? (
+                                      "Deleting..."
+                                    ) : (
+                                      <>
+                                        <Trash2 size={12} />
+                                        Delete
+                                      </>
+                                    )}
+                                  </button>
+                                ) : isEditingThisSubitem ? (
                                   <>
                                     <button
                                       type="button"
@@ -2953,16 +3607,34 @@ export default function Dashboard() {
                                     </button>
                                   </>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    className="history-subitems-btn inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                                    style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
-                                    disabled={editingSubitemId !== null}
-                                    onClick={() => handleStartSubitemEdit(subitem)}
-                                  >
-                                    <Pencil size={12} />
-                                    Update
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="history-subitems-btn inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                      style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
+                                      disabled={editingSubitemId !== null || deletingSubitemId === subitem.old_rfq_subitem_id}
+                                      onClick={() => handleStartSubitemEdit(subitem)}
+                                    >
+                                      <Pencil size={12} />
+                                      Update
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                      style={{ borderColor: "#dc2626", backgroundColor: "#dc2626" }}
+                                      disabled={editingSubitemId !== null || deletingSubitemId === subitem.old_rfq_subitem_id}
+                                      onClick={() => handleDeleteSubitem(subitem.old_rfq_subitem_id, selectedOldProject.old_rfq_id)}
+                                    >
+                                      {deletingSubitemId === subitem.old_rfq_subitem_id ? (
+                                        "Deleting..."
+                                      ) : (
+                                        <>
+                                          <Trash2 size={12} />
+                                          Delete
+                                        </>
+                                      )}
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </td>
@@ -2977,6 +3649,125 @@ export default function Dashboard() {
                   No subitems available for this project.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteRowConfirm ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => setDeleteRowConfirm(null)}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            style={{ width: "min(92vw, 440px)" }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm delete history row"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">Delete history row?</p>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={() => setDeleteRowConfirm(null)}
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" /><path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <div className="chat-modal-fallback">
+                <p className="text-sm text-slate-600">
+                  Are you sure you want to delete this history row?
+                  {deleteRowConfirm.subitems_count > 0 && (
+                    <span className="block mt-1 font-semibold text-red-600">
+                      This will also delete {deleteRowConfirm.subitems_count} subitem{deleteRowConfirm.subitems_count > 1 ? "s" : ""}. This action cannot be undone.
+                    </span>
+                  )}
+                  {deleteRowConfirm.subitems_count === 0 && (
+                    <span className="block mt-1 text-slate-500">This action cannot be undone.</span>
+                  )}
+                </p>
+                <div className="chat-modal-actions justify-end mt-4">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={() => setDeleteRowConfirm(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"
+                    onClick={handleConfirmDeleteRow}
+                  >
+                    <Trash2 size={13} />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteSubitemConfirm ? (
+        <div
+          className="chat-modal-backdrop"
+          onClick={() => setDeleteSubitemConfirm(null)}
+          role="presentation"
+        >
+          <div
+            className="chat-modal"
+            style={{ width: "min(92vw, 440px)" }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm delete subitem"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="chat-modal-header">
+              <p className="chat-modal-title">Delete subitem?</p>
+              <button
+                type="button"
+                className="chat-modal-close"
+                onClick={() => setDeleteSubitemConfirm(null)}
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12" /><path d="M18 6l-12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="chat-modal-body">
+              <div className="chat-modal-fallback">
+                <p className="text-sm text-slate-600">
+                  Are you sure you want to delete this subitem?
+                  <span className="block mt-1 text-slate-500">This action cannot be undone.</span>
+                </p>
+                <div className="chat-modal-actions justify-end mt-4">
+                  <button
+                    type="button"
+                    className="outline-button px-4 py-2 text-xs"
+                    onClick={() => setDeleteSubitemConfirm(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"
+                    onClick={handleConfirmDeleteSubitem}
+                  >
+                    <Trash2 size={13} />
+                    Delete
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
