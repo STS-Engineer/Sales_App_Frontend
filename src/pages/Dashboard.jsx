@@ -995,6 +995,7 @@ export default function Dashboard() {
   const { showToast } = useToast();
   const { role } = getUserProfile();
   const canSeeTeamView = hasRole("ZONE_MANAGER");
+  const isOwner = hasRole("OWNER");
   const viewOptions = canSeeTeamView
     ? [...BASE_VIEW_OPTIONS, { key: "team", label: "Team View" }]
     : BASE_VIEW_OPTIONS;
@@ -1093,6 +1094,7 @@ export default function Dashboard() {
 
   // Load commercial users for KAM dropdown (best-effort: only owners can call this endpoint)
   useEffect(() => {
+    if (!isOwner) return;
     listAllUsers()
       .then((users) => {
         const names = (Array.isArray(users) ? users : [])
@@ -1105,10 +1107,11 @@ export default function Dashboard() {
         setCommercialUsers(names);
       })
       .catch(() => setCommercialUsers([]));
-  }, []);
+  }, [isOwner]);
 
   // Load costing team users for Costing Leader dropdown (best-effort)
   useEffect(() => {
+    if (!isOwner) return;
     listAllUsers()
       .then((users) => {
         const names = (Array.isArray(users) ? users : [])
@@ -1121,10 +1124,11 @@ export default function Dashboard() {
         setCostingUsers(names);
       })
       .catch(() => setCostingUsers([]));
-  }, []);
+  }, [isOwner]);
 
   // Load R&D users for Feasibility Leader dropdown (best-effort)
   useEffect(() => {
+    if (!isOwner) return;
     listAllUsers()
       .then((users) => {
         const names = (Array.isArray(users) ? users : [])
@@ -1137,7 +1141,7 @@ export default function Dashboard() {
         setRndUsers(names);
       })
       .catch(() => setRndUsers([]));
-  }, []);
+  }, [isOwner]);
 
   useEffect(() => {
     if (viewMode !== "history") return;
