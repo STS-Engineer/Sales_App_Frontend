@@ -7,6 +7,7 @@ import costingTemplate from "../assets/costing_template.xlsm?url";
 import feasibilityTemplate from "../assets/feasibility_template.xlsm?url";
 import ChatPanel from "../components/ChatPanel.jsx";
 import FormField from "../components/FormField.jsx";
+import SearchableSelectField from "../components/SearchableSelectField.jsx";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import {
@@ -30,6 +31,7 @@ import {
   proceedToFormalRfq,
   requestRevision,
   listProducts,
+  listSalesCustomers,
   sendChat,
   sendOfferChat,
   sendPotentialChat,
@@ -2680,6 +2682,7 @@ export default function NewRfq() {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [chatWidth, setChatWidth] = useState(420);
   const [productOptions, setProductOptions] = useState([]);
+  const [customerOptions, setCustomerOptions] = useState([]);
   const [productDrawings, setProductDrawings] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
@@ -3185,6 +3188,12 @@ export default function NewRfq() {
         seen.add(k);
         return true;
       }));
+    }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    listSalesCustomers().then((data) => {
+      const raw = Array.isArray(data?.customers) ? data.customers : [];
+      setCustomerOptions(raw);
     }).catch(() => {});
   }, []);
   useEffect(() => {
@@ -9033,7 +9042,7 @@ export default function NewRfq() {
                                     </select>
                                   )}
                                 </label>
-                                <FormField label="Customer" name="customer" value={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
+                                <SearchableSelectField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchPlaceholder="Search customer" readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                               </div>
                             </div>
