@@ -7401,11 +7401,6 @@ export default function NewRfq() {
                                 <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
                                   Reception review
                                 </h2>
-                                {form.validatorEmail ? (
-                                  <p className="mt-1 text-base font-bold text-ink">
-                                    Responsible validator : <span className="text-tide">{form.validatorEmail}</span>
-                                  </p>
-                                ) : null}
                               </div>
                             </div>
                             {hasRecordedCostingReviewDecision ? (
@@ -7559,11 +7554,6 @@ export default function NewRfq() {
                                   <p className="mt-2 text-sm leading-7 text-slate-600">
                                     Upload the finished feasibility file or mark the requirement as not applicable with a note.
                                   </p>
-                                  {form.validatorEmail ? (
-                                    <p className="mt-1 text-base font-bold text-ink">
-                                      Responsible validator : <span className="text-tide">{form.validatorEmail}</span>
-                                    </p>
-                                  ) : null}
                                 </div>
                               </div>
                               <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
@@ -8003,11 +7993,6 @@ export default function NewRfq() {
                                 <p className="mt-2 text-sm leading-7 text-slate-600">
                                   Upload the final priced costing package.
                                 </p>
-                                {form.validatorEmail ? (
-                                  <p className="mt-1 text-base font-bold text-ink">
-                                    Responsible validator : <span className="text-tide">{form.validatorEmail}</span>
-                                  </p>
-                                ) : null}
                               </div>
                               <button
                                 type="button"
@@ -8154,14 +8139,9 @@ export default function NewRfq() {
                                               ? `Approve to close this ${formalDocumentLabel} and notify the requester. Reject is shown here now and its detailed logic can be added later.`
                                               : "Approve to move this RFQ to the Offer stage. Reject is shown here now and its detailed logic can be added later."}
                                         </p>
-                                        {form.validatorEmail ? (
-                                          <p className="mt-1 text-base font-bold text-ink">
-                                            Responsible validator : <span className="text-tide">{form.validatorEmail}</span>
-                                          </p>
-                                        ) : null}
                                       </div>
                                     </div>
- 
+
                                     {hasRecordedPricingFileDecision ? (
                                       <section
                                         className={`mt-5 rounded-[24px] border p-5 shadow-soft ${isPricingFileRejected
