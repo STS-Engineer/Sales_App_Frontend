@@ -5832,7 +5832,7 @@ export default function NewRfq() {
     try {
       await validateRfq(rfqId, { approved: true });
       await syncRfq(rfqId, { preserveNavigationState: false });
-      setValidationSuccess(`${formalDocumentLabel} approved successfully.`);
+      showToast("RFQ approved. Begin costing.", { type: "success", title: "RFQ approved" });
       waitForSharePointUrl(rfqId);
     } catch (error) {
       setRfqError(error?.message || `Unable to approve this ${formalDocumentLabel}.`);
@@ -5976,9 +5976,7 @@ export default function NewRfq() {
       setPersistCostingReviewView(true);
       setSelectedStage("In costing");
       setSelectedSubPhase("feasibility");
-      setValidationSuccess(
-        "Reception Reviewed. Upload the file or mark it as not applicable, then click Save to move to pricing."
-      );
+      showToast("RFQ approved. Begin Feasibility. An email will be sent to R&D.", { type: "success", title: "RFQ approved" });
     } catch (error) {
       setRfqError(error?.message || "Unable to approve this feasibility review.");
     } finally {
@@ -6103,7 +6101,7 @@ export default function NewRfq() {
           : "Feasibility file submitted successfully.",
         {
           type: "success",
-          title: "Costing updated"
+          title: "Costing uploaded"
         }
       );
     } catch (error) {
@@ -6249,11 +6247,11 @@ export default function NewRfq() {
       setRemovedExistingPricingFileIds([]);
       showToast(
         pricingFinalPriceDraft.length > 1
-          ? `${pricingFinalPriceDraft.length} costing files with final price uploaded successfully.`
+          ? `${pricingFinalPriceDraft.length} costing files with final price uploaded successfully. An email will be sent to the PLM to validate it.`
           : hasRemovals && pricingFinalPriceDraft.length === 0
             ? "Costing file(s) removed successfully."
-            : "Costing file with final price uploaded successfully.",
-        { type: "success", title: "Pricing updated" }
+            : "Costing file with final price uploaded successfully. An email will be sent to the PLM to validate it.",
+        { type: "success", title: "Pricing uploaded" }
       );
     } catch (error) {
       setRfqError(error?.message || "Unable to upload the costing file with final price.");
@@ -6288,11 +6286,11 @@ export default function NewRfq() {
       if (isRfiDocument) {
         setSelectedStage("In costing");
         setSelectedSubPhase("Pricing");
-        setValidationSuccess("Pricing file approved. RFI sent to requester and closed.");
+        showToast("Pricing file approved. RFI sent to requester and closed.", { type: "success", title: "RFQ approved" });
       } else {
         setSelectedStage("Offer");
         setSelectedSubPhase("Offer preparation");
-        setValidationSuccess("Pricing file approved. RFQ moved to offer preparation.");
+        showToast("Pricing file approved. RFQ moved to offer preparation.", { type: "success", title: "RFQ approved" });
       }
     } catch (error) {
       setRfqError(error?.message || "Unable to approve this pricing file.");
@@ -6367,7 +6365,7 @@ export default function NewRfq() {
       await hydrateRfqAfterMutation(rfqId);
       setSelectedStage("In costing");
       setSelectedSubPhase("Pricing");
-      setValidationSuccess("Costing moved to pricing successfully.");
+      showToast("Costing moved to pricing successfully. An email will be sent to the costing team.", { type: "success", title: "RFQ approved" });
     } catch (error) {
       setCostingfeasibilitySaved(false);
       setRfqError(error?.message || `Unable to move this ${formalDocumentLabel} to pricing.`);
@@ -8143,7 +8141,7 @@ export default function NewRfq() {
                                         </p>
                                       </div>
                                     </div>
- 
+
                                     {hasRecordedPricingFileDecision ? (
                                       <section
                                         className={`mt-5 rounded-[24px] border p-5 shadow-soft ${isPricingFileRejected
