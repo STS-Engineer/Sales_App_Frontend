@@ -320,6 +320,11 @@ export async function getTeamMembers(includeSelf = false) {
   return request(`/api/team-view/members${includeSelf ? "?include_self=true" : ""}`);
 }
 
+export async function listSalesCustomers(search = "") {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return request(`/api/actions/customers${query}`);
+}
+
 export async function listRfqs(documentType = "") {
   const values = Array.isArray(documentType) ? documentType : [documentType];
   const params = values
