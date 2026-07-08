@@ -38,7 +38,7 @@ const PHASES = [
   {
     key: "RFQ",
     label: "Request",
-    statuses: ["New RFQ", "Validation", "Cancelled"],
+    statuses: ["New RFQ", "Validation", "Rejected by AI", "Cancelled"],
     subPhases: ["Request form", "Validation"]
   },
   {
@@ -100,7 +100,7 @@ const mapStatusToProgressSubPhase = (phaseKey, status) => {
     if (status === "New RFQ") {
       return "Request form";
     }
-    if (status === "Validation") {
+    if (status === "Validation" || status === "Rejected by AI") {
       return "Validation";
     }
   }
@@ -1411,7 +1411,12 @@ export default function Dashboard() {
   const filteredTeamData = useMemo(
     () =>
       teamData.filter((rfq) => {
-        if (teamPersonFilter !== "all" && rfq.creator !== teamPersonFilter) return false;
+        if (
+          teamPersonFilter !== "all" &&
+          (rfq.creatorEmail || "").toLowerCase() !== teamPersonFilter.toLowerCase()
+        ) {
+          return false;
+        }
         if (teamSectorFilter !== "all" && normalizeSector(rfq.sector) !== teamSectorFilter) return false;
         if (!normalizedSearchTerm) return true;
         return buildSearchHaystack(rfq).includes(normalizedSearchTerm);

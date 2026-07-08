@@ -569,6 +569,7 @@ const SUBPHASE_ALIASES = {
   RFQ: "RFQ form",
   Potential: "RFQ form",
   "New RFQ": "RFQ form",
+  "Rejected by AI": "Validation",
   "RFI completed": "Pricing",
   "Mission accepted": "Mission status",
   "Mission not accepted": "Mission status"
