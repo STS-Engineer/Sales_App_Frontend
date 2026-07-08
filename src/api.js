@@ -316,6 +316,22 @@ export async function updateOldRfqSubitem(subitemId, payload) {
   });
 }
 
+export async function deleteOldRfq(oldRfqId) {
+  return request(`/api/old-rfqs/${oldRfqId}`, { method: "DELETE" });
+}
+
+export async function deleteOldRfqSubitem(subitemId) {
+  return request(`/api/old-rfq-subitems/${subitemId}`, { method: "DELETE" });
+}
+
+export async function getKamOptions() {
+  return request("/api/old-rfqs/kam-options");
+}
+
+export async function getCustomerOptions() {
+  return request("/api/old-rfqs/customer-options");
+}
+
 export async function getTeamMembers(includeSelf = false) {
   return request(`/api/team-view/members${includeSelf ? "?include_self=true" : ""}`);
 }
