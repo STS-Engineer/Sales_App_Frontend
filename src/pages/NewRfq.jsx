@@ -3215,6 +3215,11 @@ export default function NewRfq() {
     form.status === "Cancelled" &&
     validationAudit.rejectedAt
   );
+  const isCancelledAfterCostingReview = Boolean(
+    normalizePipelineStageKey(activeStage) === "In costing" &&
+    form.status === "Cancelled" &&
+    costingReviewAudit.rejectedAt
+  );
   const hasValidationLock =
     !isRevisionModeActive &&
     (
@@ -3233,6 +3238,9 @@ export default function NewRfq() {
     }
     if (stageKey === "RFQ" && isCancelledAfterRfqValidation) {
       return "Validation";
+    }
+    if (stageKey === "In costing" && isCancelledAfterCostingReview) {
+      return "feasibility";
     }
     if (stageKey === "Offer") {
       return normalizeOfferSubPhase(activeSubPhase);
@@ -3339,7 +3347,7 @@ export default function NewRfq() {
     rfqId &&
     canUseCostingActions &&
     isCostingfeasibilityView &&
-    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM" || currentUserRole === "PLM")
   );
   const canManageCostingFeasibilityHandoff = Boolean(
     rfqId &&
@@ -3348,7 +3356,8 @@ export default function NewRfq() {
     (
       currentUserRole === "OWNER" ||
       currentUserRole === "COSTING_TEAM" ||
-      currentUserRole === "RND"
+      currentUserRole === "RND" ||
+      currentUserRole === "PLM"
     )
   );
   const hasSelectedCostingFeasibilityStatus = Boolean(
@@ -3396,7 +3405,7 @@ export default function NewRfq() {
       pricingWorkflowState === PRICING_WORKFLOW_STATE_PRICING_UPLOADED ||
       pricingWorkflowState === PRICING_WORKFLOW_STATE_REJECTED
     ) &&
-    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM" || currentUserRole === "PLM")
   );
   const canSavePricingFinalPrice = Boolean(
     canManagePricingFinalPrice &&
@@ -8145,8 +8154,8 @@ export default function NewRfq() {
                                           {hasRecordedPricingFileDecision
                                             ? "The pricing validation decision has been recorded for this final price package."
                                             : isRfiDocument
-                                              ? `Approve to close this ${formalDocumentLabel} and notify the requester. Reject is shown here now and its detailed logic can be added later.`
-                                              : "Approve to move this RFQ to the Offer stage. Reject is shown here now and its detailed logic can be added later."}
+                                              ? `Approve to close this ${formalDocumentLabel} and notify the requester, or reject it to send the pricing back for a correction.`
+                                              : "Approve to move this RFQ to the Offer stage, or reject it to send the pricing back for a correction."}
                                         </p>
                                       </div>
                                     </div>
