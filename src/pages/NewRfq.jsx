@@ -398,48 +398,54 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
     }
   };
   const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
+  if (readOnly || editingOther) {
+    return (
+      <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+        <span className="flex flex-wrap items-center gap-1">
+          <span>{label}</span>
+          {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
+          {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
+        </span>
+        {readOnly ? (
+          <div className={"input-field " + lockedCls}>{value || "—"}</div>
+        ) : (
+          <input
+            className="input-field"
+            type="text"
+            placeholder="Please specify..."
+            value={value}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "") { setOtherMode(false); setEditingOther(false); }
+              onChange({ target: { name, value: v } });
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
+            onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+          />
+        )}
+      </label>
+    );
+  }
   return (
-    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-      <span className="flex flex-wrap items-center gap-1">
-        <span>{label}</span>
-        {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
-        {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
-      </span>
-      {readOnly ? (
-        <div className={"input-field " + lockedCls}>{value || "—"}</div>
-      ) : editingOther ? (
-        <input
-          className="input-field"
-          type="text"
-          placeholder="Please specify..."
-          value={value}
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "") { setOtherMode(false); setEditingOther(false); }
-            onChange({ target: { name, value: v } });
-          }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
-          onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
-        />
-      ) : (
-        <select
-          className="input-field appearance-none"
-          name={name}
-          value={selectValue}
-          onChange={handleSelectChange}
-          onMouseDown={(e) => {
-            if (otherMode) { e.preventDefault(); setEditingOther(true); }
-          }}
-        >
-          <option value="">— Select —</option>
-          {customer ? <option value="__customer__">{customer}</option> : null}
-          <option value="AVOCarbon">AVOCarbon</option>
-          <option value="__other__">{otherMode && value ? value : "Other"}</option>
-        </select>
-      )}
-    </label>
+    <SearchableSelectField
+      label={label}
+      name={name}
+      value={selectValue}
+      onChange={handleSelectChange}
+      options={[
+        ...(customer ? [{ value: "__customer__", label: customer }] : []),
+        { value: "AVOCarbon", label: "AVOCarbon" },
+        { value: "__other__", label: otherMode && value ? value : "Other" }
+      ]}
+      required={required}
+      optional={optional}
+      onBeforeOpen={() => {
+        if (otherMode) { setEditingOther(true); return false; }
+        return true;
+      }}
+    />
   );
 }
 function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
@@ -467,51 +473,53 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
     }
   };
   const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
+  if (readOnly || editingOther) {
+    return (
+      <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+        <span className="flex flex-wrap items-center gap-1">
+          <span>{label}</span>
+          {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
+          {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
+        </span>
+        {readOnly ? (
+          <div className={"input-field " + lockedCls}>{value || "—"}</div>
+        ) : (
+          <input
+            className="input-field"
+            type="text"
+            placeholder="Please specify..."
+            value={value}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "") { setOtherMode(false); setEditingOther(false); }
+              onChange({ target: { name, value: v } });
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
+            onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+          />
+        )}
+      </label>
+    );
+  }
   return (
-    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-      <span className="flex flex-wrap items-center gap-1">
-        <span>{label}</span>
-        {required ? <span className="text-red-500" aria-hidden="true">*</span> : null}
-        {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
-      </span>
-      {readOnly ? (
-        <div className={"input-field " + lockedCls}>{value || "—"}</div>
-      ) : editingOther ? (
-        <input
-          className="input-field"
-          type="text"
-          placeholder="Please specify..."
-          value={value}
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "") { setOtherMode(false); setEditingOther(false); }
-            onChange({ target: { name, value: v } });
-          }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
-          onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
-        />
-      ) : (
-        <select
-          className="input-field appearance-none"
-          name={name}
-          value={selectValue}
-          onChange={handleSelectChange}
-          onMouseDown={(e) => {
-            if (otherMode) { e.preventDefault(); setEditingOther(true); }
-          }}
-        >
-          <option value="">— Select —</option>
-          {options.map(opt => {
-            const v = typeof opt === "string" ? opt : opt.value;
-            const l = typeof opt === "string" ? opt : opt.label;
-            return <option key={v} value={v}>{l}</option>;
-          })}
-          <option value="__other__">{otherMode && value ? value : "Other"}</option>
-        </select>
-      )}
-    </label>
+    <SearchableSelectField
+      label={label}
+      name={name}
+      value={selectValue}
+      onChange={handleSelectChange}
+      options={[
+        ...options,
+        { value: "__other__", label: otherMode && value ? value : "Other" }
+      ]}
+      required={required}
+      optional={optional}
+      onBeforeOpen={() => {
+        if (otherMode) { setEditingOther(true); return false; }
+        return true;
+      }}
+    />
   );
 }
 const PIPELINE_STAGES = [
@@ -7575,28 +7583,20 @@ export default function NewRfq() {
                                       Choose the feasibility result before uploading the file or marking this handoff as not applicable.
                                     </p>
                                   </div>
-                                  <label className="w-full max-w-md text-left">
-                                    <span className="mb-2 block text-xs font-semibold uppercase tracking-widest text-slate-500">
-                                      Feasibility Status
-                                    </span>
-                                    <select
-                                      className="input-field"
+                                  <div className="w-full max-w-md text-left">
+                                    <SearchableSelectField
+                                      label="Feasibility Status"
                                       value={costingFeasibilityStatus}
                                       onChange={(event) => setCostingFeasibilityStatus(event.target.value)}
+                                      options={FEASIBILITY_STATUS_OPTIONS}
+                                      placeholder="Not selected yet"
                                       disabled={
                                         !canManageCostingFeasibilityHandoff ||
                                         hasCompletedCostingFileAction ||
                                         costingFileActionPending
                                       }
-                                    >
-                                      <option value="">Not selected yet</option>
-                                      {FEASIBILITY_STATUS_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                          {option.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
+                                    />
+                                  </div>
                                 </div>
                                 {hasSelectedCostingFeasibilityStatus ? (
                                   <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -9025,24 +9025,16 @@ export default function NewRfq() {
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                                  {renderRequirementLabel("Automotive / Non automotive", getRfqFieldRequirementProps("automotiveType"))}
-                                  {rfqFormFieldReadOnly ? (
-                                    <div className="input-field">{form.automotiveType || "—"}</div>
-                                  ) : (
-                                    <select
-                                      className="input-field"
-                                      name="automotiveType"
-                                      value={form.automotiveType || ""}
-                                      onChange={handleChange}
-                                    >
-                                      <option value="">— Select —</option>
-                                      <option value="Automotive">Automotive</option>
-                                      <option value="Non automotive">Non automotive</option>
-                                    </select>
-                                  )}
-                                </label>
-                                <SearchableSelectField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchPlaceholder="Search customer" readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
+                                <SearchableSelectField
+                                  label="Automotive / Non automotive"
+                                  name="automotiveType"
+                                  value={form.automotiveType}
+                                  onChange={handleChange}
+                                  options={["Automotive", "Non automotive"]}
+                                  readOnly={rfqFormFieldReadOnly}
+                                  {...getRfqFieldRequirementProps("automotiveType")}
+                                />
+                                <SearchableSelectField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchable searchPlaceholder="Search customer" readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                               </div>
                             </div>
@@ -9081,24 +9073,16 @@ export default function NewRfq() {
                                         {productRows.map((product, productIndex) => (
                                           <tr key={`product-${productIndex}`} className="border-t border-slate-200/70 bg-white align-top">
                                             <td className="px-3 py-3">
-                                              {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[200px]`}>
-                                                  {product.product || "—"}
-                                                </div>
-                                              ) : (
-                                                <select
-                                                  className="input-field min-w-[200px]"
-                                                  value={product.product || ""}
+                                              <div className="min-w-[230px]">
+                                                <SearchableSelectField
+                                                  name="product"
+                                                  value={product.product}
                                                   onChange={(e) => handleProductSelect(productIndex, e.target.value)}
-                                                  aria-label={`Product ${productIndex + 1} product`}
-                                                >
-                                                  <option value="">— Select —</option>
-                                                  {productOptions.map((opt) => {
-                                                    const name = opt.product_name || opt.product_line || "";
-                                                    return <option key={name} value={name}>{name}</option>;
-                                                  })}
-                                                </select>
-                                              )}
+                                                  options={productOptions.map((opt) => opt.product_name || opt.product_line || "").filter(Boolean)}
+                                                  readOnly={rfqFormFieldReadOnly}
+                                                  portal
+                                                />
+                                              </div>
                                             </td>
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
@@ -9167,12 +9151,12 @@ export default function NewRfq() {
                                             </td>
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
                                                   {product.partNumber || "—"}
                                                 </div>
                                               ) : (
                                                 <input
-                                                  className="input-field min-w-[110px]"
+                                                  className="input-field min-w-[130px]"
                                                   value={product.partNumber || ""}
                                                   onChange={(e) => handleProductChange(productIndex, "partNumber", e.target.value)}
                                                   readOnly={rfqFormFieldReadOnly}
@@ -9337,8 +9321,8 @@ export default function NewRfq() {
                                       return (
                                         <tr key={`volume-${volumeIndex}`} id={`rfq-volume-row-${volumeIndex}`} className="border-t border-slate-200/70 bg-white">
                                           <td className="px-3 py-3">
-                                            <div className="group relative inline-block min-w-[110px]">
-                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[110px]`}>
+                                            <div className="group relative inline-block min-w-[130px]">
+                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[130px]`}>
                                                 {linkedProduct.partNumber || "—"}
                                               </div>
                                               <div className="pointer-events-none absolute bottom-full left-0 mb-2.5 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg group-hover:block">
@@ -9436,26 +9420,13 @@ export default function NewRfq() {
                                                 </div>
                                                 <div>
                                                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Currency <span className="text-red-400">*</span></p>
-                                                  {rfqFormFieldReadOnly ? (
-                                                    <div className={PRODUCT_ROW_READONLY_VALUE_CLASSES}>{linkedProduct.currency || "—"}</div>
-                                                  ) : (
-                                                    <select
-                                                      className="input-field w-full"
-                                                      value={linkedProduct.currency || ""}
-                                                      onChange={(e) => handleProductChange(volumeIndex, "currency", e.target.value)}
-                                                      aria-label={`Volume ${volumeIndex + 1} currency`}
-                                                    >
-                                                      <option value="">— Select —</option>
-                                                      <option value="EUR">EUR</option>
-                                                      <option value="USD">USD</option>
-                                                      <option value="GBP">GBP</option>
-                                                      <option value="CNY">CNY</option>
-                                                      <option value="MXN">MXN</option>
-                                                      <option value="JPY">JPY</option>
-                                                      <option value="BRL">BRL</option>
-                                                      <option value="INR">INR</option>
-                                                    </select>
-                                                  )}
+                                                  <SearchableSelectField
+                                                    value={linkedProduct.currency}
+                                                    onChange={(e) => handleProductChange(volumeIndex, "currency", e.target.value)}
+                                                    options={["EUR", "USD", "GBP", "CNY", "MXN", "JPY", "BRL", "INR"]}
+                                                    readOnly={rfqFormFieldReadOnly}
+                                                    portal
+                                                  />
                                                 </div>
                                               </div>
                                               <div>
@@ -9525,23 +9496,15 @@ export default function NewRfq() {
                                             })()}
                                           </td>
                                           <td className="px-3 py-3">
-                                            {rfqFormFieldReadOnly ? (
-                                              <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[175px]`}>
-                                                {volume.deliveryZone || "—"}
-                                              </div>
-                                            ) : (
-                                              <select
-                                                className="input-field min-w-[175px]"
-                                                value={volume.deliveryZone || ""}
+                                            <div className="min-w-[175px]">
+                                              <SearchableSelectField
+                                                value={volume.deliveryZone}
                                                 onChange={(e) => handleVolumeChange(volumeIndex, "deliveryZone", e.target.value)}
-                                                aria-label={`Volume ${volumeIndex + 1} delivery zone`}
-                                              >
-                                                <option value="">— Select —</option>
-                                                {DELIVERY_ZONE_OPTIONS.map((opt) => (
-                                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                ))}
-                                              </select>
-                                            )}
+                                                options={DELIVERY_ZONE_OPTIONS}
+                                                readOnly={rfqFormFieldReadOnly}
+                                                portal
+                                              />
+                                            </div>
                                           </td>
                                           <td className="px-3 py-3">
                                             {rfqFormFieldReadOnly ? (
@@ -9621,24 +9584,15 @@ export default function NewRfq() {
                             <FormField label="Delivery Incoterm" name="deliveryIncoterm" value={form.deliveryIncoterm} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("deliveryIncoterm")} />
                             <FormField label="Incoterm Location" name="incotermLocation" value={form.incotermLocation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("incotermLocation")} />
                             <FormField label="Expected Payment Terms" name="expectedPaymentTerms" value={form.expectedPaymentTerms} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("expectedPaymentTerms")} />
-                            <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                              {renderRequirementLabel("Type of Packaging", getRfqFieldRequirementProps("typeOfPackaging"))}
-                              {rfqFormFieldReadOnly ? (
-                                <div className="input-field">{form.typeOfPackaging || "—"}</div>
-                              ) : (
-                                <select
-                                  className="input-field"
-                                  name="typeOfPackaging"
-                                  value={form.typeOfPackaging || ""}
-                                  onChange={handleChange}
-                                >
-                                  <option value="">— Select —</option>
-                                  <option value="Cardboard divider">Cardboard divider</option>
-                                  <option value="One way tray">One way tray</option>
-                                  <option value="Returnable plastic tray">Returnable plastic tray</option>
-                                </select>
-                              )}
-                            </label>
+                            <SearchableSelectField
+                              label="Type of Packaging"
+                              name="typeOfPackaging"
+                              value={form.typeOfPackaging}
+                              onChange={handleChange}
+                              options={["Cardboard divider", "One way tray", "Returnable plastic tray"]}
+                              readOnly={rfqFormFieldReadOnly}
+                              {...getRfqFieldRequirementProps("typeOfPackaging")}
+                            />
                             <FormField label="Business Trigger" name="businessTrigger" value={form.businessTrigger} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("businessTrigger")} />
                             <FormField label="Customer Tooling Conditions" name="customerToolingConditions" value={form.customerToolingConditions} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("customerToolingConditions")} />
                             <FormField label="Entry Barriers" name="entryBarriers" value={form.entryBarriers} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("entryBarriers")} />

@@ -450,7 +450,7 @@ body {
 
 @layer components {
   .input-field {
-    @apply w-full rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium normal-case tracking-normal text-ink shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
+    @apply w-full rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium normal-case tracking-normal text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
   }
 
   /* Consistent custom chevron for native <select> elements, replacing the
@@ -473,7 +473,7 @@ body {
   }
 
   .textarea-field {
-    @apply w-full rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium normal-case tracking-normal text-ink shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
+    @apply w-full rounded-2xl border border-slate-300/60 bg-white/90 px-4 py-3 text-sm font-medium normal-case tracking-normal text-slate-800 shadow-sm transition placeholder:text-slate-400 focus:border-tide focus:outline-none focus:ring-2 focus:ring-sun/20;
   }
 
   .toast-viewport {
