@@ -569,6 +569,7 @@ const SUBPHASE_ALIASES = {
   RFQ: "RFQ form",
   Potential: "RFQ form",
   "New RFQ": "RFQ form",
+  "Rejected by AI": "Validation",
   "RFI completed": "Pricing",
   "Mission accepted": "Mission status",
   "Mission not accepted": "Mission status"
@@ -3325,6 +3326,15 @@ export default function NewRfq() {
     isCostingStage && costingDisplaySubPhase === "feasibility";
   const isCostingPricingView =
     isCostingStage && costingDisplaySubPhase === "Pricing";
+  const formatResponsibleLeaders = (...groups) => {
+    const combined = [...new Set(groups.flat().filter(Boolean))];
+    return combined.length ? combined.join(", ") : "Not assigned";
+  };
+  const ResponsibleTag = ({ label, emails }) => (
+    <p className="mt-1 text-sm font-bold text-ink">
+      {label} : <span className="text-tide">{emails}</span>
+    </p>
+  );
     // SharePoint button — URL comes exclusively from the backend (rfq_data.sharepoint.folder_url)
   const sharePointUrl =
     rfqSnapshot?.rfq_data?.sharepoint?.folder_url ||
@@ -3361,9 +3371,19 @@ export default function NewRfq() {
     isCostingfeasibilityView &&
     (
       currentUserRole === "OWNER" ||
-      currentUserRole === "COSTING_TEAM" ||
       currentUserRole === "RND" ||
       currentUserRole === "PLM"
+    )
+  );
+  const canAdvanceCostingfeasibility = Boolean(
+    rfqId &&
+    canUseCostingActions &&
+    isCostingfeasibilityView &&
+    (
+      currentUserRole === "OWNER" ||
+      currentUserRole === "COSTING_TEAM" ||
+      currentUserRole === "PLM" ||
+      currentUserRole === "RND"
     )
   );
   const hasSelectedCostingFeasibilityStatus = Boolean(
@@ -3373,7 +3393,7 @@ export default function NewRfq() {
     !canReviewCostingfeasibility || costingReviewActionId
   );
   const canSaveCostingfeasibility = Boolean(
-    canReviewCostingfeasibility &&
+    canAdvanceCostingfeasibility &&
     hasRecordedCostingReviewDecision &&
     !isCostingReviewRejected &&
     ["UPLOADED", "NA"].includes(effectiveCostingFileState?.fileStatus || "") &&
@@ -7507,6 +7527,10 @@ export default function NewRfq() {
                                 <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
                                   Reception review
                                 </h2>
+                                <ResponsibleTag
+                                  label="Responsible"
+                                  emails={formatResponsibleLeaders(rfqSnapshot?.costing_leaders)}
+                                />
                               </div>
                             </div>
                             {hasRecordedCostingReviewDecision ? (
@@ -7630,6 +7654,10 @@ export default function NewRfq() {
                                   <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
                                     Feasibility file
                                   </h2>
+                                  <ResponsibleTag
+                                    label="Responsible"
+                                    emails={formatResponsibleLeaders(rfqSnapshot?.rnd_leaders)}
+                                  />
                                   <p className="mt-2 text-sm leading-7 text-slate-600">
                                     Upload the feasibility document, then click Save to move this {formalDocumentLabel} to pricing.
                                   </p>
@@ -8088,6 +8116,10 @@ export default function NewRfq() {
                                 <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
                                   Costing file with final price
                                 </h2>
+                                <ResponsibleTag
+                                  label="Responsible"
+                                  emails={formatResponsibleLeaders(rfqSnapshot?.costing_leaders)}
+                                />
                                 <p className="mt-2 text-sm leading-7 text-slate-600">
                                   Upload the final priced costing package.
                                 </p>
@@ -8230,6 +8262,10 @@ export default function NewRfq() {
                                         <h3 className="mt-2 text-lg font-semibold text-ink">
                                           Validate the final pricing package
                                         </h3>
+                                        <ResponsibleTag
+                                          label="Responsible"
+                                          emails={formatResponsibleLeaders(rfqSnapshot?.plm_leaders)}
+                                        />
                                         <p className="mt-2 text-sm leading-7 text-slate-600">
                                           {hasRecordedPricingFileDecision
                                             ? "The pricing validation decision has been recorded for this final price package."
@@ -9923,7 +9959,7 @@ export default function NewRfq() {
                     <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                       <div className="mb-4 pb-4 border-b border-slate-100">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Validator review</p>
-                        <p className="mt-1 text-base font-bold text-ink">
+                        <p className="mt-1 text-sm font-bold text-ink">
                           {form.validatorEmail
                             ? <>Responsible validator : <span className="text-tide">{form.validatorEmail}</span></>
                             : "Validator validation"}

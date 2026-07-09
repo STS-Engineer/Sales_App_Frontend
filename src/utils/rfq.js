@@ -7,7 +7,7 @@ const STATUS_MAP = {
   NEW_RFQ: "New RFQ",
   PENDING_FOR_VALIDATION: "Validation",
   PENDING_AI_APPROVAL: "Validation",
-  REJECTED_BY_AI: "Validation",
+  REJECTED_BY_AI: "Rejected by AI",
   REVISION_REQUESTED: "Validation",
   IN_COSTING_FEASIBILITY: "feasibility",
   IN_COSTING_PRICING: "Pricing",
@@ -814,6 +814,7 @@ export const mapRfqToRow = (rfq) => {
       const raw = rfq?.created_by_name || rfq?.created_by_email || "";
       return raw.includes("@") ? raw.split("@")[0] : raw;
     })(),
+    creatorEmail: rfq?.created_by_email || "",
     customer: data.customer_name || potential.customer,
     client: data.customer_name || potential.customer,
     productName: data.product_name || data.product_line_acronym,
