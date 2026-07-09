@@ -2696,6 +2696,7 @@ export default function NewRfq() {
   const [localFiles, setLocalFiles] = useState([]);
   const [pendingUpdateFiles, setPendingUpdateFiles] = useState([]); // { file, localId, updateType } — queued uploads for Update mode
   const [pendingDeleteFiles, setPendingDeleteFiles] = useState([]); // server file objects queued for deletion in Update mode
+  const [rfqEditSubmitType, setRfqEditSubmitType] = useState("simple"); // "simple" (Update) or "change_index" (Change Index) — what the update-mode Submit sends
   const [costingFiles, setCostingFiles] = useState([]);
   const [costingFileState, setCostingFileState] = useState(null);
   const [costingFileActionModalOpen, setCostingFileActionModalOpen] = useState(false);
@@ -3348,9 +3349,6 @@ export default function NewRfq() {
     effectiveCostingFileState?.fileStatus &&
     effectiveCostingFileState.fileStatus !== "PENDING"
   );
-  const canOpenCostingPricing = Boolean(
-    activeSubPhase === "Pricing" || hasCompletedCostingFileAction
-  );
   const canReviewCostingfeasibility = Boolean(
     rfqId &&
     canUseCostingActions &&
@@ -3383,6 +3381,9 @@ export default function NewRfq() {
   );
   const hasSavedCostingfeasibility = Boolean(
     feasibilitySaveAudit.completedAt || costingfeasibilitySaved
+  );
+  const canOpenCostingPricing = Boolean(
+    activeSubPhase === "Pricing" || hasSavedCostingfeasibility
   );
   const feasibilitySavedAtDisplayValue =
     parseServerTimestamp(
@@ -4806,8 +4807,12 @@ export default function NewRfq() {
     setFileUploadPending(true);
     setSaving(true);
     try {
-      for (const file of pendingUploadFiles) {
-        await uploadRfqFile(currentRfqId, file, chosenUpdateType);
+      // Only the first file in the batch should trigger the index increment —
+      // subsequent files are uploaded as "simple" so the RFQ index moves by +1 total,
+      // not once per file.
+      for (let i = 0; i < pendingUploadFiles.length; i += 1) {
+        const perFileUpdateType = i === 0 ? chosenUpdateType : "simple";
+        await uploadRfqFile(currentRfqId, pendingUploadFiles[i], perFileUpdateType);
       }
       await syncRfq(currentRfqId);
       if (chosenUpdateType === "change_index") {
@@ -5470,6 +5475,20 @@ export default function NewRfq() {
       setSaving(false);
     }
   };
+  const computeChangedRfqFields = (prevForm, nextForm) => {
+    if (!prevForm) return [];
+    const prevPayload = buildRfqDataPayloadFromForm(prevForm);
+    const nextPayload = buildRfqDataPayloadFromForm(nextForm);
+    const keys = new Set([...Object.keys(prevPayload), ...Object.keys(nextPayload)]);
+    const changed = [];
+    keys.forEach((key) => {
+      if (key === "rfq_files" || key === "systematic_rfq_id") return;
+      if (JSON.stringify(prevPayload[key]) !== JSON.stringify(nextPayload[key])) {
+        changed.push(key);
+      }
+    });
+    return changed;
+  };
   const handleUpdateRFQ = () => {
     if (!rfqId || !canUseRfqActions) return;
     if (currentUserRole !== "OWNER" && !isRfqCreator) {
@@ -5479,8 +5498,34 @@ export default function NewRfq() {
     _preUpdateSnapshotRef.current = { form: structuredClone(form) };
     setPendingUpdateFiles([]);
     setPendingDeleteFiles([]);
+    setRfqEditSubmitType("simple");
     setIsRfqUpdateModeActive(true);
     showToast("Mode update on, you can make your changes and submit it.", { type: "info", title: "Update mode" });
+  };
+  const handleChangeIndexRFQ = () => {
+    if (!rfqId || !canUseRfqActions) return;
+    if (currentUserRole !== "OWNER" && !isRfqCreator) {
+      showToast("You are not allowed to update this RFQ.", { type: "error", title: "Permission denied" });
+      return;
+    }
+    const currentRef = rfqSnapshot?.rfq_data?.systematic_rfq_id || "";
+    if (!currentRef) {
+      setRfqError("Cannot change index: RFQ reference has not been assigned yet.");
+      return;
+    }
+    if (!incrementRfqIndex(currentRef)) {
+      setRfqError("Cannot change index: RFQ reference format is not valid.");
+      return;
+    }
+    _preUpdateSnapshotRef.current = { form: structuredClone(form) };
+    setPendingUpdateFiles([]);
+    setPendingDeleteFiles([]);
+    setRfqEditSubmitType("change_index");
+    setIsRfqUpdateModeActive(true);
+    showToast(
+      "Change Index mode on — make your changes, then submit. The RFQ index will move to the next revision and costing will reset to pending validation.",
+      { type: "info", title: "Change Index mode" }
+    );
   };
   const handleSaveRfqUpdate = async () => {
     if (!rfqId || !canUseRfqActions) return;
@@ -5490,11 +5535,38 @@ export default function NewRfq() {
       setRfqError("Please complete all required fields before saving.");
       return;
     }
+    const isChangeIndexSubmit = rfqEditSubmitType === "change_index";
+    const hasPendingAttachmentChanges = pendingUpdateFiles.length > 0 || pendingDeleteFiles.length > 0;
+    // For "simple" the diff drives the whole email field list; for "change_index" the
+    // backend already computes its own field diff, so only the attachments flag is sent
+    // (the backend unions it in — attachments/drawings are uploaded separately and would
+    // otherwise never show up in either email's "Fields changed" list).
+    const changedFieldsForEmail = isChangeIndexSubmit
+      ? (hasPendingAttachmentChanges ? ["attachments"] : [])
+      : (() => {
+          const fields = computeChangedRfqFields(_preUpdateSnapshotRef.current?.form, form);
+          if (hasPendingAttachmentChanges) fields.push("attachments");
+          return fields;
+        })();
     setSaving(true);
     try {
-      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), rfqEditSubmitType, changedFieldsForEmail);
+      // The main data update above already performs the single index increment
+      // (when rfqEditSubmitType === "change_index"), so every queued file in this
+      // same submit is uploaded as "simple" — it will still be tagged with the
+      // now-current (already incremented) revision. This avoids incrementing
+      // once per file on top of the increment already applied above.
+      let changeIndexConsumed = isChangeIndexSubmit;
       for (const { file, updateType } of pendingUpdateFiles) {
-        await uploadRfqFile(rfqId, file, updateType);
+        let effectiveUpdateType = updateType;
+        if (effectiveUpdateType === "change_index") {
+          if (changeIndexConsumed) {
+            effectiveUpdateType = "simple";
+          } else {
+            changeIndexConsumed = true;
+          }
+        }
+        await uploadRfqFile(rfqId, file, effectiveUpdateType);
       }
       for (const file of pendingDeleteFiles) {
         await deleteRfqFile(rfqId, file.id, file.name);
@@ -5511,7 +5583,13 @@ export default function NewRfq() {
         return cleared;
       });
       await syncRfq(rfqId);
-      showToast("RFQ updated successfully.", { type: "success", title: "RFQ updated" });
+      showToast(
+        isChangeIndexSubmit
+          ? "RFQ index updated and costing reset to pending validation."
+          : "RFQ updated successfully.",
+        { type: "success", title: isChangeIndexSubmit ? "RFQ index updated" : "RFQ updated" }
+      );
+      setRfqEditSubmitType("simple");
       setIsRfqUpdateModeActive(false);
       setSelectedStage("RFQ");
       setSelectedSubPhase("Validation");
@@ -5549,34 +5627,8 @@ export default function NewRfq() {
     const snapshot = _preUpdateSnapshotRef.current;
     if (snapshot?.form) setForm(snapshot.form);
     _preUpdateSnapshotRef.current = null;
+    setRfqEditSubmitType("simple");
     setIsRfqUpdateModeActive(false);
-  };
-  const handleChangeIndexRFQ = async () => {
-    if (!rfqId || !canUseRfqActions) return;
-    const currentRef = rfqSnapshot?.rfq_data?.systematic_rfq_id || "";
-    if (!currentRef) {
-      setRfqError("Cannot change index: RFQ reference has not been assigned yet.");
-      return;
-    }
-    const nextRef = incrementRfqIndex(currentRef);
-    if (!nextRef) {
-      setRfqError("Cannot change index: RFQ reference format is not valid.");
-      return;
-    }
-    const confirmed = window.confirm(
-      `This action will change the RFQ reference from "${currentRef}" to "${nextRef}". Do you want to continue?`
-    );
-    if (!confirmed) return;
-    setSaving(true);
-    try {
-      const updatedRfq = await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), "change_index");
-      if (updatedRfq) setRfqSnapshot(updatedRfq);
-      showToast("RFQ index updated successfully.", { type: "success", title: "RFQ index updated" });
-    } catch (err) {
-      setRfqError(err?.message || "Unable to change RFQ index. Please try again.");
-    } finally {
-      setSaving(false);
-    }
   };
   const _autoSaveTimerRef = useRef(null);
   const _autoSaveInitRef = useRef(false);
@@ -5691,13 +5743,35 @@ export default function NewRfq() {
       setRfqError("Component is required for Assembly product lines.");
       return;
     }
+    const isChangeIndexSubmit = rfqEditSubmitType === "change_index";
+    const hasPendingAttachmentChanges = pendingUpdateFiles.length > 0 || pendingDeleteFiles.length > 0;
+    const changedFieldsForEmail = isChangeIndexSubmit
+      ? (hasPendingAttachmentChanges ? ["attachments"] : [])
+      : (() => {
+          const fields = computeChangedRfqFields(_preUpdateSnapshotRef.current?.form, form);
+          if (hasPendingAttachmentChanges) fields.push("attachments");
+          return fields;
+        })();
     setSaving(true);
     setIsSubmittingToValidator(true);
     try {
-      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
-      // Flush any pending file/drawing operations queued during Update mode
+      await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), rfqEditSubmitType, changedFieldsForEmail);
+      // The main data update above already performs the single index increment
+      // (when rfqEditSubmitType === "change_index"), so every queued file in this
+      // same submit is uploaded as "simple" — it still picks up the now-current
+      // (already incremented) revision. This avoids incrementing once per file
+      // on top of the increment already applied above.
+      let changeIndexConsumed = isChangeIndexSubmit;
       for (const { file, updateType } of pendingUpdateFiles) {
-        await uploadRfqFile(rfqId, file, updateType);
+        let effectiveUpdateType = updateType;
+        if (effectiveUpdateType === "change_index") {
+          if (changeIndexConsumed) {
+            effectiveUpdateType = "simple";
+          } else {
+            changeIndexConsumed = true;
+          }
+        }
+        await uploadRfqFile(rfqId, file, effectiveUpdateType);
       }
       for (const file of pendingDeleteFiles) {
         await deleteRfqFile(rfqId, file.id, file.name);
@@ -5725,10 +5799,16 @@ export default function NewRfq() {
       setRfqFormEditEnabled(false);
       const wasUpdateMode = isRfqUpdateModeActive;
       setIsRfqUpdateModeActive(false);
+      setRfqEditSubmitType("simple");
       _preUpdateSnapshotRef.current = null;
       showToast(
-        wasUpdateMode ? "RFQ updated and re-submitted successfully." : "RFQ submitted successfully.",
-        { type: "success", title: wasUpdateMode ? "RFQ updated" : "RFQ submitted" }
+        isChangeIndexSubmit
+          ? "RFQ index updated and costing reset to pending validation."
+          : wasUpdateMode ? "RFQ updated and re-submitted successfully." : "RFQ submitted successfully.",
+        {
+          type: "success",
+          title: isChangeIndexSubmit ? "RFQ index updated" : wasUpdateMode ? "RFQ updated" : "RFQ submitted"
+        }
       );
     } catch (error) {
       await syncRfq(rfqId).catch(() => {});
@@ -8959,22 +9039,34 @@ export default function NewRfq() {
                           <div className="flex items-center gap-2">
                             {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && (isRfqCreator || currentUserRole === "OWNER") && !isRfqUpdateModeActive ? (
                               <>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/40 bg-tide/10 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/60 hover:bg-tide/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                  onClick={handleUpdateRFQ}
-                                  disabled={saving}
-                                >
-                                  Update
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sun/40 bg-sun/10 px-4 py-2 text-sm font-semibold text-sun shadow-sm transition hover:-translate-y-0.5 hover:border-sun/60 hover:bg-sun/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                  onClick={handleChangeIndexRFQ}
-                                  disabled={saving}
-                                >
-                                  Change Index
-                                </button>
+                                <div className="group relative">
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-tide/40 bg-tide/10 px-4 py-2 text-sm font-semibold text-tide shadow-sm transition hover:-translate-y-0.5 hover:border-tide/60 hover:bg-tide/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    onClick={handleUpdateRFQ}
+                                    disabled={saving}
+                                  >
+                                    Update
+                                  </button>
+                                  <div className="pointer-events-none absolute top-full left-0 mt-2.5 hidden w-56 whitespace-normal rounded-lg bg-slate-800 px-3 py-2 text-xs text-white shadow-lg group-hover:block">
+                                    Use for small updates — the RFQ reference stays the same.
+                                    <div className="absolute left-5 bottom-full h-0 w-0 border-l-[5px] border-r-[5px] border-b-[5px] border-l-transparent border-r-transparent border-b-slate-800" />
+                                  </div>
+                                </div>
+                                <div className="group relative">
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sun/40 bg-sun/10 px-4 py-2 text-sm font-semibold text-sun shadow-sm transition hover:-translate-y-0.5 hover:border-sun/60 hover:bg-sun/20 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    onClick={handleChangeIndexRFQ}
+                                    disabled={saving}
+                                  >
+                                    Change Index
+                                  </button>
+                                  <div className="pointer-events-none absolute top-full left-0 mt-2.5 hidden w-56 whitespace-normal rounded-lg bg-slate-800 px-3 py-2 text-xs text-white shadow-lg group-hover:block">
+                                    Use for big updates — the RFQ reference's revision index also changes.
+                                    <div className="absolute left-5 bottom-full h-0 w-0 border-l-[5px] border-r-[5px] border-b-[5px] border-l-transparent border-r-transparent border-b-slate-800" />
+                                  </div>
+                                </div>
                               </>
                             ) : null}
                           </div>

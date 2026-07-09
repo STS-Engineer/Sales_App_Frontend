@@ -5,6 +5,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
+import SearchableSelectField from "../components/SearchableSelectField.jsx";
 import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem, deleteOldRfq, deleteOldRfqSubitem, listAllUsers, getKamOptions, getCustomerOptions } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
@@ -785,8 +786,7 @@ const ApplicationEditCell = ({ value, onChange }) => {
   }
 
   return (
-    <select
-      className="history-inline-edit-input"
+    <SearchableSelectField
       value={value ?? ""}
       onChange={(e) => {
         if (e.target.value === "__others__") {
@@ -796,13 +796,68 @@ const ApplicationEditCell = ({ value, onChange }) => {
           onChange(e.target.value);
         }
       }}
-    >
-      <option value="">— select —</option>
-      {APPLICATION_OPTIONS.map((opt) => (
-        <option key={opt} value={opt}>{opt}</option>
-      ))}
-      <option value="__others__">Others</option>
-    </select>
+      options={[...APPLICATION_OPTIONS, { value: "__others__", label: "Others" }]}
+      placeholder="— select —"
+      portal
+      menuWidth="content"
+      optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+      buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+      valueClassName="truncate text-inherit text-[13px]"
+      chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+    />
+  );
+};
+
+const SelectWithOthersCell = ({ value, onChange, options, searchable, searchPlaceholder }) => {
+  const isStandard = options.includes(value ?? "");
+  const [othersMode, setOthersMode] = useState(
+    !isStandard && (value ?? "") !== ""
+  );
+
+  if (othersMode) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <input
+          type="text"
+          className="history-inline-edit-input"
+          placeholder="Type custom value..."
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          title="Back to list"
+          style={{ flexShrink: 0, fontSize: "12px", color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}
+          onClick={() => { setOthersMode(false); onChange(""); }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <SearchableSelectField
+      value={value ?? ""}
+      onChange={(e) => {
+        if (e.target.value === "__others__") {
+          setOthersMode(true);
+          onChange("");
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+      options={[...options, { value: "__others__", label: "Others" }]}
+      placeholder="— select —"
+      searchable={searchable}
+      searchPlaceholder={searchPlaceholder}
+      portal
+      menuWidth="content"
+      optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+      buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+      valueClassName="truncate text-inherit text-[13px]"
+      chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+    />
   );
 };
 
@@ -1116,9 +1171,6 @@ export default function Dashboard() {
   const [isEditingAllRows, setIsEditingAllRows] = useState(false);
   const [editingAllRowsData, setEditingAllRowsData] = useState({});
   const [isSavingAll, setIsSavingAll] = useState(false);
-  const [editingSubitemId, setEditingSubitemId] = useState(null);
-  const [editingSubitemData, setEditingSubitemData] = useState({});
-  const [savingSubitemId, setSavingSubitemId] = useState(null);
   const [subitemGlobalEditMode, setSubitemGlobalEditMode] = useState(false);
   const [subitemGlobalEditData, setSubitemGlobalEditData] = useState({});
   const [savingSubitemsGlobal, setSavingSubitemsGlobal] = useState(false);
@@ -1588,17 +1640,6 @@ export default function Dashboard() {
 
   const isSubitemColumnEditable = (columnName) => !NON_EDITABLE_SUBITEM_COLUMNS.has(columnName);
 
-  const handleStartSubitemEdit = (subitem) => {
-    setEditingSubitemId(subitem.old_rfq_subitem_id);
-    setEditingSubitemData({ ...subitem });
-  };
-
-  const handleCancelSubitemEdit = () => {
-    setEditingSubitemId(null);
-    setEditingSubitemData({});
-    setSavingSubitemId(null);
-  };
-
   const handleStartSubitemGlobalEdit = () => {
     const data = {};
     (selectedOldProject?.subitems || []).forEach((s) => {
@@ -1657,61 +1698,6 @@ export default function Dashboard() {
       showToast("error", "Failed to save subitems");
     } finally {
       setSavingSubitemsGlobal(false);
-    }
-  };
-
-  const handleSubitemEditFieldChange = (columnName, value) => {
-    setEditingSubitemData((prev) => ({ ...prev, [columnName]: value }));
-  };
-
-  const handleSaveSubitemRow = async (subitemId) => {
-    setSavingSubitemId(subitemId);
-    try {
-      const payload = {};
-      oldRfqSubitemColumns.forEach((columnName) => {
-        if (isSubitemColumnEditable(columnName) && !QTY_YEAR_COLUMNS.includes(columnName)) {
-          payload[columnName] = editingSubitemData?.[columnName] ?? null;
-        }
-      });
-      // Virtual qty_year_N columns map to actual DB columns year{N} and year{N}_value
-      for (let n = 1; n <= 10; n++) {
-        payload[`year${n}`] = editingSubitemData?.[`year${n}`] ?? null;
-        payload[`year${n}_value`] = editingSubitemData?.[`year${n}_value`] ?? null;
-      }
-
-      const response = await updateOldRfqSubitem(subitemId, payload);
-      const updatedItem = response?.item || editingSubitemData;
-
-      setSelectedOldProject((prev) =>
-        prev
-          ? {
-              ...prev,
-              subitems: (prev.subitems || []).map((s) =>
-                s.old_rfq_subitem_id === subitemId ? { ...s, ...updatedItem } : s
-              ),
-            }
-          : prev
-      );
-      setOldRfqs((prev) =>
-        prev.map((project) =>
-          project.old_rfq_id === updatedItem.old_rfq_id
-            ? {
-                ...project,
-                subitems: (project.subitems || []).map((s) =>
-                  s.old_rfq_subitem_id === subitemId ? { ...s, ...updatedItem } : s
-                ),
-              }
-            : project
-        )
-      );
-
-      setEditingSubitemId(null);
-      setEditingSubitemData({});
-      setSavingSubitemId(null);
-      showToast("Subitem updated successfully.", { type: "success", title: "Saved" });
-    } catch {
-      setSavingSubitemId(null);
-      showToast("Unable to update subitem.", { type: "error", title: "Save failed" });
     }
   };
 
@@ -2576,115 +2562,131 @@ export default function Dashboard() {
                       {oldCustomerOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldCustomerFilter">Customer</label>
-                          <div className="group relative">
-                            <select
-                              id="oldCustomerFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={oldCustomerFilter}
-                              onChange={(event) => setOldCustomerFilter(event.target.value)}
-                            >
-                              <option value="">All Customers</option>
-                              {oldCustomerOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="oldCustomerFilter"
+                            name="oldCustomerFilter"
+                            value={oldCustomerFilter}
+                            onChange={(event) => setOldCustomerFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All Customers" },
+                              ...oldCustomerOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All Customers"
+                            searchable
+                            searchPlaceholder="Search customer"
+                            portal
+                            menuMinWidth={280}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       {oldKamOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-32">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldKamFilter">KAM</label>
-                          <div className="group relative">
-                            <select
-                              id="oldKamFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={oldKamFilter}
-                              onChange={(event) => setOldKamFilter(event.target.value)}
-                            >
-                              <option value="">All KAMs</option>
-                              {oldKamOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="oldKamFilter"
+                            name="oldKamFilter"
+                            value={oldKamFilter}
+                            onChange={(event) => setOldKamFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All KAMs" },
+                              ...oldKamOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All KAMs"
+                            searchable
+                            searchPlaceholder="Search KAM"
+                            portal
+                            menuMinWidth={280}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       {oldSectorOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldSectorFilter">Sector</label>
-                          <div className="group relative">
-                            <select
-                              id="oldSectorFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={oldSectorFilter}
-                              onChange={(event) => setOldSectorFilter(event.target.value)}
-                            >
-                              <option value="">All Sectors</option>
-                              {oldSectorOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="oldSectorFilter"
+                            name="oldSectorFilter"
+                            value={oldSectorFilter}
+                            onChange={(event) => setOldSectorFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All Sectors" },
+                              ...oldSectorOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All Sectors"
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       {oldApplicationOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldApplicationFilter">Application</label>
-                          <div className="group relative">
-                            <select
-                              id="oldApplicationFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={oldApplicationFilter}
-                              onChange={(event) => setOldApplicationFilter(event.target.value)}
-                            >
-                              <option value="">All Applications</option>
-                              {oldApplicationOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="oldApplicationFilter"
+                            name="oldApplicationFilter"
+                            value={oldApplicationFilter}
+                            onChange={(event) => setOldApplicationFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All Applications" },
+                              ...oldApplicationOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All Applications"
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       {oldBusinessTypeOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-44">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldBusinessTypeFilter">Business Type</label>
-                          <div className="group relative">
-                            <select
-                              id="oldBusinessTypeFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={oldBusinessTypeFilter}
-                              onChange={(event) => setOldBusinessTypeFilter(event.target.value)}
-                            >
-                              <option value="">All Business Types</option>
-                              {oldBusinessTypeOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="oldBusinessTypeFilter"
+                            name="oldBusinessTypeFilter"
+                            value={oldBusinessTypeFilter}
+                            onChange={(event) => setOldBusinessTypeFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All Business Types" },
+                              ...oldBusinessTypeOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All Business Types"
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       {oldStatusOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400 whitespace-nowrap" htmlFor="oldStatusFilter">Project Condition</label>
-                          <div className="group relative">
-                            <select
-                              id="oldStatusFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={oldStatusFilter}
-                              onChange={(event) => setOldStatusFilter(event.target.value)}
-                            >
-                              <option value="">All Conditions</option>
-                              {oldStatusOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="oldStatusFilter"
+                            name="oldStatusFilter"
+                            value={oldStatusFilter}
+                            onChange={(event) => setOldStatusFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All Conditions" },
+                              ...oldStatusOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All Conditions"
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
@@ -2846,94 +2848,122 @@ export default function Dashboard() {
                                   >
                                     {isEditingAllRows && isEditableColumn ? (
                                       colName === "project_condition" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {PROJECT_CONDITION_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={PROJECT_CONDITION_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "final_delivery" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {FINAL_DELIVERY_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={FINAL_DELIVERY_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "old_new" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {OLD_NEW_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={OLD_NEW_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "product_testing" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {PRODUCT_TESTING_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={PRODUCT_TESTING_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "type_business" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {TYPE_BUSINESS_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={TYPE_BUSINESS_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "importance" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {IMPORTANCE_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={IMPORTANCE_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "costing_leader" ? (
-                                        <KamEditCell
+                                        <SelectWithOthersCell
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={costingLeaderOptions}
+                                          searchable
+                                          searchPlaceholder="Search costing leader"
                                         />
                                       ) : colName === "feasibility_leader" ? (
-                                        <KamEditCell
+                                        <SelectWithOthersCell
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={feasibilityLeaderOptions}
+                                          searchable
+                                          searchPlaceholder="Search feasibility leader"
                                         />
                                       ) : colName === "customers" ? (
-                                        <KamEditCell
+                                        <SelectWithOthersCell
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={customerEditOptions}
+                                          searchable
+                                          searchPlaceholder="Search customer"
                                         />
-                                      ) : colName === "kam" || colName === "requester" || colName === "duplicate_of_old_new" ? (
-                                        <KamEditCell
+                                      ) : colName === "kam" ? (
+                                        <SelectWithOthersCell
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
                                           options={kamEditOptions}
+                                          searchable
+                                          searchPlaceholder="Search KAM"
+                                        />
+                                      ) : colName === "requester" || colName === "duplicate_of_old_new" ? (
+                                        <SelectWithOthersCell
+                                          value={rowEditData[colName] ?? ""}
+                                          onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, colName, val)}
+                                          options={kamEditOptions}
+                                          searchable
+                                          searchPlaceholder="Search"
                                         />
                                       ) : colName === "application" ? (
                                         <ApplicationEditCell
@@ -2941,49 +2971,57 @@ export default function Dashboard() {
                                           onChange={(val) => handleGlobalEditFieldChange(project.old_rfq_id, "application", val)}
                                         />
                                       ) : colName === "sector" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {SECTOR_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={SECTOR_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "volume_profile" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {VOLUME_PROFILE_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={VOLUME_PROFILE_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "quote_type" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {QUOTE_TYPE_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={QUOTE_TYPE_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : colName === "integration" ? (
-                                        <select
-                                          className="history-inline-edit-input"
+                                        <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
                                           onChange={(e) => handleGlobalEditFieldChange(project.old_rfq_id, colName, e.target.value)}
-                                        >
-                                          <option value="">— select —</option>
-                                          {INTEGRATION_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                          ))}
-                                        </select>
+                                          options={INTEGRATION_OPTIONS}
+                                          placeholder="— select —"
+                                          portal
+                                          menuWidth="content"
+                                          optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                          buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                          valueClassName="truncate text-inherit text-[13px]"
+                                          chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                        />
                                       ) : OLD_RFQ_DATE_COLUMNS.has(colName) ? (
                                         <input
                                           type="date"
@@ -3227,11 +3265,12 @@ export default function Dashboard() {
           role="presentation"
         >
           <div
-            className="chat-modal w-[min(96vw,1600px)] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
+            className="chat-modal history-subitems-modal w-[min(96vw,1600px)] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="history-subitems-modal-title"
             onClick={(event) => event.stopPropagation()}
+            style={{ height: "85vh", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
           >
             <div className="chat-modal-header">
               <div>
@@ -3324,9 +3363,15 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
-            <div className="chat-modal-body bg-gradient-to-b from-slate-50/40 to-white">
+            <div
+              className="chat-modal-body bg-gradient-to-b from-slate-50/40 to-white"
+              style={{ height: "auto", display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0, overflow: "hidden", padding: "24px" }}
+            >
               {(selectedOldProject.subitems || []).length > 0 ? (
-                <div className="history-subitems-scroll px-6 py-6">
+                <div
+                  className="history-subitems-scroll rounded-2xl border border-slate-200/70"
+                  style={{ overflowX: "auto", overflowY: "auto", flex: "1 1 auto", minHeight: 0, maxHeight: "70vh" }}
+                >
                   <table className="history-subitems-table text-left text-sm">
                     <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
                       <tr>
@@ -3335,7 +3380,10 @@ export default function Dashboard() {
                           return (
                             <th
                               key={colName}
-                              className={isCompacted ? "col-compacted-th" : undefined}
+                              className={[
+                                colName === "name" ? "history-sticky-name-header" : "",
+                                isCompacted ? "col-compacted-th" : ""
+                              ].filter(Boolean).join(" ") || undefined}
                             >
                               {isCompacted ? (
                                 <button
@@ -3363,15 +3411,10 @@ export default function Dashboard() {
                     </thead>
                     <tbody>
                       {(selectedOldProject.subitems || []).map((subitem, index) => {
-                        const isEditingThisSubitem = editingSubitemId === subitem.old_rfq_subitem_id;
-                        const isInEditMode = isEditingThisSubitem || subitemGlobalEditMode;
-                        const subitemEditData = subitemGlobalEditMode
-                          ? subitemGlobalEditData[subitem.old_rfq_subitem_id]
-                          : editingSubitemData;
+                        const isInEditMode = subitemGlobalEditMode;
+                        const subitemEditData = subitemGlobalEditData[subitem.old_rfq_subitem_id];
                         const subitemOnChange = (colName, val) =>
-                          subitemGlobalEditMode
-                            ? handleSubitemGlobalFieldChange(subitem.old_rfq_subitem_id, colName, val)
-                            : handleSubitemEditFieldChange(colName, val);
+                          handleSubitemGlobalFieldChange(subitem.old_rfq_subitem_id, colName, val);
                         return (
                           <tr
                             key={`${selectedOldProject.old_rfq_id}-subitem-${index}`}
@@ -3380,7 +3423,12 @@ export default function Dashboard() {
                           >
                             {visibleSubitemColumns.map((colName) => {
                               if (compactedSubitemColumns.has(colName)) {
-                                return <td key={colName} className="col-compacted-td" />;
+                                return (
+                                  <td
+                                    key={colName}
+                                    className={[colName === "name" ? "history-sticky-name-cell" : "", "col-compacted-td"].join(" ")}
+                                  />
+                                );
                               }
                               const qtyYearMatch = colName.match(/^qty_year_(\d+)$/);
                               if (qtyYearMatch) {
@@ -3422,7 +3470,7 @@ export default function Dashboard() {
                               const isFillFocused = !!focusedFillCell && focusedFillCell.table === "subitem" && focusedFillCell.colName === colName && focusedFillCell.rowId === subitem.old_rfq_subitem_id;
                               const isFillHighlighted = isCellInFillRange("subitem", colName, subitem.old_rfq_subitem_id);
                               return (
-                                <td key={colName}>
+                                <td key={colName} className={colName === "name" ? "history-sticky-name-cell" : ""}>
                                 <div
                                   className={`fill-cell-wrapper${isFillHighlighted ? " fill-cell-highlight" : ""}`}
                                   onFocus={() => setFocusedFillCell({ table: "subitem", colName, rowId: subitem.old_rfq_subitem_id })}
@@ -3430,109 +3478,129 @@ export default function Dashboard() {
                                 >
                                   {isInEditMode && editable ? (
                                     colName === "product_line_labels" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {PRODUCT_LINE_LABELS_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={PRODUCT_LINE_LABELS_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "delivery_to" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {DELIVERY_TO_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={DELIVERY_TO_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "application" ? (
                                       <ApplicationEditCell
                                         value={subitemEditData?.["application"] ?? ""}
                                         onChange={(val) => subitemOnChange("application", val)}
                                       />
                                     ) : colName === "final_delivery" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {FINAL_DELIVERY_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={FINAL_DELIVERY_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "plant" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {PLANT_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={PLANT_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "status" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {PROJECT_CONDITION_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={PROJECT_CONDITION_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "importance" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {IMPORTANCE_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={IMPORTANCE_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "pipeline" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {INTEGRATION_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={INTEGRATION_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "quotation_currency" ? (
-                                      <select
-                                        className="history-inline-edit-input"
+                                      <SearchableSelectField
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(e) => subitemOnChange(colName, e.target.value)}
-                                      >
-                                        <option value="">— select —</option>
-                                        {QUOTATION_CURRENCY_OPTIONS.map((opt) => (
-                                          <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                      </select>
+                                        options={QUOTATION_CURRENCY_OPTIONS}
+                                        placeholder="— select —"
+                                        portal
+                                        menuWidth="content"
+                                        optionListClassName="text-[13px] font-medium normal-case tracking-normal text-ink"
+                                        buttonClassName="history-inline-edit-input flex items-center justify-between gap-1 text-left normal-case tracking-normal"
+                                        valueClassName="truncate text-inherit text-[13px]"
+                                        chevronClassName="h-3.5 w-3.5 flex-shrink-0 text-slate-400"
+                                      />
                                     ) : colName === "customer" || colName === "customers" ? (
-                                      <KamEditCell
+                                      <SelectWithOthersCell
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(val) => subitemOnChange(colName, val)}
                                         options={customerEditOptions}
+                                        searchable
+                                        searchPlaceholder="Search customer"
                                       />
                                     ) : colName === "created_by" || colName === "modified_by" ? (
-                                      <KamEditCell
+                                      <SelectWithOthersCell
                                         value={subitemEditData?.[colName] ?? ""}
                                         onChange={(val) => subitemOnChange(colName, val)}
                                         options={kamEditOptions}
+                                        searchable
+                                        searchPlaceholder="Search"
                                       />
                                     ) : SUBITEM_DATE_COLUMNS.has(colName) ? (
                                       <input
@@ -3570,72 +3638,22 @@ export default function Dashboard() {
                             })}
                             <td className="history-subitem-action-cell">
                               <div className="flex flex-row items-center gap-1 pr-2">
-                                {subitemGlobalEditMode ? (
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                                    style={{ borderColor: "#dc2626", backgroundColor: "#dc2626" }}
-                                    disabled={savingSubitemsGlobal || deletingSubitemId === subitem.old_rfq_subitem_id}
-                                    onClick={() => handleDeleteSubitem(subitem.old_rfq_subitem_id, selectedOldProject.old_rfq_id)}
-                                  >
-                                    {deletingSubitemId === subitem.old_rfq_subitem_id ? (
-                                      "Deleting..."
-                                    ) : (
-                                      <>
-                                        <Trash2 size={12} />
-                                        Delete
-                                      </>
-                                    )}
-                                  </button>
-                                ) : isEditingThisSubitem ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="history-save-btn"
-                                      disabled={savingSubitemId === subitem.old_rfq_subitem_id}
-                                      onClick={() => handleSaveSubitemRow(subitem.old_rfq_subitem_id)}
-                                    >
-                                      {savingSubitemId === subitem.old_rfq_subitem_id ? "Saving..." : "Save"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="history-cancel-btn"
-                                      disabled={savingSubitemId === subitem.old_rfq_subitem_id}
-                                      onClick={handleCancelSubitemEdit}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="history-subitems-btn inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                                      style={{ borderColor: "#046eaf", backgroundColor: "#046eaf" }}
-                                      disabled={editingSubitemId !== null || deletingSubitemId === subitem.old_rfq_subitem_id}
-                                      onClick={() => handleStartSubitemEdit(subitem)}
-                                    >
-                                      <Pencil size={12} />
-                                      Update
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                                      style={{ borderColor: "#dc2626", backgroundColor: "#dc2626" }}
-                                      disabled={editingSubitemId !== null || deletingSubitemId === subitem.old_rfq_subitem_id}
-                                      onClick={() => handleDeleteSubitem(subitem.old_rfq_subitem_id, selectedOldProject.old_rfq_id)}
-                                    >
-                                      {deletingSubitemId === subitem.old_rfq_subitem_id ? (
-                                        "Deleting..."
-                                      ) : (
-                                        <>
-                                          <Trash2 size={12} />
-                                          Delete
-                                        </>
-                                      )}
-                                    </button>
-                                  </>
-                                )}
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                  style={{ borderColor: "#dc2626", backgroundColor: "#dc2626" }}
+                                  disabled={savingSubitemsGlobal || deletingSubitemId === subitem.old_rfq_subitem_id}
+                                  onClick={() => handleDeleteSubitem(subitem.old_rfq_subitem_id, selectedOldProject.old_rfq_id)}
+                                >
+                                  {deletingSubitemId === subitem.old_rfq_subitem_id ? (
+                                    "Deleting..."
+                                  ) : (
+                                    <>
+                                      <Trash2 size={12} />
+                                      Delete
+                                    </>
+                                  )}
+                                </button>
                               </div>
                             </td>
                           </tr>

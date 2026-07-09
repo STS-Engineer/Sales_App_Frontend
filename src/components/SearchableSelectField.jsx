@@ -7,6 +7,7 @@ const getOptionLabel = (option) => (typeof option === "string" ? option : option
 
 export default function SearchableSelectField({
   label,
+  id,
   name,
   value,
   onChange,
@@ -27,7 +28,22 @@ export default function SearchableSelectField({
   maxResults = 50,
   // Called right before the menu opens; return false to cancel opening
   // (e.g. to redirect into an "Other: type your own value" input instead).
-  onBeforeOpen = null
+  onBeforeOpen = null,
+  // Optional overrides so the trigger button can match a different design
+  // (e.g. a filter pill) while the dropdown menu/search keeps this component's
+  // behavior. Defaults reproduce this component's original look exactly.
+  buttonClassName = null,
+  chevronClassName = null,
+  valueClassName = null,
+  // Minimum dropdown width in px — lets the menu be wider than the trigger
+  // button (e.g. for a narrow filter pill with long option labels).
+  menuMinWidth = null,
+  // "content": size the dropdown to its longest option (never narrower than
+  // the trigger button). Overrides menuMinWidth when set.
+  menuWidth = null,
+  // Override the option list's text size/weight/case classes. Defaults
+  // reproduce this component's original look exactly.
+  optionListClassName = null
 }) {
   const isLocked = readOnly || disabled;
   const normalizedValue = value ?? "";
@@ -63,15 +79,26 @@ export default function SearchableSelectField({
     if (!open || !portal) return;
     const rect = buttonRef.current?.getBoundingClientRect();
     if (rect) {
-      setMenuStyle({
-        position: "fixed",
-        top: rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
-        zIndex: 60
-      });
+      setMenuStyle(
+        menuWidth === "content"
+          ? {
+            position: "fixed",
+            top: rect.bottom + 4,
+            left: rect.left,
+            minWidth: rect.width,
+            width: "max-content",
+            zIndex: 99999
+          }
+          : {
+            position: "fixed",
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: menuMinWidth ? Math.max(rect.width, menuMinWidth) : rect.width,
+            zIndex: 99999
+          }
+      );
     }
-  }, [open, portal]);
+  }, [open, portal, menuMinWidth, menuWidth]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,7 +151,7 @@ export default function SearchableSelectField({
             <input
               ref={searchInputRef}
               type="text"
-              className="input-field pl-9 text-sm normal-case tracking-normal"
+              className="input-field py-1.5 pl-9 text-sm normal-case tracking-normal"
               placeholder={searchPlaceholder}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -133,7 +160,7 @@ export default function SearchableSelectField({
           </div>
         </div>
       ) : null}
-      <ul className="max-h-56 overflow-y-auto py-1 text-sm font-medium normal-case tracking-normal text-ink">
+      <ul className={`max-h-56 overflow-y-auto py-1 ${optionListClassName || "text-sm font-medium normal-case tracking-normal text-ink"}`}>
         {filteredOptions.length > 0 ? (
           filteredOptions.map((option) => {
             const optionValue = getOptionValue(option);
@@ -142,7 +169,7 @@ export default function SearchableSelectField({
               <li key={optionValue}>
                 <button
                   type="button"
-                  className={`block w-full px-3 py-2 text-left hover:bg-slate-50 ${optionValue === normalizedValue ? "bg-slate-50" : ""}`}
+                  className={`block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-tide/10 ${optionValue === normalizedValue ? "bg-tide/10" : ""}`}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     handleSelectOption(option);
@@ -188,22 +215,32 @@ export default function SearchableSelectField({
         <div className="relative">
           <button
             ref={buttonRef}
+            id={id}
             type="button"
-            className={`input-field flex w-full items-center justify-between gap-2 text-left normal-case tracking-normal ${error ? "border-red-400 focus:ring-red-300" : ""}`}
+            className={`${buttonClassName || "input-field flex w-full items-center justify-between gap-2 text-left normal-case tracking-normal"} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
             onClick={() => {
               if (!open && onBeforeOpen && onBeforeOpen() === false) return;
               setOpen((prev) => !prev);
             }}
           >
-            <span className="truncate text-slate-800">
+            <span className={valueClassName || "truncate text-slate-800"}>
               {displayValue || placeholder}
             </span>
             <ChevronDown
-              className={`h-4 w-4 flex-shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+              className={`${chevronClassName || "h-4 w-4 flex-shrink-0 text-slate-500"} transition-transform ${open ? "rotate-180" : ""}`}
             />
           </button>
           {open && !portal ? (
-            <div className="absolute z-20 mt-1 w-full">{menuContent}</div>
+            <div
+              className="absolute z-20 mt-1 w-full"
+              style={
+                menuWidth === "content"
+                  ? { width: "max-content", minWidth: "100%" }
+                  : (menuMinWidth ? { minWidth: menuMinWidth } : undefined)
+              }
+            >
+              {menuContent}
+            </div>
           ) : null}
           {open && portal ? createPortal(menuContent, document.body) : null}
         </div>
