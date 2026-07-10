@@ -490,6 +490,13 @@ export async function sendChat(rfqId, message, chatMode = "rfq", documentType = 
   });
 }
 
+export async function sendAutofillChat(rfqId, message) {
+  return request("/api/chat/autofill", {
+    method: "POST",
+    body: { rfq_id: rfqId, message }
+  });
+}
+
 export async function sendOfferChat(rfqId, message, attachmentNames = []) {
   return request("/api/chat/offer", {
     method: "POST",

@@ -25,7 +25,7 @@ export default function FormField({
     const element = textareaRef.current;
     const hasValue = String(normalizedValue).trim().length > 0;
     element.style.height = "0px";
-    element.style.height = hasValue ? `${Math.max(element.scrollHeight, 50)}px` : "";
+    element.style.height = hasValue ? `${element.scrollHeight}px` : "";
   }, [canAutoExpand, normalizedValue]);
 
   return (
@@ -66,7 +66,7 @@ export default function FormField({
         <textarea
           ref={textareaRef}
           rows={1}
-          className={`textarea-field min-h-[50px] resize-none overflow-hidden ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
+          className={`textarea-field resize-none overflow-hidden ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
           value={normalizedValue}
           onChange={onChange}
