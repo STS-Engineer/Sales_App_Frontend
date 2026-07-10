@@ -1,19 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { Pencil, Trash2 } from "lucide-react";
+import { Globe, History, LayoutList, Menu, Pencil, TrendingUp, Trash2, Users, X } from "lucide-react";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
 import SearchableSelectField from "../components/SearchableSelectField.jsx";
-import { listRfqs, getTeamView, getTeamMembers, getOldRfqs, updateOldRfq, updateOldRfqSubitem, deleteOldRfq, deleteOldRfqSubitem, listAllUsers, getKamOptions, getCustomerOptions } from "../api";
+import { listRfqs, getTeamView, getTeamMembers, getMarketViewSegment, getMarketView, getOldRfqs, updateOldRfq, updateOldRfqSubitem, deleteOldRfq, deleteOldRfqSubitem, listAllUsers, getKamOptions, getCustomerOptions } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
 
 const BASE_VIEW_OPTIONS = [
   { key: "detailed", label: "Detailed View" },
-  { key: "global", label: "Global View" },
-  { key: "history", label: "RFQ History View" }
+  { key: "global", label: "Global View" }
+];
+
+const HISTORY_VIEW_OPTION = { key: "history", label: "RFQ History View" };
+
+const MOBILE_VIEW_ICONS = {
+  detailed: LayoutList,
+  global: Globe,
+  team: Users,
+  market: TrendingUp,
+  history: History
+};
+
+const MOBILE_VIEW_BADGE_STYLES = [
+  "bg-tide/10 text-tide",
+  "bg-mint/15 text-mint",
+  "bg-sun/15 text-sun"
 ];
 
 const TYPE_FILTER_OPTIONS = [
@@ -1142,9 +1157,6 @@ export default function Dashboard() {
   const { role } = getUserProfile();
   const canSeeTeamView = hasRole("ZONE_MANAGER");
   const isOwner = hasRole("OWNER");
-  const viewOptions = canSeeTeamView
-    ? [...BASE_VIEW_OPTIONS, { key: "team", label: "Team View" }]
-    : BASE_VIEW_OPTIONS;
 
   const [rfqs, setRfqs] = useState([]);
   const [viewMode, setViewMode] = useState("detailed");
@@ -1195,7 +1207,20 @@ export default function Dashboard() {
   const [rndUsers, setRndUsers] = useState([]);
   const [teamData, setTeamData] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [marketSegment, setMarketSegment] = useState(null);
+  const [marketData, setMarketData] = useState([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketTypeFilter, setMarketTypeFilter] = useState("all");
+  const [marketStatusFilter, setMarketStatusFilter] = useState("all");
+  const [marketKamFilter, setMarketKamFilter] = useState("");
+  const viewOptions = [
+    ...BASE_VIEW_OPTIONS,
+    ...(canSeeTeamView ? [{ key: "team", label: "Team View" }] : []),
+    ...(marketSegment ? [{ key: "market", label: "Market View" }] : []),
+    HISTORY_VIEW_OPTION
+  ];
   const [searchTerm, setSearchTerm] = useState("");
+  const [mobileViewMenuOpen, setMobileViewMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [hiddenProjectColumns, setHiddenProjectColumns] = useState(new Set());
@@ -1229,7 +1254,7 @@ export default function Dashboard() {
   }, [showToast]);
 
   useEffect(() => {
-    if (viewMode !== "team") return;
+    if (!canSeeTeamView) return;
     const load = async () => {
       setTeamLoading(true);
       try {
@@ -1246,7 +1271,7 @@ export default function Dashboard() {
       }
     };
     load();
-  }, [viewMode, showToast]);
+  }, [canSeeTeamView, showToast]);
 
   // Load team members for Zone Manager's Team View Person filter
   useEffect(() => {
@@ -1255,6 +1280,34 @@ export default function Dashboard() {
       .then((data) => setTeamMembers(Array.isArray(data) ? data : []))
       .catch(() => setTeamMembers([]));
   }, [canSeeTeamView]);
+
+  // Determine whether the current user has a market segment (automotive /
+  // industry / large accounts) — controls whether the Market View tab shows.
+  useEffect(() => {
+    getMarketViewSegment()
+      .then((data) => setMarketSegment(data?.segment || null))
+      .catch(() => setMarketSegment(null));
+  }, []);
+
+  useEffect(() => {
+    if (!marketSegment) return;
+    const load = async () => {
+      setMarketLoading(true);
+      try {
+        const data = await getMarketView();
+        setMarketData(Array.isArray(data) ? data.map(mapRfqToRow) : []);
+      } catch {
+        setMarketData([]);
+        showToast("Unable to load market data. Please refresh.", {
+          type: "error",
+          title: "Market data unavailable"
+        });
+      } finally {
+        setMarketLoading(false);
+      }
+    };
+    load();
+  }, [marketSegment, showToast]);
 
   // Load commercial names from v_sales_organisation (KPI_DB_Final) for KAM dropdown
   useEffect(() => {
@@ -1311,7 +1364,6 @@ export default function Dashboard() {
   }, [isOwner]);
 
   useEffect(() => {
-    if (viewMode !== "history") return;
     const load = async () => {
       setOldRfqsLoading(true);
       setOldRfqsError("");
@@ -1338,7 +1390,7 @@ export default function Dashboard() {
       }
     };
     load();
-  }, [viewMode]);
+  }, []);
 
   useEffect(() => {
     if (!selectedOldProject) return undefined;
@@ -1476,6 +1528,18 @@ export default function Dashboard() {
     [teamData, teamPersonFilter, teamSectorFilter, normalizedSearchTerm]
   );
 
+  const filteredMarketData = useMemo(
+    () =>
+      marketData.filter((rfq) => {
+        if (marketTypeFilter !== "all" && rfq.documentType !== marketTypeFilter) return false;
+        if (marketStatusFilter !== "all" && normalizeStatus(rfq.status) !== marketStatusFilter) return false;
+        if (marketKamFilter && wordSortKey(rfq.creator) !== wordSortKey(marketKamFilter)) return false;
+        if (!normalizedSearchTerm) return true;
+        return buildSearchHaystack(rfq).includes(normalizedSearchTerm);
+      }),
+    [marketData, marketTypeFilter, marketStatusFilter, marketKamFilter, normalizedSearchTerm]
+  );
+
   const oldRfqProjects = useMemo(
     () => (Array.isArray(oldRfqs) ? oldRfqs : []).map((project, index) => ({
       ...project,
@@ -1557,6 +1621,10 @@ export default function Dashboard() {
     () => filterOldOpts(oldRfqProjects.map((p) => p.kam)),
     [oldRfqProjects]
   );
+  const marketKamOptions = useMemo(
+    () => filterOldOpts(marketData.map((rfq) => rfq.creator)),
+    [marketData]
+  );
   // KAM edit options: prefer commercial users from API, fall back to unique KAMs from data
   const kamEditOptions = useMemo(
     () => commercialUsers.length > 0 ? commercialUsers : oldKamOptions,
@@ -1632,9 +1700,6 @@ export default function Dashboard() {
 
   const handleCloseSubitemsModal = () => {
     setSelectedOldProject(null);
-    setEditingSubitemId(null);
-    setEditingSubitemData({});
-    setSavingSubitemId(null);
   };
 
   const NON_EDITABLE_OLD_RFQ_COLUMNS = new Set(["old_rfq_id", "excel_row_number", "subitems_count"]);
@@ -1916,11 +1981,13 @@ export default function Dashboard() {
   const activeRows =
     viewMode === "team"
       ? finalTeamData
-      : viewMode === "global"
-        ? finalGlobalRfqs
-        : viewMode === "history"
-          ? filteredOldRfqs
-          : finalDetailedRfqs;
+      : viewMode === "market"
+        ? filteredMarketData
+        : viewMode === "global"
+          ? finalGlobalRfqs
+          : viewMode === "history"
+            ? filteredOldRfqs
+            : finalDetailedRfqs;
   const totalRows = activeRows.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / rowsPerPage));
   const safePage = Math.min(page, pageCount);
@@ -1961,7 +2028,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldApplicationFilter, oldBusinessTypeFilter, oldStatusFilter]);
+  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, marketTypeFilter, marketStatusFilter, marketKamFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldApplicationFilter, oldBusinessTypeFilter, oldStatusFilter]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -1974,6 +2041,12 @@ export default function Dashboard() {
       setViewMode("detailed");
     }
   }, [canSeeTeamView, viewMode]);
+
+  useEffect(() => {
+    if (!marketSegment && viewMode === "market") {
+      setViewMode("detailed");
+    }
+  }, [marketSegment, viewMode]);
 
   useEffect(() => {
     if (selectedDetailedProductLine !== "ALL" && !detailedProductLineOptions.includes(selectedDetailedProductLine)) {
@@ -2075,10 +2148,18 @@ export default function Dashboard() {
       <div className="px-1 py-4 sm:px-2 sm:py-6 md:px-3 md:py-9 xl:px-4 xl:py-10">
         <div className="w-full">
           <div className="app-shell rounded-[24px] border border-slate-200/70 p-3 shadow-card sm:rounded-[32px] sm:p-5 md:p-6 xl:p-7">
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-4 sm:gap-8">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="inline-flex rounded-2xl border border-slate-200 bg-white/80 p-1 shadow-soft">
+                  <button
+                    type="button"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-600 shadow-soft transition hover:bg-slate-100 sm:hidden"
+                    onClick={() => setMobileViewMenuOpen(true)}
+                    aria-label="Open view options"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </button>
+                  <div className="hidden rounded-2xl border border-slate-200 bg-white/80 p-1 shadow-soft sm:inline-flex">
                     {viewOptions.map((view) => {
                       const isActive = viewMode === view.key;
                       return (
@@ -2107,10 +2188,76 @@ export default function Dashboard() {
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
                     to="/rfqs/new"
-                    className="gradient-button rounded-xl px-4 py-3 text-sm font-semibold shadow-soft"
+                    className="gradient-button rounded-xl px-3 py-2.5 text-xs font-semibold shadow-soft sm:px-4 sm:py-3 sm:text-sm"
                   >
                     + New request
                   </Link>
+                </div>
+              </div>
+
+              <div
+                className={`fixed inset-0 z-[999] bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 sm:hidden ${
+                  mobileViewMenuOpen ? "opacity-100" : "pointer-events-none opacity-0"
+                }`}
+                onClick={() => setMobileViewMenuOpen(false)}
+                role="presentation"
+              >
+                <div
+                  className={`flex h-full w-72 max-w-[82vw] flex-col gap-1 overflow-hidden rounded-r-[28px] border-r border-slate-200/70 bg-white p-3 shadow-card transition-transform duration-300 ${
+                    mobileViewMenuOpen ? "translate-x-0" : "-translate-x-full"
+                  }`}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between gap-2 rounded-2xl bg-gradient-to-r from-tide/10 to-mint/5 px-3 py-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-tide">
+                        Views
+                      </p>
+                      <p className="font-display text-lg text-ink">Switch view</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide"
+                      onClick={() => setMobileViewMenuOpen(false)}
+                      aria-label="Close view options"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="my-1 h-px bg-slate-200/70" />
+                  <div className="flex flex-col gap-1.5 overflow-y-auto py-1">
+                    {viewOptions.map((view, index) => {
+                      const isActive = viewMode === view.key;
+                      const Icon = MOBILE_VIEW_ICONS[view.key] || LayoutList;
+                      const badgeClass =
+                        MOBILE_VIEW_BADGE_STYLES[index % MOBILE_VIEW_BADGE_STYLES.length];
+                      return (
+                        <button
+                          key={view.key}
+                          type="button"
+                          onClick={() => {
+                            setViewMode(view.key);
+                            setMobileViewMenuOpen(false);
+                          }}
+                          className={[
+                            "group flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition",
+                            isActive ? "text-white shadow-sm" : "text-ink hover:bg-slate-100"
+                          ].join(" ")}
+                          style={isActive ? { backgroundColor: "#ef7807" } : undefined}
+                        >
+                          <span
+                            className={[
+                              "inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl transition",
+                              isActive ? "bg-white/20 text-white" : badgeClass
+                            ].join(" ")}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          {view.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -2190,7 +2337,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Detailed View</p>
                       <h2 className="font-display text-2xl text-ink">
@@ -2199,7 +2346,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex w-full flex-col gap-1 sm:w-72">
-                        <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+                        <span className="invisible text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]">
                           Search
                         </span>
                         <div className="relative">
@@ -2216,7 +2363,7 @@ export default function Dashboard() {
                             </svg>
                           </span>
                           <input
-                            className="input-field w-full pl-10"
+                            className="input-field w-full py-2 pl-9 text-xs sm:py-3 sm:pl-10 sm:text-sm"
                             type="search"
                             placeholder="Search requests"
                             value={searchTerm}
@@ -2225,131 +2372,103 @@ export default function Dashboard() {
                         </div>
                       </div>
                       {showDetailedTypeFilter ? (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-32">
                           <label
-                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                             htmlFor="typeFilter"
                           >
                             Type
                           </label>
-                          <div className="group relative">
-                            <select
-                              id="typeFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={effectiveDetailedTypeFilter}
-                              onChange={(event) => setActiveTypeFilter(event.target.value)}
-                            >
-                              {detailedTypeFilterOptions.map((option) => (
-                                <option key={option.key} value={option.key}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="typeFilter"
+                            name="typeFilter"
+                            value={effectiveDetailedTypeFilter}
+                            onChange={(event) => setActiveTypeFilter(event.target.value)}
+                            options={detailedTypeFilterOptions.map((option) => ({
+                              value: option.key,
+                              label: option.label
+                            }))}
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       ) : null}
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="detailedSectorFilter"
                         >
                           Sector
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="detailedSectorFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={detailedSectorFilter}
-                            onChange={(event) => setDetailedSectorFilter(event.target.value)}
-                          >
-                            <option value="all">All Sectors</option>
-                            <option value="automotive">Automotive</option>
-                            <option value="non-automotive">Non-Automotive</option>
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="detailedSectorFilter"
+                          name="detailedSectorFilter"
+                          value={detailedSectorFilter}
+                          onChange={(event) => setDetailedSectorFilter(event.target.value)}
+                          options={[
+                            { value: "all", label: "All Sectors" },
+                            { value: "automotive", label: "Automotive" },
+                            { value: "non-automotive", label: "Non-Automotive" }
+                          ]}
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="subStatusFilter"
                         >
                           Status
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="subStatusFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={activeSubStatus}
-                            onChange={(event) => setActiveSubStatus(event.target.value)}
-                          >
-                            <option value="all">All</option>
-                            {subStatusOptions.map((status) => (
-                              <option key={status} value={status}>
-                                {FILTER_STATUS_LABELS[status] || status}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="subStatusFilter"
+                          name="subStatusFilter"
+                          value={activeSubStatus}
+                          onChange={(event) => setActiveSubStatus(event.target.value)}
+                          options={[
+                            { value: "all", label: "All" },
+                            ...subStatusOptions.map((status) => ({
+                              value: status,
+                              label: FILTER_STATUS_LABELS[status] || status
+                            }))
+                          ]}
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
                       {shouldShowDetailedProductLineFilter && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label
-                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                             htmlFor="detailedProductLineFilter"
                           >
                             Product Line
                           </label>
-                          <div className="group relative">
-                            <select
-                              id="detailedProductLineFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={selectedDetailedProductLine}
-                              onChange={(event) => setSelectedDetailedProductLine(event.target.value)}
-                            >
-                              <option value="ALL">All Product Lines</option>
-                              {detailedProductLineOptions.map((pl) => (
-                                <option key={pl} value={pl}>{pl}</option>
-                              ))}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="detailedProductLineFilter"
+                            name="detailedProductLineFilter"
+                            value={selectedDetailedProductLine}
+                            onChange={(event) => setSelectedDetailedProductLine(event.target.value)}
+                            options={[
+                              { value: "ALL", label: "All Product Lines" },
+                              ...detailedProductLineOptions.map((pl) => ({ value: pl, label: pl }))
+                            ]}
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
@@ -2366,7 +2485,7 @@ export default function Dashboard() {
                 </>
               ) : viewMode === "global" ? (
                 <>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Global View</p>
                       <h2 className="font-display text-2xl text-ink">
@@ -2375,7 +2494,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex w-full flex-col gap-1 sm:w-72">
-                        <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+                        <span className="invisible text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]">
                           Search
                         </span>
                         <div className="relative">
@@ -2392,7 +2511,7 @@ export default function Dashboard() {
                             </svg>
                           </span>
                           <input
-                            className="input-field w-full pl-10"
+                            className="input-field w-full py-2 pl-9 text-xs sm:py-3 sm:pl-10 sm:text-sm"
                             type="search"
                             placeholder="Search all requests"
                             value={searchTerm}
@@ -2400,130 +2519,99 @@ export default function Dashboard() {
                           />
                         </div>
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-32">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="globalTypeFilter"
                         >
                           Type
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="globalTypeFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={activeTypeFilter}
-                            onChange={(event) => setActiveTypeFilter(event.target.value)}
-                          >
-                            {TYPE_FILTER_OPTIONS.map((option) => (
-                              <option key={option.key} value={option.key}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="globalTypeFilter"
+                          name="globalTypeFilter"
+                          value={activeTypeFilter}
+                          onChange={(event) => setActiveTypeFilter(event.target.value)}
+                          options={TYPE_FILTER_OPTIONS.map((option) => ({
+                            value: option.key,
+                            label: option.label
+                          }))}
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="globalPhaseFilter"
                         >
                           Phase
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="globalPhaseFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={globalPhaseFilter}
-                            onChange={(event) => setGlobalPhaseFilter(event.target.value)}
-                          >
-                            <option value="all">All phases</option>
-                            {PHASES.map((phase) => (
-                              <option key={phase.key} value={phase.key}>
-                                {phase.label}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="globalPhaseFilter"
+                          name="globalPhaseFilter"
+                          value={globalPhaseFilter}
+                          onChange={(event) => setGlobalPhaseFilter(event.target.value)}
+                          options={[
+                            { value: "all", label: "All phases" },
+                            ...PHASES.map((phase) => ({ value: phase.key, label: phase.label }))
+                          ]}
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="globalSectorFilter"
                         >
                           Sector
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="globalSectorFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={globalSectorFilter}
-                            onChange={(event) => setGlobalSectorFilter(event.target.value)}
-                          >
-                            <option value="all">All Sectors</option>
-                            <option value="automotive">Automotive</option>
-                            <option value="non-automotive">Non-Automotive</option>
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="globalSectorFilter"
+                          name="globalSectorFilter"
+                          value={globalSectorFilter}
+                          onChange={(event) => setGlobalSectorFilter(event.target.value)}
+                          options={[
+                            { value: "all", label: "All Sectors" },
+                            { value: "automotive", label: "Automotive" },
+                            { value: "non-automotive", label: "Non-Automotive" }
+                          ]}
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
                       {shouldShowGlobalProductLineFilter && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label
-                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                             htmlFor="globalProductLineFilter"
                           >
                             Product Line
                           </label>
-                          <div className="group relative">
-                            <select
-                              id="globalProductLineFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={selectedGlobalProductLine}
-                              onChange={(event) => setSelectedGlobalProductLine(event.target.value)}
-                            >
-                              <option value="ALL">All Product Lines</option>
-                              {globalProductLineOptions.map((pl) => (
-                                <option key={pl} value={pl}>{pl}</option>
-                              ))}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="globalProductLineFilter"
+                            name="globalProductLineFilter"
+                            value={selectedGlobalProductLine}
+                            onChange={(event) => setSelectedGlobalProductLine(event.target.value)}
+                            options={[
+                              { value: "ALL", label: "All Product Lines" },
+                              ...globalProductLineOptions.map((pl) => ({ value: pl, label: pl }))
+                            ]}
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
@@ -2541,7 +2629,7 @@ export default function Dashboard() {
               ) : viewMode === "history" ? (
                 <>
                   <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.3em] text-slate-400">RFQ History View</p>
                         <h2 className="font-display text-2xl text-ink">Old projects</h2>
@@ -2554,7 +2642,7 @@ export default function Dashboard() {
                             </svg>
                           </span>
                           <input
-                            className="input-field w-full pl-10"
+                            className="input-field w-full py-2 pl-9 text-xs sm:py-3 sm:pl-10 sm:text-sm"
                             type="search"
                             placeholder="Search old projects…"
                             value={oldSearchTerm}
@@ -2566,7 +2654,7 @@ export default function Dashboard() {
                     <div className="flex flex-wrap items-center gap-3">
                       {oldCustomerOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldCustomerFilter">Customer</label>
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldCustomerFilter">Customer</label>
                           <SearchableSelectField
                             id="oldCustomerFilter"
                             name="oldCustomerFilter"
@@ -2581,7 +2669,7 @@ export default function Dashboard() {
                             searchPlaceholder="Search customer"
                             portal
                             menuMinWidth={280}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2589,7 +2677,7 @@ export default function Dashboard() {
                       )}
                       {oldKamOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-32">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldKamFilter">KAM</label>
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldKamFilter">KAM</label>
                           <SearchableSelectField
                             id="oldKamFilter"
                             name="oldKamFilter"
@@ -2604,7 +2692,7 @@ export default function Dashboard() {
                             searchPlaceholder="Search KAM"
                             portal
                             menuMinWidth={280}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2612,7 +2700,7 @@ export default function Dashboard() {
                       )}
                       {oldSectorOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-36">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldSectorFilter">Sector</label>
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldSectorFilter">Sector</label>
                           <SearchableSelectField
                             id="oldSectorFilter"
                             name="oldSectorFilter"
@@ -2625,7 +2713,7 @@ export default function Dashboard() {
                             placeholder="All Sectors"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2633,7 +2721,7 @@ export default function Dashboard() {
                       )}
                       {oldApplicationOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldApplicationFilter">Application</label>
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldApplicationFilter">Application</label>
                           <SearchableSelectField
                             id="oldApplicationFilter"
                             name="oldApplicationFilter"
@@ -2646,7 +2734,7 @@ export default function Dashboard() {
                             placeholder="All Applications"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2654,7 +2742,7 @@ export default function Dashboard() {
                       )}
                       {oldBusinessTypeOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-44">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400" htmlFor="oldBusinessTypeFilter">Business Type</label>
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldBusinessTypeFilter">Business Type</label>
                           <SearchableSelectField
                             id="oldBusinessTypeFilter"
                             name="oldBusinessTypeFilter"
@@ -2667,7 +2755,7 @@ export default function Dashboard() {
                             placeholder="All Business Types"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2675,7 +2763,7 @@ export default function Dashboard() {
                       )}
                       {oldStatusOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400 whitespace-nowrap" htmlFor="oldStatusFilter">Project Condition</label>
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px] whitespace-nowrap" htmlFor="oldStatusFilter">Project Condition</label>
                           <SearchableSelectField
                             id="oldStatusFilter"
                             name="oldStatusFilter"
@@ -2688,7 +2776,7 @@ export default function Dashboard() {
                             placeholder="All Conditions"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 text-sm font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -3111,18 +3199,24 @@ export default function Dashboard() {
                     </div>
                   )}
                 </>
-              ) : (
+              ) : viewMode === "market" ? (
                 <>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Team View</p>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Market View</p>
                       <h2 className="font-display text-2xl text-ink">
-                        My team
+                        {marketSegment === "automotive"
+                          ? "Automotive market"
+                          : marketSegment === "industry"
+                            ? "Industry market"
+                            : marketSegment === "large_accounts"
+                              ? "Large accounts"
+                              : "Market"}
                       </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex w-full flex-col gap-1 sm:w-72">
-                        <span className="invisible text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+                        <span className="invisible text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]">
                           Search
                         </span>
                         <div className="relative">
@@ -3139,7 +3233,7 @@ export default function Dashboard() {
                             </svg>
                           </span>
                           <input
-                            className="input-field w-full pl-10"
+                            className="input-field w-full py-2 pl-9 text-xs sm:py-3 sm:pl-10 sm:text-sm"
                             type="search"
                             placeholder="Search all requests"
                             value={searchTerm}
@@ -3147,95 +3241,208 @@ export default function Dashboard() {
                           />
                         </div>
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-32">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
+                          htmlFor="marketTypeFilter"
+                        >
+                          Type
+                        </label>
+                        <SearchableSelectField
+                          id="marketTypeFilter"
+                          name="marketTypeFilter"
+                          value={marketTypeFilter}
+                          onChange={(event) => setMarketTypeFilter(event.target.value)}
+                          options={TYPE_FILTER_OPTIONS.map((option) => ({
+                            value: option.key,
+                            label: option.label
+                          }))}
+                          placeholder="All types"
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-40">
+                        <label
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
+                          htmlFor="marketStatusFilter"
+                        >
+                          Status
+                        </label>
+                        <SearchableSelectField
+                          id="marketStatusFilter"
+                          name="marketStatusFilter"
+                          value={marketStatusFilter}
+                          onChange={(event) => setMarketStatusFilter(event.target.value)}
+                          options={[
+                            { value: "all", label: "All statuses" },
+                            ...Array.from(knownStatuses).map((status) => ({
+                              value: status,
+                              label: FILTER_STATUS_LABELS[status] || status
+                            }))
+                          ]}
+                          placeholder="All statuses"
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
+                      </div>
+                      {marketKamOptions.length > 0 && (
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-32">
+                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="marketKamFilter">KAM</label>
+                          <SearchableSelectField
+                            id="marketKamFilter"
+                            name="marketKamFilter"
+                            value={marketKamFilter}
+                            onChange={(event) => setMarketKamFilter(event.target.value)}
+                            options={[
+                              { value: "", label: "All KAMs" },
+                              ...marketKamOptions.map((opt) => ({ value: opt, label: opt }))
+                            ]}
+                            placeholder="All KAMs"
+                            searchable
+                            searchPlaceholder="Search KAM"
+                            portal
+                            menuMinWidth={280}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
+                        </div>
+                      )}
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                        {formatRequestCount(filteredMarketData.length)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {marketLoading ? (
+                    <div className="card overflow-hidden">
+                      <div className="flex items-center justify-center py-16 text-sm text-slate-400">
+                        Loading market data…
+                      </div>
+                    </div>
+                  ) : (
+                    <RfqTable
+                      rows={paginatedRfqs}
+                      showPhaseColumn
+                      footer={tableFooter}
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-1 sm:gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Team View</p>
+                      <h2 className="font-display text-2xl text-ink">
+                        My team
+                      </h2>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex w-full flex-col gap-1 sm:w-72">
+                        <span className="invisible text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]">
+                          Search
+                        </span>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                            >
+                              <circle cx="11" cy="11" r="7" />
+                              <path d="M20 20l-3.5-3.5" />
+                            </svg>
+                          </span>
+                          <input
+                            className="input-field w-full py-2 pl-9 text-xs sm:py-3 sm:pl-10 sm:text-sm"
+                            type="search"
+                            placeholder="Search all requests"
+                            value={searchTerm}
+                            onChange={(event) => setSearchTerm(event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-40">
+                        <label
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="teamPersonFilter"
                         >
                           Person
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="teamPersonFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={teamPersonFilter}
-                            onChange={(event) => setTeamPersonFilter(event.target.value)}
-                          >
-                            <option value="all">All people</option>
-                            {teamMembers.map((m) => (
-                              <option key={m.email} value={m.email}>{m.person}</option>
-                            ))}
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="teamPersonFilter"
+                          name="teamPersonFilter"
+                          value={teamPersonFilter}
+                          onChange={(event) => setTeamPersonFilter(event.target.value)}
+                          options={[
+                            { value: "all", label: "All people" },
+                            ...teamMembers.map((m) => ({ value: m.email, label: m.person }))
+                          ]}
+                          searchable
+                          searchPlaceholder="Search person"
+                          portal
+                          menuMinWidth={260}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
-                      <div className="flex flex-col gap-1 sm:self-end">
+                      <div className="flex flex-col gap-1 sm:self-end sm:w-36">
                         <label
-                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                          className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                           htmlFor="teamSectorFilter"
                         >
                           Sector
                         </label>
-                        <div className="group relative">
-                          <select
-                            id="teamSectorFilter"
-                            className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                            value={teamSectorFilter}
-                            onChange={(event) => setTeamSectorFilter(event.target.value)}
-                          >
-                            <option value="all">All Sectors</option>
-                            <option value="automotive">Automotive</option>
-                            <option value="non-automotive">Non-Automotive</option>
-                          </select>
-                          <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M6 9l6 6 6-6" />
-                            </svg>
-                          </span>
-                        </div>
+                        <SearchableSelectField
+                          id="teamSectorFilter"
+                          name="teamSectorFilter"
+                          value={teamSectorFilter}
+                          onChange={(event) => setTeamSectorFilter(event.target.value)}
+                          options={[
+                            { value: "all", label: "All Sectors" },
+                            { value: "automotive", label: "Automotive" },
+                            { value: "non-automotive", label: "Non-Automotive" }
+                          ]}
+                          portal
+                          menuMinWidth={220}
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          valueClassName="truncate text-tide"
+                          chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                        />
                       </div>
                       {shouldShowTeamProductLineFilter && (
-                        <div className="flex flex-col gap-1 sm:self-end">
+                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label
-                            className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400"
+                            className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]"
                             htmlFor="teamProductLineFilter"
                           >
                             Product Line
                           </label>
-                          <div className="group relative">
-                            <select
-                              id="teamProductLineFilter"
-                              className="w-full appearance-none rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-4 py-3 pr-10 text-sm font-semibold text-tide shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30"
-                              value={selectedTeamProductLine}
-                              onChange={(event) => setSelectedTeamProductLine(event.target.value)}
-                            >
-                              <option value="ALL">All Product Lines</option>
-                              {teamProductLineOptions.map((pl) => (
-                                <option key={pl} value={pl}>{pl}</option>
-                              ))}
-                            </select>
-                            <span className="pointer-events-none absolute right-4 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center text-tide transition-transform duration-200 group-focus-within:rotate-180">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </span>
-                          </div>
+                          <SearchableSelectField
+                            id="teamProductLineFilter"
+                            name="teamProductLineFilter"
+                            value={selectedTeamProductLine}
+                            onChange={(event) => setSelectedTeamProductLine(event.target.value)}
+                            options={[
+                              { value: "ALL", label: "All Product Lines" },
+                              ...teamProductLineOptions.map((pl) => ({ value: pl, label: pl }))
+                            ]}
+                            portal
+                            menuMinWidth={220}
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            valueClassName="truncate text-tide"
+                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
+                          />
                         </div>
                       )}
                       <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
@@ -3270,26 +3477,26 @@ export default function Dashboard() {
           role="presentation"
         >
           <div
-            className="chat-modal history-subitems-modal w-[min(96vw,1600px)] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
+            className="chat-modal history-subitems-modal border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="history-subitems-modal-title"
             onClick={(event) => event.stopPropagation()}
-            style={{ height: "85vh", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}
+            style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}
           >
             <div className="chat-modal-header">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">RFQ History View</p>
+              <div className="min-w-0 flex-1 sm:flex-none">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">RFQ History View</p>
                 <p id="history-subitems-modal-title" className="chat-modal-title mt-1">
                   {selectedOldProject.project_name || selectedOldProject.name || "Project subitems"}
                 </p>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 truncate text-[11px] text-slate-500 sm:text-sm">
                   {[selectedOldProject.customers, selectedOldProject.kam, `${selectedOldProject.subitems_count} subitems`]
                     .filter(Boolean)
                     .join(" / ")}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 subitems-modal-actions">
                 {subitemGlobalEditMode ? (
                   <>
                     <button

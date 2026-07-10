@@ -336,6 +336,14 @@ export async function getTeamMembers(includeSelf = false) {
   return request(`/api/team-view/members${includeSelf ? "?include_self=true" : ""}`);
 }
 
+export async function getMarketViewSegment() {
+  return request("/api/market-view/segment");
+}
+
+export async function getMarketView() {
+  return request("/api/market-view");
+}
+
 export async function listSalesCustomers(search = "") {
   const query = search ? `?search=${encodeURIComponent(search)}` : "";
   return request(`/api/actions/customers${query}`);

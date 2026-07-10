@@ -24,12 +24,14 @@ export default function FormField({
     if (!canAutoExpand || !textareaRef.current) return;
     const element = textareaRef.current;
     const hasValue = String(normalizedValue).trim().length > 0;
+    const isDesktop = typeof window !== "undefined" && window.matchMedia("(min-width: 640px)").matches;
+    const minHeight = isDesktop ? 50 : 40;
     element.style.height = "0px";
-    element.style.height = hasValue ? `${Math.max(element.scrollHeight, 50)}px` : "";
+    element.style.height = hasValue ? `${Math.max(element.scrollHeight, minHeight)}px` : "";
   }, [canAutoExpand, normalizedValue]);
 
   return (
-    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+    <label className="flex flex-col gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 sm:text-xs">
       <span className="flex flex-wrap items-center gap-1">
         <span>{label}</span>
         {required ? (
@@ -45,7 +47,7 @@ export default function FormField({
       </span>
       {options ? (
         <select
-          className={`input-field appearance-none ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
+          className={`input-field appearance-none text-xs sm:text-sm ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
           value={normalizedValue}
           onChange={onChange}
@@ -66,7 +68,7 @@ export default function FormField({
         <textarea
           ref={textareaRef}
           rows={1}
-          className={`textarea-field min-h-[50px] resize-none overflow-hidden ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
+          className={`textarea-field min-h-[40px] resize-none overflow-hidden text-xs sm:min-h-[50px] sm:text-sm ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""}`}
           name={name}
           value={normalizedValue}
           onChange={onChange}
@@ -77,7 +79,7 @@ export default function FormField({
         />
       ) : (
         <input
-          className={`input-field ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
+          className={`input-field text-xs sm:text-sm ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
           name={name}
           type={type}
           value={normalizedValue}

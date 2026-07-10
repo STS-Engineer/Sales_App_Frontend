@@ -1038,6 +1038,7 @@ body {
 }
 
 .history-subitems-modal.chat-modal {
+  width: min(96vw, 1600px);
   height: 85vh;
   max-height: 85vh;
 }
@@ -1130,6 +1131,60 @@ body {
 
 .history-subitems-table tbody tr:hover td.history-sticky-name-cell {
   background: #eff6ff;
+}
+
+/* The Name column stays fixed on scroll only on web (desktop). In the
+   responsive/mobile layout it scrolls with the rest of the table like any
+   other column. */
+@media (max-width: 639px) {
+  .history-table th.history-sticky-name-header,
+  .history-table td.history-sticky-name-cell,
+  .history-subitems-table th.history-sticky-name-header,
+  .history-subitems-table td.history-sticky-name-cell {
+    position: static;
+    left: auto;
+    box-shadow: none;
+  }
+
+  /* Header buttons (Update / Columns / Close) were getting clipped by the
+     modal's overflow:hidden on narrow screens because the header laid out
+     the title and the button row on one non-wrapping line. Let both wrap
+     so every button stays visible. */
+  .history-subitems-modal .chat-modal-header {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 44px 14px 16px;
+  }
+
+  .history-subitems-modal .chat-modal-header .subitems-modal-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  /* Bigger popup, and the Close button pinned to the top-right corner
+     (slightly smaller) instead of sitting inline with Update/Columns. */
+  .history-subitems-modal.chat-modal {
+    width: 98vw;
+    height: 94vh;
+    max-height: 94vh;
+    position: relative;
+  }
+
+  .history-subitems-modal .chat-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    height: 28px;
+    width: 28px;
+    z-index: 10;
+  }
+
+  /* Smaller popup title (with ellipsis when the project name is too long
+     — enabled by min-w-0/flex-1 on its wrapper in the markup). */
+  .history-subitems-modal .chat-modal-title {
+    font-size: 0.95rem;
+  }
 }
 
 .history-action-cell {
@@ -1591,6 +1646,45 @@ body {
   }
 }
 
+@media (max-width: 639px) {
+  .col-picker-dropdown {
+    width: 200px;
+  }
+
+  .col-picker-header {
+    padding: 8px 10px 6px;
+  }
+
+  .col-picker-title {
+    font-size: 10px;
+  }
+
+  .col-picker-actions button {
+    font-size: 9px;
+  }
+
+  .col-picker-list {
+    max-height: 260px;
+    padding: 4px 0;
+  }
+
+  .col-picker-item {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  .col-picker-item input[type="checkbox"] {
+    width: 12px;
+    height: 12px;
+  }
+
+  .col-picker-badge {
+    min-width: 16px;
+    height: 16px;
+    font-size: 9px;
+  }
+}
+
 .kam-combobox-portal {
   position: fixed;
   z-index: 99999;
@@ -1739,4 +1833,25 @@ body {
 .old-rfq-subitem-row td:nth-child(2),
 .old-rfq-subitem-row td:nth-child(3) {
   padding-left: 24px;
+}
+
+/* New Request (NewRfq) page header — smaller text on mobile only. */
+@media (max-width: 639px) {
+  .back-button {
+    padding: 6px 10px;
+    font-size: 11px;
+    gap: 6px;
+  }
+
+  .newrfq-pipeline .pipeline-step-title {
+    font-size: 10px;
+  }
+
+  /* Previous/Next show icon-only on mobile (text hidden in the markup) —
+     tighten the padding so they read as compact icon buttons. */
+  .prev-button,
+  .next-button {
+    padding: 6px 8px;
+    gap: 0;
+  }
 }

@@ -2580,7 +2580,7 @@ const incrementRfqIndex = (ref) => {
  *       </div>
  *       <div className="flex flex-wrap items-center gap-3">
  *         <button type="button"
- *           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+ *           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
  *           onClick={loadOfferTemplatePreview} disabled={!rfqId || offerTemplatePreviewPending}>
  *           <Eye className="h-4 w-4" />
  *           {offerTemplatePreviewPending ? "Refreshing..." : "Refresh preview"}
@@ -2597,7 +2597,7 @@ const incrementRfqIndex = (ref) => {
  *   <div className="flex min-h-[520px] flex-1 flex-col rounded-[28px] border border-slate-200/80 bg-white/90 p-4 shadow-soft">
  *     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-2 pb-4">
  *       <div>
- *         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Template viewer</p>
+ *         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Template viewer</p>
  *         <p className="mt-2 text-sm text-slate-500">{offerTemplateFilename || "offer_preparation_template.docx"}</p>
  *       </div>
  *       <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
@@ -3331,7 +3331,7 @@ export default function NewRfq() {
     return combined.length ? combined.join(", ") : "Not assigned";
   };
   const ResponsibleTag = ({ label, emails }) => (
-    <p className="mt-1 text-sm font-bold text-ink">
+    <p className="mt-1 text-xs font-bold text-ink sm:text-sm">
       {label} : <span className="text-tide">{emails}</span>
     </p>
   );
@@ -6925,10 +6925,10 @@ export default function NewRfq() {
                     className="back-button"
                     onClick={() => navigate("/dashboard")}
                   >
-                    <span className="text-base">←</span>
+                    <span className="text-xs sm:text-base">←</span>
                     Back
                   </button>
-                  <div className="flex-1 min-w-[240px] pt-2">
+                  <div className="order-3 w-full pt-2 sm:order-none sm:w-auto sm:flex-1 sm:min-w-[240px]">
                     <div className="pipeline-shell newrfq-pipeline">
                       <div className="pipeline-bar">
                         {visibleStages.map((stage, index) => {
@@ -7072,7 +7072,7 @@ export default function NewRfq() {
                                             type="button"
                                             onClick={() => handleSubPhaseChange(stage.key, subPhase)}
                                             disabled={isSubDisabled}
-                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-0.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${subPhaseSelectedClass} ${subPhaseHoverClass}`}
+                                            className={`relative z-10 flex flex-1 flex-col items-center rounded-lg border-0 bg-transparent px-0.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-white/85 transition focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-45 sm:text-[11px] ${subPhaseSelectedClass} ${subPhaseHoverClass}`}
                                             aria-pressed={isSubSelected}
                                             aria-disabled={isSubDisabled || undefined}
                                             title={
@@ -7125,7 +7125,7 @@ export default function NewRfq() {
                     <button
                       type="button"
                       onClick={() => setDiscussionModalOpen(true)}
-                      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:h-14 sm:w-14 ${discussionModalOpen
+                      className={`relative order-2 ml-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:order-none sm:ml-0 sm:h-14 sm:w-14 ${discussionModalOpen
                         ? "border-tide/30 bg-tide text-white"
                         : "border-slate-200/80 bg-white/90 text-slate-600 hover:-translate-y-0.5 hover:border-tide/35 hover:text-tide"
                         }`}
@@ -7146,7 +7146,7 @@ export default function NewRfq() {
                     <button
                       type="button"
                       onClick={() => setIsCostingDiscussionOpen(true)}
-                      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:h-14 sm:w-14 ${isCostingDiscussionOpen
+                      className={`relative order-2 ml-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition sm:order-none sm:ml-0 sm:h-14 sm:w-14 ${isCostingDiscussionOpen
                         ? "border-tide/30 bg-tide text-white"
                         : "border-slate-200/80 bg-white/90 text-slate-600 hover:-translate-y-0.5 hover:border-tide/35 hover:text-tide"
                         }`}
@@ -7168,7 +7168,7 @@ export default function NewRfq() {
               </div>
               {isRfqStage && isRfqFormView ? (
                 <div className="px-4 sm:px-6">
-                  <div className="flex items-center gap-6 border-b border-slate-200/70 text-sm font-semibold text-slate-500">
+                  <div className="flex items-center gap-6 border-b border-slate-200/70 text-xs font-semibold text-slate-500 sm:text-sm">
                     <button
                       type="button"
                       onClick={() => {
@@ -7409,7 +7409,7 @@ export default function NewRfq() {
                             disabled={!sharePointUrl}
                             onClick={handleOpenSharePoint}
                             title={sharePointUrl ? "Open SharePoint folder" : "SharePoint link not available yet"}
-                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2.5 sm:text-sm"
                           >
                             <FolderOpen className="h-4 w-4" />
                             SharePoint
@@ -7421,17 +7421,17 @@ export default function NewRfq() {
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                               <div className="max-w-3xl">
-                                <h3 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                <h3 className="mt-2 font-display text-base text-ink sm:text-2xl">
                                   {formalDocumentLabel} Data
                                 </h3>
-                                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                                <p className="mt-3 max-w-2xl text-xs leading-7 text-slate-600 sm:text-sm">
                                   Use Preview to open the PDF in a modal, or Download to save it.
                                 </p>
                               </div>
                               <div className="flex flex-wrap items-center gap-3">
                                 <button
                                   type="button"
-                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                   onClick={handleOpenCostingPdfPreview}
                                   disabled={!canDownloadCostingTemplate || templatePreviewPending}
                                 >
@@ -7440,7 +7440,7 @@ export default function NewRfq() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                   onClick={handleDownloadCostingPdfTemplate}
                                   disabled={!canDownloadCostingTemplate || templateDownloadPending}
                                 >
@@ -7455,7 +7455,7 @@ export default function NewRfq() {
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
-                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                <h2 className="mt-2 font-display text-base text-ink sm:text-2xl">
                                   {formalDocumentLabel} files
                                 </h2>
                               </div>
@@ -7480,7 +7480,7 @@ export default function NewRfq() {
                                           {getFileExtension(file.name).slice(0, 4)}
                                         </span>
                                         <div className="min-w-0">
-                                          <p className="truncate text-sm font-semibold text-ink">
+                                          <p className="truncate text-xs font-semibold text-ink sm:text-sm">
                                             {file.name}
                                           </p>
                                           <p className="mt-1 text-xs text-slate-500">
@@ -7506,10 +7506,10 @@ export default function NewRfq() {
                               </div>
                             ) : (
                               <div className="mt-5 px-1 py-2">
-                                <p className="text-sm font-semibold text-ink">
+                                <p className="text-xs font-semibold text-ink sm:text-sm">
                                   No drawing files uploaded yet
                                 </p>
-                                <p className="mt-2 text-sm text-slate-500">
+                                <p className="mt-2 text-xs text-slate-500 sm:text-sm">
                                   Upload {formalDocumentLabel} files in{" "}
                                   <span className="font-medium text-ink">New {formalDocumentLabel} &gt; Step 1</span> and they
                                   will appear here.
@@ -7524,7 +7524,7 @@ export default function NewRfq() {
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                               <div className="max-w-2xl">
-                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                <h2 className="mt-2 font-display text-base text-ink sm:text-2xl">
                                   Reception review
                                 </h2>
                                 <ResponsibleTag
@@ -7545,17 +7545,17 @@ export default function NewRfq() {
                                     }`}
                                 >
                                   <div className="space-y-2">
-                                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                                    <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">
                                       Reception audit
                                     </p>
                                     <div>
-                                      <h4 className="text-lg font-semibold text-ink">
+                                      <h4 className="text-sm font-semibold text-ink sm:text-lg">
                                         Decision recorded
                                       </h4>
                                     </div>
                                   </div>
                                   <span
-                                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isCostingReviewRejected
+                                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold sm:px-4 sm:py-2 sm:text-sm ${isCostingReviewRejected
                                       ? "border-red-200 bg-red-50 text-red-700"
                                       : "border-emerald-200 bg-emerald-50 text-emerald-700"
                                       }`}
@@ -7568,26 +7568,26 @@ export default function NewRfq() {
                                   {isCostingReviewRejected ? (
                                     <>
                                       <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                           Rejected at
                                         </p>
-                                        <p className="mt-2 text-base font-semibold text-ink">
+                                        <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                           {formatValidationAuditDate(costingReviewAudit.rejectedAt)}
                                         </p>
                                       </div>
                                       <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                           Rejected by
                                         </p>
-                                        <p className="mt-2 text-base font-semibold text-ink">
+                                        <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                           {formatValidationAuditValue(costingReviewAudit.rejectedBy)}
                                         </p>
                                       </div>
                                       <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                           Rejection reason
                                         </p>
-                                        <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
+                                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-ink sm:text-base">
                                           {formatValidationAuditValue(costingReviewAudit.rejectionReason)}
                                         </p>
                                       </div>
@@ -7595,18 +7595,18 @@ export default function NewRfq() {
                                   ) : (
                                     <>
                                       <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                           Approved at
                                         </p>
-                                        <p className="mt-2 text-base font-semibold text-ink">
+                                        <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                           {formatValidationAuditDate(costingReviewAudit.approvedAt)}
                                         </p>
                                       </div>
                                       <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                           Approved by
                                         </p>
-                                        <p className="mt-2 text-base font-semibold text-ink">
+                                        <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                           {formatValidationAuditValue(costingReviewAudit.approvedBy)}
                                         </p>
                                       </div>
@@ -7618,7 +7618,7 @@ export default function NewRfq() {
                               <div className="mt-5 flex flex-wrap items-center gap-3">
                                 <button
                                   type="button"
-                                  className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:py-3 sm:text-sm"
                                   onClick={handleRejectCostingReview}
                                   disabled={costingReviewButtonsDisabled}
                                   title={
@@ -7632,7 +7632,7 @@ export default function NewRfq() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:py-3 sm:text-sm"
                                   onClick={handleApproveCostingReview}
                                   disabled={costingReviewButtonsDisabled}
                                   title={
@@ -7651,30 +7651,30 @@ export default function NewRfq() {
                             <div className="rounded-[28px] border border-slate-200/80 bg-slate-50/70 p-5 shadow-soft">
                               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="max-w-2xl">
-                                  <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                  <h2 className="mt-2 font-display text-base text-ink sm:text-2xl">
                                     Feasibility file
                                   </h2>
                                   <ResponsibleTag
                                     label="Responsible"
                                     emails={formatResponsibleLeaders(rfqSnapshot?.rnd_leaders)}
                                   />
-                                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                                  <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                     Upload the feasibility document, then click Save to move this {formalDocumentLabel} to pricing.
                                   </p>
                                 </div>
                               </div>
                               <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
-                                <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 sm:text-sm">
                                   Required Template
                                 </h3>
-                                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                                <p className="mt-3 max-w-2xl text-xs leading-7 text-slate-500 sm:text-sm">
                                   Please download and complete this template before uploading your final feasibility analysis.
                                 </p>
                                 <div className="mt-4">
                                   <a
                                     href={feasibilityTemplate}
                                     download="Avocarbon_Feasibility_Template.xlsm"
-                                    className="inline-flex items-center justify-center rounded-2xl border border-tide/20 bg-tide/10 px-4 py-3 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                    className="inline-flex items-center justify-center rounded-2xl border border-tide/20 bg-tide/10 px-3 py-2 text-xs font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15 sm:px-4 sm:py-3 sm:text-sm"
                                   >
                                     Download Feasibility
                                   </a>
@@ -7682,10 +7682,10 @@ export default function NewRfq() {
                               </div>
                               <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="max-w-2xl">
-                                  <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                  <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 sm:text-sm">
                                     Complete feasibility handoff
                                   </h3>
-                                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                                  <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                     Upload the finished feasibility file or mark the requirement as not applicable with a note.
                                   </p>
                                 </div>
@@ -7693,10 +7693,10 @@ export default function NewRfq() {
                               <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                                   <div className="max-w-2xl">
-                                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                    <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 sm:text-sm">
                                       Feasibility status
                                     </h4>
-                                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                                    <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                       Choose the feasibility result before uploading the file or marking this handoff as not applicable.
                                     </p>
                                   </div>
@@ -7739,17 +7739,17 @@ export default function NewRfq() {
                               {!hasCompletedCostingFileAction ? (
                                 <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                   <div className="max-w-2xl">
-                                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                                    <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 sm:text-sm">
                                       Feasibility actions
                                     </h4>
-                                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                                    <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                       Once a status is selected, choose whether to upload the finished feasibility file or record that no file is required.
                                     </p>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-3">
                                     <button
                                       type="button"
-                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                       onClick={() => openCostingFileActionModal("UPLOADED")}
                                       disabled={
                                         !canManageCostingFeasibilityHandoff ||
@@ -7769,7 +7769,7 @@ export default function NewRfq() {
                                     </button>
                                     <button
                                       type="button"
-                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                       onClick={() => openCostingFileActionModal("NA")}
                                       disabled={
                                         !canManageCostingFeasibilityHandoff ||
@@ -7818,13 +7818,13 @@ export default function NewRfq() {
                                           </span>
                                         ) : null}
                                       </div>
-                                      <h3 className="mt-3 text-lg font-semibold text-ink">
+                                      <h3 className="mt-3 text-sm font-semibold text-ink sm:text-lg">
                                         {effectiveCostingFileState?.fileStatus === "NA"
                                           ? "Feasibility file bypass recorded"
                                           : "Feasibility file received"}
                                       </h3>
                                       {String(effectiveCostingFileState?.note || "").trim() && (
-                                        <p className="mt-2 text-sm leading-7 text-slate-600">
+                                        <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                           {String(effectiveCostingFileState.note).trim()}
                                         </p>
                                       )}
@@ -7833,27 +7833,27 @@ export default function NewRfq() {
                                   </div>
                                   <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Action by
                                       </p>
-                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                      <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                         {effectiveCostingFileState?.actionBy || "Unavailable"}
                                       </p>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Recorded at
                                       </p>
-                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                      <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                         {formatFileDate(effectiveCostingFileState?.actionAt, { withTime: true })}
                                       </p>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4 min-w-0">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Files
                                       </p>
                                       {effectiveCostingFileState?.fileStatus === "NA" ? (
-                                        <p className="mt-2 text-sm font-semibold text-ink">No file required</p>
+                                        <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">No file required</p>
                                       ) : (() => {
                                         const feasibilityFiles = costingFiles.filter(
                                           (f) => f.fileRole === "FEASIBILITY"
@@ -7894,17 +7894,17 @@ export default function NewRfq() {
                                             ))}
                                           </ul>
                                         ) : (
-                                          <p className="mt-2 text-sm font-semibold text-ink">
+                                          <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                             {effectiveCostingFileState?.file?.name || "Unavailable"}
                                           </p>
                                         );
                                       })()}
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Feasibility status
                                       </p>
-                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                      <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                         {effectiveCostingFileState?.feasibilityStatus
                                           ? formatFeasibilityStatusLabel(
                                             effectiveCostingFileState.feasibilityStatus
@@ -7917,7 +7917,7 @@ export default function NewRfq() {
                                     <div className="mt-4 flex justify-end">
                                       <button
                                         type="button"
-                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                         onClick={() => openCostingFileActionModal("UPLOADED")}
                                         disabled={costingSavePending || costingFileActionPending}
                                         title="Replace the feasibility file"
@@ -7942,10 +7942,10 @@ export default function NewRfq() {
                                 <div className="mt-5 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 shadow-sm">
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Feasibility handoff
                                       </p>
-                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                      <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                         Feasibility saved on {formatStandardTimestamp(
                                           feasibilitySavedAtDisplayValue
                                         )}
@@ -7966,7 +7966,7 @@ export default function NewRfq() {
                                 <div className="mt-5 flex justify-end">
                                   <button
                                     type="button"
-                                    className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="inline-flex w-full sm:w-auto sm:min-w-[132px] items-center justify-center gap-2 rounded-2xl border border-tide bg-tide px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#055d92] disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:py-3 sm:text-sm"
                                     onClick={handleSaveCostingfeasibility}
                                     disabled={!canSaveCostingfeasibility}
                                     title={
@@ -7987,10 +7987,10 @@ export default function NewRfq() {
                       {isCostingPricingView ? (
                         <div className="space-y-6">
                           <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
-                            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                            <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-700 sm:text-sm">
                               Required Template
                             </h3>
-                            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                            <p className="mt-3 max-w-2xl text-xs leading-7 text-slate-500 sm:text-sm">
                               Please download and complete this template before uploading your final pricing analysis.
                             </p>
                             <div className="mt-4">
@@ -8008,16 +8008,16 @@ export default function NewRfq() {
                           <div className="hidden rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                               <div className="max-w-2xl">
-                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                <h2 className="mt-2 font-display text-base text-ink sm:text-2xl">
                                   Costing file with BOM data
                                 </h2>
-                                <p className="mt-2 text-sm leading-7 text-slate-600">
+                                <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                   Upload the costing package used for pricing with its BOM note from this tab.
                                 </p>
                               </div>
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                 onClick={openPricingBomModal}
                                 disabled={!canManagePricingBom || pricingBomPending}
                                 title={
@@ -8040,10 +8040,10 @@ export default function NewRfq() {
                                         Uploaded
                                       </span>
                                     </div>
-                                    <h3 className="mt-3 text-lg font-semibold text-ink">
+                                    <h3 className="mt-3 text-sm font-semibold text-ink sm:text-lg">
                                       BOM costing package received
                                     </h3>
-                                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                                    <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                       {pricingBomUpload.note || "No note recorded."}
                                     </p>
                                   </div>
@@ -8063,7 +8063,7 @@ export default function NewRfq() {
                                       <a
                                         href={pricingBomUpload.file.url}
                                         download={pricingBomUpload.file.name}
-                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-4 py-2.5 text-sm font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15"
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-tide/20 bg-tide/10 px-3 py-1.5 text-xs font-semibold text-tide transition hover:-translate-y-0.5 hover:border-tide/35 hover:bg-tide/15 sm:px-4 sm:py-2.5 sm:text-sm"
                                       >
                                         Download
                                       </a>
@@ -8073,26 +8073,26 @@ export default function NewRfq() {
  
                                 <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                                   <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                       Uploaded by
                                     </p>
-                                    <p className="mt-2 text-sm font-semibold text-ink">
+                                    <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                       {pricingBomUpload.uploadedBy || "Unavailable"}
                                     </p>
                                   </div>
                                   <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                       Uploaded at
                                     </p>
-                                    <p className="mt-2 text-sm font-semibold text-ink">
+                                    <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                       {formatFileDate(pricingBomUpload.uploadedAt, { withTime: true })}
                                     </p>
                                   </div>
                                   <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                       File
                                     </p>
-                                    <p className="mt-2 text-sm font-semibold text-ink">
+                                    <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                       {pricingBomUpload.file?.name || "Unavailable"}
                                     </p>
                                   </div>
@@ -8113,20 +8113,20 @@ export default function NewRfq() {
                           <div className="rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-soft">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                               <div className="max-w-2xl">
-                                <h2 className="mt-2 font-display text-xl text-ink sm:text-2xl">
+                                <h2 className="mt-2 font-display text-base text-ink sm:text-2xl">
                                   Costing file with final price
                                 </h2>
                                 <ResponsibleTag
                                   label="Responsible"
                                   emails={formatResponsibleLeaders(rfqSnapshot?.costing_leaders)}
                                 />
-                                <p className="mt-2 text-sm leading-7 text-slate-600">
+                                <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                   Upload the final priced costing package.
                                 </p>
                               </div>
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
                                 onClick={openPricingFinalPriceModal}
                                 disabled={!canManagePricingFinalPrice || pricingFinalPricePending}
                                 title={
@@ -8150,11 +8150,11 @@ export default function NewRfq() {
                                           Uploaded
                                         </span>
                                       </div>
-                                      <h3 className="mt-3 text-lg font-semibold text-ink">
+                                      <h3 className="mt-3 text-sm font-semibold text-ink sm:text-lg">
                                         Final price costing package received
                                       </h3>
                                       {String(pricingFinalPriceUpload.note || "").trim() && (
-                                        <p className="mt-2 text-sm leading-7 text-slate-600">
+                                        <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                           {String(pricingFinalPriceUpload.note).trim()}
                                         </p>
                                       )}
@@ -8165,23 +8165,23 @@ export default function NewRfq() {
  
                                   <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Uploaded by
                                       </p>
-                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                      <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                         {pricingFinalPriceUpload.uploadedBy || "Unavailable"}
                                       </p>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Uploaded at
                                       </p>
-                                      <p className="mt-2 text-sm font-semibold text-ink">
+                                      <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                         {formatFileDate(pricingFinalPriceUpload.uploadedAt, { withTime: true })}
                                       </p>
                                     </div>
                                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-4 min-w-0">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                         Files
                                       </p>
                                       {(() => {
@@ -8224,7 +8224,7 @@ export default function NewRfq() {
                                             ))}
                                           </ul>
                                         ) : (
-                                          <p className="mt-2 text-sm font-semibold text-ink">
+                                          <p className="mt-2 text-xs font-semibold text-ink sm:text-sm">
                                             {pricingFinalPriceUpload.file?.name || "Unavailable"}
                                           </p>
                                         );
@@ -8256,17 +8256,17 @@ export default function NewRfq() {
                                   <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-5 shadow-soft">
                                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                       <div className="max-w-2xl">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                           Costing File Validation
                                         </p>
-                                        <h3 className="mt-2 text-lg font-semibold text-ink">
+                                        <h3 className="mt-2 text-sm font-semibold text-ink sm:text-lg">
                                           Validate the final pricing package
                                         </h3>
                                         <ResponsibleTag
                                           label="Responsible"
                                           emails={formatResponsibleLeaders(rfqSnapshot?.plm_leaders)}
                                         />
-                                        <p className="mt-2 text-sm leading-7 text-slate-600">
+                                        <p className="mt-2 text-xs leading-7 text-slate-600 sm:text-sm">
                                           {hasRecordedPricingFileDecision
                                             ? "The pricing validation decision has been recorded for this final price package."
                                             : isRfiDocument
@@ -8285,7 +8285,7 @@ export default function NewRfq() {
                                       >
                                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                           <div className="space-y-2">
-                                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                               Costing validation audit
                                             </p>
                                             <div className="flex flex-wrap items-center gap-3">
@@ -8304,18 +8304,18 @@ export default function NewRfq() {
  
                                         <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                                           <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
-                                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                               Action
                                             </p>
-                                            <p className="mt-2 text-base font-semibold text-ink">
+                                            <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                               {isPricingFileRejected ? "Costing Rejected" : "Costing Approved"}
                                             </p>
                                           </div>
                                           <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
-                                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                               By whom
                                             </p>
-                                            <p className="mt-2 text-base font-semibold text-ink">
+                                            <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                               {formatValidationAuditValue(
                                                 isPricingFileRejected
                                                   ? pricingFileDecisionAudit.rejectedBy || currentUserEmail
@@ -8324,10 +8324,10 @@ export default function NewRfq() {
                                             </p>
                                           </div>
                                           <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm">
-                                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                               When
                                             </p>
-                                            <p className="mt-2 text-base font-semibold text-ink">
+                                            <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">
                                               {formatStandardTimestamp(
                                                 isPricingFileRejected
                                                   ? pricingFileDecisionAudit.rejectedAt
@@ -8337,7 +8337,7 @@ export default function NewRfq() {
                                           </div>
                                           {isPricingFileRejected ? (
                                             <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-3">
-                                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">
                                                 Rejection reason
                                               </p>
                                               <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">
@@ -8622,8 +8622,8 @@ export default function NewRfq() {
                     <div className={`flex items-center ${navCollapsed ? "justify-center" : "justify-between"}`}>
                       {!navCollapsed ? (
                         <div>
-                          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{formalDocumentLabel} navigation</p>
-                          <h2 className="mt-2 font-display text-xl text-ink">Form steps</h2>
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">{formalDocumentLabel} navigation</p>
+                          <h2 className="mt-2 font-display text-base text-ink sm:text-xl">Form steps</h2>
                         </div>
                       ) : null}
                       <button
@@ -8654,7 +8654,7 @@ export default function NewRfq() {
                               key={step.id}
                               type="button"
                               onClick={() => handleStepViewChange(step.id)}
-                              className={`flex h-9 w-9 items-center justify-center rounded-2xl border text-sm font-semibold transition sm:h-10 sm:w-10 ${isActive
+                              className={`flex h-9 w-9 items-center justify-center rounded-2xl border text-xs font-semibold transition sm:h-10 sm:w-10 sm:text-sm ${isActive
                                 ? "border-tide/40 bg-tide/10 text-tide"
                                 : isLocked
                                   ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300"
@@ -8737,7 +8737,7 @@ export default function NewRfq() {
                               onClick={() => handleStepViewChange(step.id)}
                               aria-pressed={isActive}
                               aria-disabled={isLocked || undefined}
-                              className={`group flex w-full gap-3 rounded-2xl border px-3 py-2 text-left text-sm transition lg:px-2.5 lg:py-1.5 lg:text-[13px] ${isActive
+                              className={`group flex w-full gap-3 rounded-2xl border px-3 py-2 text-left text-xs transition sm:text-sm lg:px-2.5 lg:py-1.5 lg:text-[13px] ${isActive
                                 ? `${style.ring} ${style.bg} shadow-soft`
                                 : isLocked
                                   ? "cursor-not-allowed border-slate-200/70 bg-slate-50 text-slate-300"
@@ -8755,7 +8755,7 @@ export default function NewRfq() {
                               </span>
                               <span className="flex flex-1 items-center justify-between gap-3">
                                 <span className="flex flex-col">
-                                  <span className="text-xs uppercase tracking-[0.25em] text-slate-400">
+                                  <span className="text-[10px] uppercase tracking-[0.25em] text-slate-400 sm:text-xs">
                                     Step {index + 1}
                                   </span>
                                   <span className="font-semibold text-ink leading-snug break-words">
@@ -8763,7 +8763,7 @@ export default function NewRfq() {
                                   </span>
                                 </span>
                                 <span
-                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClasses}`}
+                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-semibold sm:text-[10px] ${statusClasses}`}
                                 >
                                   {statusIcon}
                                   {statusLabel}
@@ -9053,26 +9053,26 @@ export default function NewRfq() {
                     onSubmit={handleSubmit}
                     className="card flex flex-col min-h-0 overflow-auto lg:overflow-hidden lg:h-full lg:min-h-0"
                   >
-                    <div className="flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:p-3 md:p-4 pb-5 mb-4">
+                    <div className="relative flex flex-col gap-4 border-b border-slate-200/70 p-5 sm:static sm:p-3 md:p-4 pb-5 mb-4">
                       <div className="flex flex-col gap-1.5">
                         {/* Grid 3 colonnes : [1fr step] [auto Update/CI] [auto Prev/Next]
                             col1=1fr garantit que Update/CI commence toujours au même x,
                             indépendamment de la longueur du titre du step. */}
-                        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 sm:gap-x-6">
+                        <div className="grid grid-cols-1 gap-y-3 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-x-6 sm:gap-y-0">
                           {/* Col 1 — indicateur de step (1fr : largeur fixée par le grid, pas par le contenu) */}
-                          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-tide text-base font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-lg">
+                          <div className="flex min-w-0 items-center gap-3 pr-16 sm:gap-4 sm:pr-0">
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-tide text-sm font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-lg">
                               {stepIndex + 1}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Step</p>
-                              <h2 className="font-display text-xl text-ink sm:text-2xl">
+                              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 sm:text-xs">Step</p>
+                              <h2 className="font-display text-sm text-ink sm:text-2xl">
                                 Step {stepIndex + 1}: {getStepDisplayLabel(activeStepData)}
                               </h2>
                             </div>
                           </div>
-                          {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) */}
-                          <div className="flex items-center gap-2">
+                          {/* Col 2 — Update / Change Index ou Save Changes / Cancel (Owner uniquement) — desktop only, mobile copy renders below the description */}
+                          <div className="hidden items-center gap-2 sm:flex">
                             {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && (isRfqCreator || currentUserRole === "OWNER") && !isRfqUpdateModeActive ? (
                               <>
                                 <div className="group relative">
@@ -9107,7 +9107,7 @@ export default function NewRfq() {
                             ) : null}
                           </div>
                           {/* Col 3 — Previous / Next, ml-8 pour espace fixe avec Change Index */}
-                          <div className="ml-8 flex items-center gap-2">
+                          <div className="absolute right-3 top-3 flex items-center gap-1.5 sm:static sm:right-auto sm:top-auto sm:ml-8 sm:gap-2">
                             {isRevisionModeActive ? (
                               <button
                                 type="button"
@@ -9130,8 +9130,8 @@ export default function NewRfq() {
                               onClick={() => handleStepViewChange(stepIds[stepIndex - 1])}
                               disabled={isFirstStep || !canGoPrev}
                             >
-                              <span className="text-base">←</span>
-                              Previous
+                              <span className="text-xs sm:text-base">←</span>
+                              <span className="hidden sm:inline">Previous</span>
                             </button>
                             <button
                               type="button"
@@ -9139,17 +9139,38 @@ export default function NewRfq() {
                               onClick={() => handleStepViewChange(stepIds[stepIndex + 1])}
                               disabled={isLastStep || !canGoNext}
                             >
-                              Next
-                              <span className="text-base">→</span>
+                              <span className="hidden sm:inline">Next</span>
+                              <span className="text-xs sm:text-base">→</span>
                             </button>
                           </div>
                         </div>
                         {/* Description — en dessous, alignée avec le titre */}
-                        <p className="pl-[3.75rem] text-sm text-slate-500 sm:pl-[4.5rem]">
+                        <p className="pl-[3.75rem] text-xs text-slate-500 sm:pl-[4.5rem] sm:text-sm">
                           {isRevisionModeActive
                             ? "Revision mode is active. Update the form directly, then submit your updates."
                             : `Fill in the ${activeFormalDocumentLabel} form directly. Changes are auto-saved. Submit to the validator when ready.`}
                         </p>
+                        {/* Col 2 mobile copy — Update / Change Index shown below the description, smaller, mobile only */}
+                        {rfqId && String(rfqSubStatusValue || "").trim().toUpperCase() !== "NEW_RFQ" && rfqSubStatusValue && canUseRfqActions && !isRevisionModeActive && (isRfqCreator || currentUserRole === "OWNER") && !isRfqUpdateModeActive ? (
+                          <div className="flex items-center gap-2 pl-[3.75rem] sm:hidden">
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-1 rounded-lg border border-tide/40 bg-tide/10 px-2.5 py-1.5 text-[11px] font-semibold text-tide shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={handleUpdateRFQ}
+                              disabled={saving}
+                            >
+                              Update
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center gap-1 rounded-lg border border-sun/40 bg-sun/10 px-2.5 py-1.5 text-[11px] font-semibold text-sun shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={handleChangeIndexRFQ}
+                              disabled={saving}
+                            >
+                              Change Index
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div ref={rfqFormScrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 sm:px-4 sm:pb-4 md:px-5 md:pb-5 lg:overflow-y-auto">
@@ -9160,7 +9181,7 @@ export default function NewRfq() {
                         >
                           <div className="flex flex-col gap-5">
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
-                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer details</h3>
+                              <h3 className="mt-2 font-display text-base font-semibold text-sun sm:text-xl">Customer details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <SearchableSelectField
                                   label="Automotive / Non automotive"
@@ -9177,7 +9198,7 @@ export default function NewRfq() {
                             </div>
                             <div className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
                               <div className="flex flex-wrap items-center justify-between gap-3">
-                                <h3 className="mt-2 font-display text-xl font-semibold text-sun">Products</h3>
+                                <h3 className="mt-2 font-display text-base font-semibold text-sun sm:text-xl">Products</h3>
                                 {!rfqFormFieldReadOnly && (
                                   <button
                                     type="button"
@@ -9433,7 +9454,7 @@ export default function NewRfq() {
                               </div>
                             </div>
                             <div id="rfq-volumes" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
-                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Volumes</h3>
+                              <h3 className="mt-2 font-display text-base font-semibold text-sun sm:text-xl">Volumes</h3>
                               <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200/70">
                                 <table className="w-full text-left text-xs">
                                   <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500">
@@ -9692,7 +9713,7 @@ export default function NewRfq() {
                               </div>
                             </div>
                             <div id="rfq-logistics" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
-                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Logistics details</h3>
+                              <h3 className="mt-2 font-display text-base font-semibold text-sun sm:text-xl">Logistics details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Expected PO date" name="poDate" type="date" value={form.poDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("poDate")} />
                                 <FormField label="Expected PPAP date" name="ppapDate" type="date" value={form.ppapDate} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("ppapDate")} />
@@ -9701,7 +9722,7 @@ export default function NewRfq() {
                               </div>
                             </div>
                             <div id="rfq-contact" className="rounded-2xl border border-slate-200/70 bg-white/95 p-3 shadow-soft transition hover:shadow-md">
-                              <h3 className="mt-2 font-display text-xl font-semibold text-sun">Customer contact details</h3>
+                              <h3 className="mt-2 font-display text-base font-semibold text-sun sm:text-xl">Customer contact details</h3>
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
@@ -9887,8 +9908,8 @@ export default function NewRfq() {
                         <section className={`shrink-0 overflow-hidden rounded-[28px] border ${borderCls} ${bgCls} p-5 shadow-soft`}>
                           <div className={`flex flex-wrap items-start justify-between gap-4 border-b ${innerBorderCls} pb-4`}>
                             <div className="space-y-1">
-                              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">AI pre-validation</p>
-                              <h4 className="text-lg font-semibold text-ink">Workspace Agent review</h4>
+                              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">AI pre-validation</p>
+                              <h4 className="text-sm font-semibold text-ink sm:text-lg">Workspace Agent review</h4>
                             </div>
                             <div className="flex flex-wrap items-center justify-end gap-3">
                               <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${badgeCls}`}>
@@ -9920,19 +9941,19 @@ export default function NewRfq() {
                           <div className="mt-4 grid gap-4 md:grid-cols-2">
                             {checkedAt && (
                               <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm`}>
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Checked at</p>
-                                <p className="mt-2 text-base font-semibold text-ink">{checkedAt}</p>
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Checked at</p>
+                                <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">{checkedAt}</p>
                               </div>
                             )}
                             {aiConversationUrl ? (
                               <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm`}>
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Agent conversation</p>
-                                <p className="mt-2 text-sm leading-6 text-slate-700">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Agent conversation</p>
+                                <p className="mt-2 text-xs leading-6 text-slate-700 sm:text-sm">
                                   Open the live ChatGPT conversation in a popup window.
                                 </p>
                                 <button
                                   type="button"
-                                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 sm:text-sm"
                                   onClick={() => openAgentConversationPopup(aiConversationUrl)}
                                 >
                                   <ExternalLink className="h-4 w-4" />
@@ -9942,8 +9963,8 @@ export default function NewRfq() {
                             ) : null}
                             {(aiVal.discussion || aiVal.message) && !isQueued && !isProcessing && (
                               <div className={`rounded-2xl border ${innerBorderCls} bg-white/95 px-4 py-4 shadow-sm md:col-span-2`}>
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Agent discussion</p>
-                                <div className="mt-2 text-sm leading-6 text-slate-700 whitespace-pre-wrap">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Agent discussion</p>
+                                <div className="mt-2 text-xs leading-6 text-slate-700 whitespace-pre-wrap sm:text-sm">
                                   {(aiVal.discussion || aiVal.message || "").split("\n").map((line, i, arr) => (
                                     <span key={i} className={/^\d+\.\s+\S/.test(line) ? "font-bold" : ""}>
                                       {line}{i < arr.length - 1 ? "\n" : ""}
@@ -9958,8 +9979,8 @@ export default function NewRfq() {
                     })()}
                     <section className="shrink-0 rounded-2xl border border-slate-200/70 bg-white/95 p-5 shadow-soft">
                       <div className="mb-4 pb-4 border-b border-slate-100">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Validator review</p>
-                        <p className="mt-1 text-sm font-bold text-ink">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-xs">Validator review</p>
+                        <p className="mt-1 text-xs font-bold text-ink sm:text-sm">
                           {form.validatorEmail
                             ? <>Responsible validator : <span className="text-tide">{form.validatorEmail}</span></>
                             : "Validator validation"}
@@ -9967,10 +9988,10 @@ export default function NewRfq() {
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">
                             Checklist
                           </p>
-                          <h3 className="mt-2 font-display text-xl text-ink">
+                          <h3 className="mt-2 font-display text-base text-ink sm:text-xl">
                             {formalDocumentLabel} form completion
                           </h3>
                         </div>
@@ -9983,18 +10004,18 @@ export default function NewRfq() {
                               key={step.id}
                               type="button"
                               onClick={() => handleStepViewChange(step.id)}
-                              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-3 text-left transition hover:border-tide/40 hover:bg-white"
+                              className="flex flex-col items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-3 text-center transition hover:border-tide/40 hover:bg-white sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:text-left"
                             >
                               <div>
-                                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
+                                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 sm:text-xs">
                                   Step {index + 1}
                                 </p>
-                                <p className="mt-1 text-sm font-semibold text-ink">
+                                <p className="mt-1 text-xs font-semibold text-ink sm:text-sm">
                                   {getStepDisplayLabel(step)}
                                 </p>
                               </div>
                               <span
-                                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${complete
+                                className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold sm:text-xs ${complete
                                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                   : "border-sun/30 bg-sun/10 text-sun"
                                   }`}
@@ -10029,12 +10050,12 @@ export default function NewRfq() {
                             >
                               <div className={`flex flex-wrap items-start justify-between gap-4 border-b pb-4 ${isRoundRejected ? "border-red-100/80" : "border-emerald-100/80"}`}>
                                 <div className="space-y-2">
-                                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">
                                     Validation audit{validationAudit.rounds.length > 1 ? ` — Round ${round.roundNumber}` : ""}
                                   </p>
-                                  <h4 className="text-lg font-semibold text-ink">Decision recorded</h4>
+                                  <h4 className="text-sm font-semibold text-ink sm:text-lg">Decision recorded</h4>
                                 </div>
-                                <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${isRoundRejected
+                                <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold sm:text-sm ${isRoundRejected
                                   ? "border-red-200 bg-red-50 text-red-700"
                                   : "border-emerald-200 bg-emerald-50 text-emerald-700"
                                   }`}>
@@ -10046,29 +10067,29 @@ export default function NewRfq() {
                                 {isRoundRejected ? (
                                   <>
                                     <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Rejected at</p>
-                                      <p className="mt-2 text-base font-semibold text-ink">{formatValidationAuditDate(round.at)}</p>
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Rejected at</p>
+                                      <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">{formatValidationAuditDate(round.at)}</p>
                                     </div>
                                     <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Rejected by</p>
-                                      <p className="mt-2 text-base font-semibold text-ink">{formatValidationAuditValue(round.by)}</p>
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Rejected by</p>
+                                      <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">{formatValidationAuditValue(round.by)}</p>
                                     </div>
                                     {round.reason ? (
                                       <div className="rounded-2xl border border-red-100/80 bg-white/95 px-4 py-4 shadow-sm md:col-span-2">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Rejected reason</p>
-                                        <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-ink">{formatValidationAuditValue(round.reason)}</p>
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Rejected reason</p>
+                                        <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-ink sm:text-base">{formatValidationAuditValue(round.reason)}</p>
                                       </div>
                                     ) : null}
                                   </>
                                 ) : (
                                   <>
                                     <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Approved at</p>
-                                      <p className="mt-2 text-base font-semibold text-ink">{formatValidationAuditDate(round.at)}</p>
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Approved at</p>
+                                      <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">{formatValidationAuditDate(round.at)}</p>
                                     </div>
                                     <div className="rounded-2xl border border-emerald-100/80 bg-white/95 px-4 py-4 shadow-sm">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Approved by</p>
-                                      <p className="mt-2 text-base font-semibold text-ink">{formatValidationAuditValue(round.by)}</p>
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-[11px]">Approved by</p>
+                                      <p className="mt-2 truncate text-sm font-semibold text-ink sm:overflow-visible sm:whitespace-normal sm:text-base">{formatValidationAuditValue(round.by)}</p>
                                     </div>
                                   </>
                                 )}
@@ -10079,7 +10100,7 @@ export default function NewRfq() {
                       </div>
                     ) : null}
                     {isRevisionLockedForNonCreator ? (
-                      <div className="shrink-0 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                      <div className="shrink-0 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 sm:text-sm">
                         <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                         </svg>
@@ -10088,7 +10109,7 @@ export default function NewRfq() {
                     ) : !hideValidationActionButtons ? (
                       <div className="shrink-0 flex flex-col gap-2 border-t border-slate-200/70 pt-2">
                         {aiValidationBlocksAction && (
-                          <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-700">
+                          <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700 sm:text-sm">
                             <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                             </svg>
@@ -10103,7 +10124,7 @@ export default function NewRfq() {
                         {!validatorIsCreator && (
                         <button
                           type="button"
-                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
                           onClick={handleValidationUpdate}
                           disabled={validationButtonsDisabled}
                         >
@@ -10113,7 +10134,7 @@ export default function NewRfq() {
                         )}
                         <button
                           type="button"
-                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-xs font-semibold text-red-600 shadow-sm transition hover:-translate-y-0.5 hover:border-red-300 hover:bg-red-100 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
                           onClick={handleRejectValidation}
                           disabled={validationButtonsDisabled}
                         >
@@ -10122,7 +10143,7 @@ export default function NewRfq() {
                         </button>
                         <button
                           type="button"
-                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex min-w-[124px] items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-5 py-3 text-xs font-semibold text-white shadow-[0_16px_30px_-18px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-[0_18px_34px_-18px_rgba(4,120,87,0.95)] disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
                           onClick={handleApproveValidation}
                           disabled={validationButtonsDisabled}
                         >

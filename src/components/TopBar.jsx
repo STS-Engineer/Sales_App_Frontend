@@ -4,6 +4,25 @@ import { Link, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
 import { clearSession, getCurrentUserRole, getUserProfile, hasAnyRole, hasRole } from "../utils/session.js";
 
+const ROLE_LABELS = {
+  COMMERCIAL: "Commercial",
+  ZONE_MANAGER: "Zone Manager",
+  COSTING_TEAM: "Costing Team",
+  RND: "R&D",
+  PLANT_MANAGER: "Plant Manager",
+  PLM: "PLM",
+  OWNER: "Owner"
+};
+
+const formatRoleLabel = (role) =>
+  ROLE_LABELS[role] ||
+  String(role || "")
+    .toLowerCase()
+    .split("_")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+
 export default function TopBar({ title, action }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -14,7 +33,7 @@ export default function TopBar({ title, action }) {
   const storedRole = getCurrentUserRole();
   const storedName = profile.name || storedEmail;
   const displayName = storedName || "User";
-  const displayEmail = storedEmail && storedEmail !== displayName ? storedEmail : "";
+  const displayRole = storedRole ? formatRoleLabel(storedRole) : "";
   const isOwner = hasRole("OWNER");
   const initials = displayName
     .split(" ")
@@ -73,7 +92,7 @@ export default function TopBar({ title, action }) {
           </Link>
           {title ? <h1 className="font-display text-lg text-ink sm:text-2xl">{title}</h1> : null}
         </div>
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
           {action}
           {hasAnyRole(["OWNER", "ZONE_MANAGER", "COMMERCIAL"]) && (
             <Link
@@ -89,32 +108,34 @@ export default function TopBar({ title, action }) {
               <span className="hidden xs:inline sm:inline">Dashboard</span>
             </Link>
           )}
-          <div className="relative w-full sm:w-auto">
+          <div className="relative w-full flex-1 sm:w-auto sm:flex-none">
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
               ref={triggerRef}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[200px] sm:gap-3 sm:px-3 md:min-w-[280px]"
+              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[240px] sm:gap-3 sm:px-3 md:min-w-[340px]"
             >
-              <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-tide/10 text-xs font-bold text-tide">
+              <span className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-tide/10 text-[11px] font-bold text-tide sm:h-8 sm:w-8 sm:text-xs">
                 {initials || "U"}
-                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-mint" />
+                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-mint sm:h-3 sm:w-3" />
               </span>
-              <div className="min-w-0 text-left leading-tight">
-                <p className="max-w-[140px] truncate text-sm font-semibold text-ink">{displayName}</p>
-                {displayEmail ? (
-                  <p className="text-xs text-slate-500">{displayEmail}</p>
+              <div className="min-w-0 flex-1 text-left leading-tight sm:max-w-[190px] sm:flex-none">
+                <p className="truncate text-xs font-semibold text-ink sm:text-sm">{displayName}</p>
+                {displayRole ? (
+                  <span className="mt-0.5 inline-flex max-w-full items-center rounded-full bg-tide/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-tide">
+                    <span className="truncate">{displayRole}</span>
+                  </span>
                 ) : null}
               </div>
               <span
-                className={`ml-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition ${
+                className={`ml-auto inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition sm:h-7 sm:w-7 ${
                   menuOpen ? "rotate-180 border-tide/40 text-tide" : ""
                 }`}
                 aria-hidden="true"
               >
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M6 9l6 6 6-6" />
                 </svg>
               </span>
@@ -122,7 +143,7 @@ export default function TopBar({ title, action }) {
             {menuOpen ? (
               <div
                 ref={menuRef}
-                className="absolute right-0 mt-3 w-[min(18rem,calc(100vw-16px))] overflow-hidden rounded-3xl border border-slate-200/70 bg-white/95 shadow-card"
+                className="absolute right-0 mt-3 w-full overflow-hidden rounded-3xl border border-slate-200/70 bg-white/95 shadow-card"
                 role="menu"
               >
                 <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden">

@@ -77,27 +77,36 @@ export default function SearchableSelectField({
 
   useEffect(() => {
     if (!open || !portal) return;
-    const rect = buttonRef.current?.getBoundingClientRect();
-    if (rect) {
-      setMenuStyle(
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const margin = 8;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const maxWidth = Math.max(160, viewportWidth - margin * 2);
+      const desiredWidth =
         menuWidth === "content"
-          ? {
-            position: "fixed",
-            top: rect.bottom + 4,
-            left: rect.left,
-            minWidth: rect.width,
-            width: "max-content",
-            zIndex: 99999
-          }
-          : {
-            position: "fixed",
-            top: rect.bottom + 4,
-            left: rect.left,
-            width: menuMinWidth ? Math.max(rect.width, menuMinWidth) : rect.width,
-            zIndex: 99999
-          }
-      );
-    }
+          ? rect.width
+          : menuMinWidth
+            ? Math.max(rect.width, menuMinWidth)
+            : rect.width;
+      const width = Math.min(desiredWidth, maxWidth);
+      const left = Math.min(Math.max(rect.left, margin), viewportWidth - width - margin);
+      const maxHeight = Math.max(160, viewportHeight - rect.bottom - margin - 4);
+      setMenuStyle({
+        position: "fixed",
+        top: rect.bottom + 4,
+        left,
+        width: menuWidth === "content" ? "max-content" : width,
+        minWidth: menuWidth === "content" ? Math.min(rect.width, maxWidth) : undefined,
+        maxWidth,
+        maxHeight,
+        zIndex: 99999
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
   }, [open, portal, menuMinWidth, menuWidth]);
 
   useEffect(() => {
@@ -141,17 +150,17 @@ export default function SearchableSelectField({
   const menuContent = (
     <div
       ref={menuRef}
-      className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+      className="flex max-w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
       style={portal ? menuStyle || { visibility: "hidden" } : undefined}
     >
       {searchable ? (
-        <div className="border-b border-slate-100 p-2">
+        <div className="flex-shrink-0 border-b border-slate-100 p-1.5 sm:p-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 sm:left-3 sm:h-4 sm:w-4" />
             <input
               ref={searchInputRef}
               type="text"
-              className="input-field py-1.5 pl-9 text-sm normal-case tracking-normal"
+              className="input-field py-1 pl-8 text-xs normal-case tracking-normal sm:py-1.5 sm:pl-9 sm:text-sm"
               placeholder={searchPlaceholder}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -160,7 +169,7 @@ export default function SearchableSelectField({
           </div>
         </div>
       ) : null}
-      <ul className={`max-h-56 overflow-y-auto py-1 ${optionListClassName || "text-sm font-medium normal-case tracking-normal text-ink"}`}>
+      <ul className={`max-h-48 min-h-0 flex-1 overflow-y-auto py-1 sm:max-h-56 ${optionListClassName || "text-xs sm:text-sm font-medium normal-case tracking-normal text-ink"}`}>
         {filteredOptions.length > 0 ? (
           filteredOptions.map((option) => {
             const optionValue = getOptionValue(option);
@@ -169,7 +178,7 @@ export default function SearchableSelectField({
               <li key={optionValue}>
                 <button
                   type="button"
-                  className={`block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-tide/10 ${optionValue === normalizedValue ? "bg-tide/10" : ""}`}
+                  className={`block w-full truncate px-2.5 py-1.5 text-left hover:bg-tide/10 sm:px-3 sm:py-2 ${optionValue === normalizedValue ? "bg-tide/10" : ""}`}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     handleSelectOption(option);
@@ -181,7 +190,7 @@ export default function SearchableSelectField({
             );
           })
         ) : (
-          <li className="px-3 py-2 text-slate-400">No matches</li>
+          <li className="px-2.5 py-1.5 text-xs text-slate-400 sm:px-3 sm:py-2 sm:text-sm">No matches</li>
         )}
       </ul>
     </div>
@@ -189,7 +198,7 @@ export default function SearchableSelectField({
 
   return (
     <label
-      className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500"
+      className="flex flex-col gap-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 sm:text-xs"
       ref={containerRef}
     >
       {label ? (
@@ -208,7 +217,7 @@ export default function SearchableSelectField({
         </span>
       ) : null}
       {isLocked ? (
-        <div className="input-field cursor-not-allowed bg-slate-100/80 text-slate-400">
+        <div className="input-field cursor-not-allowed bg-slate-100/80 text-xs text-slate-400 sm:text-sm">
           {displayValue || "—"}
         </div>
       ) : (
@@ -217,7 +226,7 @@ export default function SearchableSelectField({
             ref={buttonRef}
             id={id}
             type="button"
-            className={`${buttonClassName || "input-field flex w-full items-center justify-between gap-2 text-left normal-case tracking-normal"} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
+            className={`${buttonClassName || "input-field flex w-full items-center justify-between gap-2 text-left normal-case tracking-normal text-xs sm:text-sm"} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
             onClick={() => {
               if (!open && onBeforeOpen && onBeforeOpen() === false) return;
               setOpen((prev) => !prev);
