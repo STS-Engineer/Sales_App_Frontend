@@ -177,7 +177,8 @@ export default function ChatPanel({
   readOnly = false,
   readOnlyMessage = "Chat is locked once the RFQ enters validation",
   eyebrow = "Chatbot",
-  title = "RFQ Assistant"
+  title = "RFQ Assistant",
+  showVoiceInput = true
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -709,28 +710,30 @@ export default function ChatPanel({
               </button>
             </div>
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleStartListening}
-                disabled={composerDisabled}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
-                title={
-                  readOnly
-                    ? "Chat is locked"
-                    : isEditing
-                      ? "Finish editing the message above first"
-                      : listening
-                        ? "Listening..."
-                        : "Speak"
-                }
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-                  <path d="M12 19v4" />
-                  <path d="M8 23h8" />
-                </svg>
-              </button>
+              {showVoiceInput ? (
+                <button
+                  type="button"
+                  onClick={handleStartListening}
+                  disabled={composerDisabled}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide disabled:cursor-not-allowed disabled:opacity-50"
+                  title={
+                    readOnly
+                      ? "Chat is locked"
+                      : isEditing
+                        ? "Finish editing the message above first"
+                        : listening
+                          ? "Listening..."
+                          : "Speak"
+                  }
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                    <path d="M12 19v4" />
+                    <path d="M8 23h8" />
+                  </svg>
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleSend}

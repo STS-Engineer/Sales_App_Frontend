@@ -1,6 +1,6 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
-import { Check, Download, ExternalLink, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
+import { Bot, Check, Download, ExternalLink, Eye, Files, FolderOpen, MessageSquare, Pencil, Plus, SendHorizontal, Trash2, Upload, X } from "lucide-react"; // ClipboardList removed (action plan disabled)
 import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
@@ -32,6 +32,7 @@ import {
   requestRevision,
   listProducts,
   listSalesCustomers,
+  sendAutofillChat,
   sendChat,
   sendOfferChat,
   sendPotentialChat,
@@ -448,6 +449,33 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
     />
   );
 }
+function AutoExpandTextarea({ value, onChange, readOnly, disabled, className = "", ...rest }) {
+  const textareaRef = useRef(null);
+  const normalizedValue = value ?? "";
+  const isLocked = readOnly || disabled;
+
+  useLayoutEffect(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    const hasValue = String(normalizedValue).trim().length > 0;
+    element.style.height = "0px";
+    element.style.height = hasValue ? `${element.scrollHeight}px` : "";
+  }, [normalizedValue]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      rows={1}
+      className={`textarea-field resize-none overflow-hidden ${isLocked ? "cursor-not-allowed bg-slate-100/80 text-slate-400" : ""} ${className}`}
+      value={normalizedValue}
+      onChange={onChange}
+      readOnly={readOnly}
+      disabled={disabled}
+      aria-readonly={readOnly}
+      {...rest}
+    />
+  );
+}
 function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
   const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
   const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
@@ -684,6 +712,8 @@ const RFQ_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your sales assistant. I'll be helping you fill your RFQ. How would you like to proceed?\n1. Guide me step by step\n2. I will provide a whole paragraph";
 const POTENTIAL_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your potential opportunity assistant. I'll help you assess this opportunity before we open the formal RFQ.\n1. Guide me step by step\n2. I will provide a whole paragraph";
+const AUTOFILL_BUBBLE_GREETING =
+  "Hi! Paste a block of text with the RFQ details below and I'll extract everything I can find and fill the form automatically.";
 const OFFER_CHATBOT_GREETING_PREFIX = "Hello, I'm your offer preparation assistant.";
 const OFFER_CHATBOT_INITIAL_GREETING =
   "Hello, I'm your offer preparation assistant. I can help you review the fields used in the offer Word template. Tell me what you want to update, or ask me to check what is still missing.";
@@ -2743,6 +2773,24 @@ export default function NewRfq() {
   const [costingDiscussionLoading, setCostingDiscussionLoading] = useState(false);
   const [costingDiscussionError, setCostingDiscussionError] = useState("");
   const [isCostingDiscussionOpen, setIsCostingDiscussionOpen] = useState(false);
+  const [autofillBubbleOpen, setAutofillBubbleOpen] = useState(false);
+  const [autofillMessages, setAutofillMessages] = useState([]);
+  const autofillButtonRef = useRef(null);
+  const autofillPanelRef = useRef(null);
+  useEffect(() => {
+    if (!autofillBubbleOpen) return;
+    const handleClickOutside = (event) => {
+      if (
+        autofillPanelRef.current?.contains(event.target) ||
+        autofillButtonRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setAutofillBubbleOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [autofillBubbleOpen]);
   const [filePreview, setFilePreview] = useState(null);
   const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
   const [fileUploadModalOpen, setFileUploadModalOpen] = useState(false);
@@ -3174,6 +3222,10 @@ export default function NewRfq() {
     }
     return withInitialChatMessage(activeChatMessagesWithMeta, activeChatGreeting);
   }, [activeChatGreeting, activeChatMessagesWithMeta, isRevisionModeActive, isFormalDocumentTab, revisionGreetingIndex]);
+  const autofillFeed = useMemo(
+    () => withInitialChatMessage(autofillMessages, AUTOFILL_BUBBLE_GREETING),
+    [autofillMessages]
+  );
   const stepCompletion = useMemo(
     () => getRfqStepCompletionMap(form, mergedFiles, rfqSnapshot?.rfq_data || {}),
     [form, mergedFiles, rfqSnapshot]
@@ -4188,6 +4240,9 @@ export default function NewRfq() {
         )
       );
       setRfqChatMessages((prev) =>
+        mergeChatWithAttachments(nextRfqChatHistory, prev)
+      );
+      setAutofillMessages((prev) =>
         mergeChatWithAttachments(nextRfqChatHistory, prev)
       );
     }
@@ -5424,6 +5479,88 @@ export default function NewRfq() {
       }
       if (shouldAutoRedirect) {
         navigate(`/rfqs/new?id=${encodeURIComponent(currentRfqId)}`);
+      }
+    }
+  };
+  const handleAutofillBubbleSend = async (message, attachments = []) => {
+    if (!canUseRfqActions) return;
+    const trimmedMessage = message ? message.trim() : "";
+    const attachmentNames = (attachments || [])
+      .map((attachment) => attachment.name || attachment.file?.name)
+      .filter(Boolean);
+    const fallbackMessage = attachmentNames.length
+      ? `Attached file${attachmentNames.length > 1 ? "s" : ""}: ${attachmentNames.join(", ")}`
+      : "";
+    const displayMessage = trimmedMessage || fallbackMessage;
+    const payloadMessage = trimmedMessage || fallbackMessage;
+    setAutofillMessages((prev) => [
+      ...prev,
+      { role: "user", content: displayMessage, attachments }
+    ]);
+    let currentRfqId = rfqId;
+    try {
+      currentRfqId = await ensureRfqExists();
+    } catch {
+      setAutofillMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `I couldn't create the ${activeFormalDocumentLabel} record. Please retry in a moment.`
+        }
+      ]);
+      return;
+    }
+    const fileAttachments = (attachments || []).filter((attachment) => attachment?.file);
+    if (fileAttachments.length) {
+      const newLocalFiles = fileAttachments.map((attachment) => ({
+        id:
+          attachment.id ||
+          `local-${attachment.file.name}-${attachment.file.size}-${attachment.file.lastModified}`,
+        name: attachment.name || attachment.file.name,
+        url: attachment.url || URL.createObjectURL(attachment.file),
+        file: attachment.file,
+        source: "local",
+        size: attachment.file.size,
+        updatedAt: attachment.file.lastModified
+          ? new Date(attachment.file.lastModified).toISOString()
+          : "",
+        owner: currentUserLabel
+      }));
+      setLocalFiles((prev) => [...prev, ...newLocalFiles]);
+      setSaving(true);
+      try {
+        for (const attachment of fileAttachments) {
+          await uploadRfqFile(currentRfqId, attachment.file);
+        }
+      } catch {
+        setRfqError("Unable to upload file. Please try again.");
+        setAutofillMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "File upload failed. Please try again." }
+        ]);
+        setSaving(false);
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+    if (!payloadMessage) {
+      await syncRfq(currentRfqId);
+      return;
+    }
+    let finalAssistantResponse = "";
+    try {
+      const reply = await sendAutofillChat(currentRfqId, payloadMessage);
+      finalAssistantResponse = sanitizeAssistantChatContent(String(reply?.response || ""));
+    } catch {
+      finalAssistantResponse = "I couldn't reach the server. Please retry in a moment.";
+    } finally {
+      const synced = await syncRfq(currentRfqId, { revealUpdatedRfqFields: true });
+      if (!synced && finalAssistantResponse) {
+        setAutofillMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: finalAssistantResponse }
+        ]);
       }
     }
   };
@@ -9217,10 +9354,10 @@ export default function NewRfq() {
                                           <th className="px-3 py-3">{renderRequirementLabel("Product", getProductFieldRequirementProps("product"))}</th>
                                           <th className="px-3 py-3">{renderRequirementLabel("Product Line", getProductFieldRequirementProps("productLine"))}</th>
                                           {productRows.some((p) => { const v = String(p.productLine || "").trim().toLowerCase(); return v === "ass" || v === "assembly"; }) && (
-                                            <th className="px-3 py-3 min-w-[150px]">{renderRequirementLabel("Components", getProductFieldRequirementProps("components"))}</th>
+                                            <th className="px-3 py-3 min-w-[280px]">{renderRequirementLabel("Components", getProductFieldRequirementProps("components"))}</th>
                                           )}
                                           <th className={`px-3 py-3 ${productRows.some((p) => p.costingData) ? "min-w-[220px]" : ""}`}>{renderRequirementLabel("Costing Data", getProductFieldRequirementProps("costingData"))}</th>
-                                          <th className={`px-3 py-3 ${productRows.some((p) => p.application) ? "min-w-[160px]" : ""}`}>{renderRequirementLabel("Application", getProductFieldRequirementProps("application"))}</th>
+                                          <th className="px-3 py-3 w-[160px]">{renderRequirementLabel("Application", getProductFieldRequirementProps("application"))}</th>
                                           <th className="px-3 py-3">{renderRequirementLabel("Part Number", getProductFieldRequirementProps("partNumber"))}</th>
                                           <th className="px-3 py-3">{renderRequirementLabel("Drawing", getProductFieldRequirementProps("drawing"))}</th>
                                           <th className="px-3 py-3">{renderRequirementLabel("SOP Year", getProductFieldRequirementProps("sop"))}</th>
@@ -9262,13 +9399,13 @@ export default function NewRfq() {
                                                   const pl = String(product.productLine || "").trim().toLowerCase();
                                                   if (pl !== "ass" && pl !== "assembly") return null;
                                                   return rfqFormFieldReadOnly ? (
-                                                    <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[150px]`}>
+                                                    <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} min-w-[280px] whitespace-pre-line`}>
                                                       {product.components || "—"}
                                                     </div>
                                                   ) : (
-                                                    <input
-                                                      className="input-field min-w-[150px]"
-                                                      value={product.components || ""}
+                                                    <AutoExpandTextarea
+                                                      className="min-w-[280px]"
+                                                      value={product.components}
                                                       onChange={(e) => handleProductChange(productIndex, "components", e.target.value)}
                                                       readOnly={rfqFormFieldReadOnly}
                                                       aria-label={`Product ${productIndex + 1} components`}
@@ -9279,13 +9416,13 @@ export default function NewRfq() {
                                             )}
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} ${productRows.some((p) => p.costingData) ? "min-w-[220px]" : "min-w-[120px]"}`}>
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} whitespace-pre-line ${productRows.some((p) => p.costingData) ? "min-w-[220px]" : "min-w-[120px]"}`}>
                                                   {product.costingData || "—"}
                                                 </div>
                                               ) : (
-                                                <input
-                                                  className={`input-field ${productRows.some((p) => p.costingData) ? "min-w-[220px]" : "min-w-[120px]"}`}
-                                                  value={product.costingData || ""}
+                                                <AutoExpandTextarea
+                                                  className={productRows.some((p) => p.costingData) ? "min-w-[220px]" : "min-w-[120px]"}
+                                                  value={product.costingData}
                                                   onChange={(e) => handleProductChange(productIndex, "costingData", e.target.value)}
                                                   readOnly={rfqFormFieldReadOnly}
                                                   aria-label={`Product ${productIndex + 1} costing data`}
@@ -9294,13 +9431,13 @@ export default function NewRfq() {
                                             </td>
                                             <td className="px-3 py-3">
                                               {rfqFormFieldReadOnly ? (
-                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} ${productRows.some((p) => p.application) ? "min-w-[160px]" : "min-w-[120px]"}`}>
+                                                <div className={`${PRODUCT_ROW_READONLY_VALUE_CLASSES} whitespace-pre-line w-[160px]`}>
                                                   {product.application || "—"}
                                                 </div>
                                               ) : (
-                                                <input
-                                                  className={`input-field ${productRows.some((p) => p.application) ? "min-w-[160px]" : "min-w-[120px]"}`}
-                                                  value={product.application || ""}
+                                                <AutoExpandTextarea
+                                                  className="w-[160px]"
+                                                  value={product.application}
                                                   onChange={(e) => handleProductChange(productIndex, "application", e.target.value)}
                                                   readOnly={rfqFormFieldReadOnly}
                                                   aria-label={`Product ${productIndex + 1} application`}
@@ -10571,6 +10708,38 @@ export default function NewRfq() {
               </div>
             </div>
           </div>
+        </div>
+      ) : null}
+      {isRfqFormView ? (
+        <button
+          ref={autofillButtonRef}
+          type="button"
+          onClick={() => setAutofillBubbleOpen((prev) => !prev)}
+          className={`fixed bottom-6 right-6 z-40 inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-lg transition hover:-translate-y-0.5 ${autofillBubbleOpen
+            ? "border-slate-200/80 bg-white text-slate-600 hover:border-tide/35 hover:text-tide"
+            : "border-tide/30 bg-tide text-white"
+            }`}
+          aria-label="Fill form from text"
+          title="Fill form from text"
+        >
+          <Bot className="h-6 w-6" />
+        </button>
+      ) : null}
+      {isRfqFormView && autofillBubbleOpen ? (
+        <div
+          ref={autofillPanelRef}
+          className="fixed bottom-24 right-6 z-40 h-[70vh] max-h-[560px] w-[380px] max-w-[92vw] overflow-hidden rounded-3xl border border-slate-200/70 shadow-2xl"
+        >
+          <ChatPanel
+            messages={autofillFeed}
+            onSend={handleAutofillBubbleSend}
+            readOnly={isChatLocked}
+            readOnlyMessage={chatReadOnlyMessage}
+            onCollapse={() => setAutofillBubbleOpen(false)}
+            eyebrow="Autofill"
+            title="Paste & fill"
+            showVoiceInput={false}
+          />
         </div>
       ) : null}
       {false && filesPanelOpen ? (
