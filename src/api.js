@@ -379,10 +379,14 @@ export async function createRfq(payload = {}) {
   return request("/api/rfq", { method: "POST", body: payload });
 }
 
-export async function updateRfqData(rfqId, rfqData, updateType = "simple") {
+export async function updateRfqData(rfqId, rfqData, updateType = "simple", changedFields = null) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/data`, {
     method: "PUT",
-    body: { rfq_data: rfqData, update_type: updateType }
+    body: {
+      rfq_data: rfqData,
+      update_type: updateType,
+      ...(changedFields ? { changed_fields: changedFields } : {})
+    }
   });
 }
 

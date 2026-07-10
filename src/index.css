@@ -952,7 +952,8 @@ body {
 .history-table-scroll {
   width: 100%;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
+  max-height: 70vh;
 }
 
 .history-table {
@@ -1036,10 +1037,27 @@ body {
   width: 100%;
 }
 
+.history-subitems-modal.chat-modal {
+  height: 85vh;
+  max-height: 85vh;
+}
+
+.history-subitems-modal .chat-modal-body {
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .history-subitems-scroll {
   width: 100%;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 70vh;
 }
 
 .history-subitems-table {
@@ -1087,6 +1105,30 @@ body {
 }
 
 .history-subitems-table tbody tr:hover td {
+  background: #eff6ff;
+}
+
+.history-subitems-table th.history-sticky-name-header {
+  position: sticky;
+  left: 0;
+  z-index: 30;
+  background: #e9eef5;
+  box-shadow: 4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+.history-subitems-table td.history-sticky-name-cell {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: #ffffff;
+  box-shadow: 4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+.history-subitems-table tbody tr:nth-child(even) td.history-sticky-name-cell {
+  background: #f8fafc;
+}
+
+.history-subitems-table tbody tr:hover td.history-sticky-name-cell {
   background: #eff6ff;
 }
 
@@ -1208,8 +1250,8 @@ body {
 
 .history-subitem-action-cell {
   white-space: nowrap;
-  width: 300px;
-  min-width: 300px;
+  width: 200px;
+  min-width: 200px;
   vertical-align: middle;
   padding-right: 24px;
 }
