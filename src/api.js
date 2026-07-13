@@ -377,6 +377,10 @@ export async function getRfqAuditLogs(rfqId) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/audit-logs`);
 }
 
+export async function getAuditLogs() {
+  return request("/api/audit-logs", { auth: false });
+}
+
 export async function getRfqDiscussion(rfqId, phase) {
   return request(
     `/api/rfq/${encodeURIComponent(rfqId)}/discussion?phase=${encodeURIComponent(phase)}`
