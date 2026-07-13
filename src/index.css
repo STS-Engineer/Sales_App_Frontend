@@ -1854,4 +1854,15 @@ body {
     padding: 6px 8px;
     gap: 0;
   }
+
+  /* Costing stage — remove the big outer "card" box (border/background/
+     shadow/rounding/padding) on mobile so the SharePoint button and the
+     rest of the content flow directly, without a card-in-page look. */
+  .costing-stage-card.card {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
 }

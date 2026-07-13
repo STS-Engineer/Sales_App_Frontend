@@ -2195,8 +2195,9 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {createPortal(
               <div
-                className={`fixed inset-0 z-[999] bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 sm:hidden ${
+                className={`fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 sm:hidden ${
                   mobileViewMenuOpen ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
                 onClick={() => setMobileViewMenuOpen(false)}
@@ -2259,7 +2260,9 @@ export default function Dashboard() {
                     })}
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body
+              )}
 
               {viewMode === "detailed" ? (
                 <>
