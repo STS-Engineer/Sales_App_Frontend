@@ -102,7 +102,7 @@ const GROUPED_PHASE_MAP = {
 const phaseKeys = PHASES.map((phase) => phase.key);
 const knownStatuses = new Set(PHASES.flatMap((phase) => phase.statuses));
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
-const HISTORY_ROWS_PER_PAGE = 5;
+const HISTORY_DEFAULT_ROWS_PER_PAGE = 5;
 const EXCLUDED_STATUSES = new Set(["Lost"]);
 const DEFAULT_SUBPHASE_STATUS = "New RFQ";
 const requestLabel = (value) => Math.abs(Number(value || 0)) === 1 ? "Request" : "Requests";
@@ -1990,11 +1990,10 @@ export default function Dashboard() {
             ? filteredOldRfqs
             : finalDetailedRfqs;
   const totalRows = activeRows.length;
-  const effectiveRowsPerPage = viewMode === "history" ? HISTORY_ROWS_PER_PAGE : rowsPerPage;
-  const pageCount = Math.max(1, Math.ceil(totalRows / effectiveRowsPerPage));
+  const pageCount = Math.max(1, Math.ceil(totalRows / rowsPerPage));
   const safePage = Math.min(page, pageCount);
-  const startIndex = (safePage - 1) * effectiveRowsPerPage;
-  const endIndex = Math.min(startIndex + effectiveRowsPerPage, totalRows);
+  const startIndex = (safePage - 1) * rowsPerPage;
+  const endIndex = Math.min(startIndex + rowsPerPage, totalRows);
 
   const paginatedRfqs = useMemo(
     () => activeRows.slice(startIndex, endIndex),
@@ -2037,6 +2036,12 @@ export default function Dashboard() {
       setPage(pageCount);
     }
   }, [page, pageCount]);
+
+  useEffect(() => {
+    if (viewMode === "history") {
+      setRowsPerPage(HISTORY_DEFAULT_ROWS_PER_PAGE);
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     if (!canSeeTeamView && viewMode === "team") {
@@ -2084,23 +2089,17 @@ export default function Dashboard() {
         <span className="ml-2 text-xs uppercase tracking-[0.3em] text-slate-400">
           Rows
         </span>
-        {viewMode === "history" ? (
-          <span className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
-            {HISTORY_ROWS_PER_PAGE}
-          </span>
-        ) : (
-          <select
-            className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-tide/30"
-            value={rowsPerPage}
-            onChange={handleRowsPerPageChange}
-          >
-            {ROWS_PER_PAGE_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        )}
+        <select
+          className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-tide/30"
+          value={rowsPerPage}
+          onChange={handleRowsPerPageChange}
+        >
+          {ROWS_PER_PAGE_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="flex items-center gap-2">
         <button
