@@ -366,7 +366,10 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
   const [otherMode, setOtherMode] = useState(
     () => Boolean(value && !isPredefinedValue(value))
   );
-  const [editingOther, setEditingOther] = useState(false);
+  // Suppresses autofocus for values that are already "Other" when this field
+  // mounts (e.g. loading a saved RFQ) — only a fresh user-triggered switch
+  // into Other mode should steal focus.
+  const skipAutoFocusRef = useRef(otherMode);
   // Sync when value changes externally (e.g. loading a saved RFQ)
   const prevValueRef = useRef(value);
   if (prevValueRef.current !== value) {
@@ -374,7 +377,6 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
     const shouldBeOther = Boolean(value && !isPredefinedValue(value));
     if (shouldBeOther !== otherMode) {
       setOtherMode(shouldBeOther);
-      if (!shouldBeOther) setEditingOther(false);
     }
   }
   const selectValue =
@@ -385,21 +387,22 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
   const handleSelectChange = (e) => {
     const v = e.target.value;
     if (v === "__customer__") {
-      setOtherMode(false); setEditingOther(false);
+      setOtherMode(false);
       onChange({ target: { name, value: customer } });
     } else if (v === "AVOCarbon") {
-      setOtherMode(false); setEditingOther(false);
+      setOtherMode(false);
       onChange({ target: { name, value: "AVOCarbon" } });
     } else if (v === "") {
-      setOtherMode(false); setEditingOther(false);
+      setOtherMode(false);
       onChange({ target: { name, value: "" } });
     } else {
-      setOtherMode(true); setEditingOther(true);
+      skipAutoFocusRef.current = false;
+      setOtherMode(true);
       if (isPredefinedValue(value)) onChange({ target: { name, value: "" } });
     }
   };
   const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
-  if (readOnly || editingOther) {
+  if (readOnly || otherMode) {
     return (
       <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
         <span className="flex flex-wrap items-center gap-1">
@@ -408,22 +411,20 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
           {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
         </span>
         {readOnly ? (
-          <div className={"input-field " + lockedCls}>{value || "—"}</div>
+          <div className={"textarea-field whitespace-pre-line " + lockedCls}>{value || "—"}</div>
         ) : (
-          <input
-            className="input-field"
-            type="text"
+          <AutoExpandTextarea
             placeholder="Please specify..."
             value={value}
             // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
+            autoFocus={!skipAutoFocusRef.current}
             onChange={(e) => {
               const v = e.target.value;
-              if (v === "") { setOtherMode(false); setEditingOther(false); }
+              if (v === "") setOtherMode(false);
               onChange({ target: { name, value: v } });
             }}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
-            onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!value) setOtherMode(false); } }}
+            onBlur={() => { if (!value) setOtherMode(false); }}
           />
         )}
       </label>
@@ -438,14 +439,10 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
       options={[
         ...(customer ? [{ value: "__customer__", label: customer }] : []),
         { value: "AVOCarbon", label: "AVOCarbon" },
-        { value: "__other__", label: otherMode && value ? value : "Other" }
+        { value: "__other__", label: "Other" }
       ]}
       required={required}
       optional={optional}
-      onBeforeOpen={() => {
-        if (otherMode) { setEditingOther(true); return false; }
-        return true;
-      }}
     />
   );
 }
@@ -479,29 +476,32 @@ function AutoExpandTextarea({ value, onChange, readOnly, disabled, className = "
 function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
   const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
   const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
-  const [editingOther, setEditingOther] = useState(false);
+  // Suppresses autofocus for values that are already "Other" when this field
+  // mounts (e.g. loading a saved RFQ) — only a fresh user-triggered switch
+  // into Other mode should steal focus.
+  const skipAutoFocusRef = useRef(otherMode);
   const prevValueRef = useRef(value);
   if (prevValueRef.current !== value) {
     prevValueRef.current = value;
     const shouldBeOther = Boolean(value && !isPredefined(value));
     if (shouldBeOther !== otherMode) {
       setOtherMode(shouldBeOther);
-      if (!shouldBeOther) setEditingOther(false);
     }
   }
   const selectValue = otherMode ? "__other__" : (value || "");
   const handleSelectChange = (e) => {
     const v = e.target.value;
     if (v === "__other__") {
-      setOtherMode(true); setEditingOther(true);
+      skipAutoFocusRef.current = false;
+      setOtherMode(true);
       if (isPredefined(value)) onChange({ target: { name, value: "" } });
     } else {
-      setOtherMode(false); setEditingOther(false);
+      setOtherMode(false);
       onChange({ target: { name, value: v } });
     }
   };
   const lockedCls = "cursor-not-allowed bg-slate-100/80 text-slate-400";
-  if (readOnly || editingOther) {
+  if (readOnly || otherMode) {
     return (
       <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
         <span className="flex flex-wrap items-center gap-1">
@@ -510,22 +510,20 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
           {optional ? <span className="normal-case tracking-normal text-slate-400">(Optional)</span> : null}
         </span>
         {readOnly ? (
-          <div className={"input-field " + lockedCls}>{value || "—"}</div>
+          <div className={"textarea-field whitespace-pre-line " + lockedCls}>{value || "—"}</div>
         ) : (
-          <input
-            className="input-field"
-            type="text"
+          <AutoExpandTextarea
             placeholder="Please specify..."
             value={value}
             // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
+            autoFocus={!skipAutoFocusRef.current}
             onChange={(e) => {
               const v = e.target.value;
-              if (v === "") { setOtherMode(false); setEditingOther(false); }
+              if (v === "") setOtherMode(false);
               onChange({ target: { name, value: v } });
             }}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!value) setOtherMode(false); setEditingOther(false); } }}
-            onBlur={() => { if (!value) setOtherMode(false); setEditingOther(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!value) setOtherMode(false); } }}
+            onBlur={() => { if (!value) setOtherMode(false); }}
           />
         )}
       </label>
@@ -539,14 +537,10 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
       onChange={handleSelectChange}
       options={[
         ...options,
-        { value: "__other__", label: otherMode && value ? value : "Other" }
+        { value: "__other__", label: "Other" }
       ]}
       required={required}
       optional={optional}
-      onBeforeOpen={() => {
-        if (otherMode) { setEditingOther(true); return false; }
-        return true;
-      }}
     />
   );
 }
