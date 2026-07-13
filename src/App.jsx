@@ -10,10 +10,11 @@ import NewRfq from "./pages/NewRfq.jsx";
 import RoutingSettings from "./pages/RoutingSettings.jsx";
 import UserValidation from "./pages/UserValidation.jsx";
 import { ToastProvider } from "./components/ToastProvider.jsx";
- 
+import { getToken } from "./utils/session.js";
+
 function LegacyRfqRedirect() {
   const { id } = useParams();
- 
+
   return (
     <Navigate
       to={`/rfqs/new?id=${encodeURIComponent(id || "")}`}
@@ -21,7 +22,17 @@ function LegacyRfqRedirect() {
     />
   );
 }
- 
+
+// Blocks rendering of authenticated pages when there's no session token,
+// so signing out and pasting a page URL directly redirects immediately
+// instead of flashing the page while its data fetches fail with 401.
+function RequireAuth({ children }) {
+  if (!getToken()) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
+
 export default function App() {
   return (
     <ToastProvider>
@@ -31,12 +42,47 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/kpis" element={<KpiDashboard />} />
+          <Route
+            path="/dashboard"
+            element={
+              <RequireAuth>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/kpis"
+            element={
+              <RequireAuth>
+                <KpiDashboard />
+              </RequireAuth>
+            }
+          />
           <Route path="/rfq/:id" element={<LegacyRfqRedirect />} />
-          <Route path="/rfqs/new" element={<NewRfq />} />
-          <Route path="/users/validation" element={<UserValidation />} />
-          <Route path="/settings/routing" element={<RoutingSettings />} />
+          <Route
+            path="/rfqs/new"
+            element={
+              <RequireAuth>
+                <NewRfq />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/users/validation"
+            element={
+              <RequireAuth>
+                <UserValidation />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings/routing"
+            element={
+              <RequireAuth>
+                <RoutingSettings />
+              </RequireAuth>
+            }
+          />
           <Route path="/logger" element={<Logger />} />
         </Routes>
       </BrowserRouter>
