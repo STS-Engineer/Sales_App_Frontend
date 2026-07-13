@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
-import { clearSession, getCurrentUserRole, getUserProfile, hasAnyRole, hasRole } from "../utils/session.js";
+import { getMe } from "../api";
+import {
+  clearSession,
+  getCurrentUserRole,
+  getUserProfile,
+  hasAnyRole,
+  hasRole,
+  setCurrentUserRole,
+  setUserProfile
+} from "../utils/session.js";
 
 const ROLE_LABELS = {
   COMMERCIAL: "Commercial",
@@ -28,7 +37,7 @@ export default function TopBar({ title, action }) {
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
   const location = useLocation();
-  const profile = getUserProfile();
+  const [profile, setProfile] = useState(() => getUserProfile());
   const storedEmail = profile.email;
   const storedRole = getCurrentUserRole();
   const storedName = profile.name || storedEmail;
@@ -48,6 +57,28 @@ export default function TopBar({ title, action }) {
   };
 
   const isKpiRoute = location.pathname.startsWith("/kpis");
+
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then((me) => {
+        if (cancelled || !me?.email) return;
+        setUserProfile({
+          email: me.email,
+          role: me.role,
+          roles: me.roles || [me.role].filter(Boolean),
+          name: me.full_name || me.email.split("@")[0]
+        });
+        setCurrentUserRole(me.role);
+        setProfile(getUserProfile());
+      })
+      .catch(() => {
+        // Keep the cached profile if the refresh fails (e.g. offline).
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -77,7 +108,7 @@ export default function TopBar({ title, action }) {
 
   return (
     <div className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/85 backdrop-blur">
-      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 sm:gap-4 sm:px-5 lg:px-10">
+      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 sm:flex-nowrap sm:gap-4 sm:px-5 lg:px-10">
         <div className="flex items-center gap-2 sm:gap-4">
           <Link
             to="/dashboard"
@@ -92,36 +123,36 @@ export default function TopBar({ title, action }) {
           </Link>
           {title ? <h1 className="font-display text-lg text-ink sm:text-2xl">{title}</h1> : null}
         </div>
-        <div className="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-3">
           {action}
           {hasAnyRole(["OWNER", "ZONE_MANAGER", "COMMERCIAL"]) && (
             <Link
               to="/kpis"
               className={[
-                "inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm",
+                "inline-flex flex-shrink-0 items-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs min-[1050px]:gap-2 min-[1050px]:px-4 min-[1050px]:py-2.5 min-[1050px]:text-sm",
                 isKpiRoute
                   ? "border-tide/70 bg-gradient-to-r from-tide to-mint text-white"
                   : "border-slate-200 bg-white/90 text-slate-600 hover:border-tide/40 hover:text-tide hover:shadow-md"
               ].join(" ")}
             >
               <BarChart3 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="hidden xs:inline sm:inline">Dashboard</span>
+              <span className="hidden min-[1050px]:inline">Dashboard</span>
             </Link>
           )}
-          <div className="relative w-full flex-1 sm:w-auto sm:flex-none">
+          <div className="relative ml-auto w-[85%] flex-none sm:ml-0 sm:w-auto sm:min-w-0 sm:shrink">
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
               ref={triggerRef}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:min-w-[240px] sm:gap-3 sm:px-3 md:min-w-[340px]"
+              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:gap-3 sm:px-3 min-[1050px]:min-w-[340px]"
             >
               <span className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-tide/10 text-[11px] font-bold text-tide sm:h-8 sm:w-8 sm:text-xs">
                 {initials || "U"}
                 <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-mint sm:h-3 sm:w-3" />
               </span>
-              <div className="min-w-0 flex-1 text-left leading-tight sm:max-w-[190px] sm:flex-none">
+              <div className="min-w-0 flex-1 text-left leading-tight min-[1050px]:max-w-[190px] min-[1050px]:flex-none">
                 <p className="truncate text-xs font-semibold text-ink sm:text-sm">{displayName}</p>
                 {displayRole ? (
                   <span className="mt-0.5 inline-flex max-w-full items-center rounded-full bg-tide/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-tide">
