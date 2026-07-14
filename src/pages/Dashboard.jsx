@@ -246,7 +246,7 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "application",
   "customer_application",
   "project_condition",
-  "explication",
+  "explanation",
   "importance",
   "comment",
   "total_qty",
