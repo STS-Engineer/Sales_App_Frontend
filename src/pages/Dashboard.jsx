@@ -232,6 +232,8 @@ const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
   "import_source_row",
   "button",
   "subitems_count",
+  "updated_at",
+  "updated_by",
 ]);
 
 const OLD_RFQ_PROJECT_COLUMN_ORDER = [
@@ -451,6 +453,8 @@ const HIDDEN_OLD_RFQ_SUBITEM_COLUMNS = new Set([
   "year9_value",
   "year10_value",
   "volume_title",
+  "updated_at",
+  "updated_by",
 ]);
 
 const QTY_YEAR_COLUMNS = Array.from({ length: 10 }, (_, i) => `qty_year_${i + 1}`);
