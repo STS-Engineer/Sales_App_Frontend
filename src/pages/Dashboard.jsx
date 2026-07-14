@@ -102,6 +102,7 @@ const GROUPED_PHASE_MAP = {
 const phaseKeys = PHASES.map((phase) => phase.key);
 const knownStatuses = new Set(PHASES.flatMap((phase) => phase.statuses));
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
+const DEFAULT_ROWS_PER_PAGE = 10;
 const HISTORY_DEFAULT_ROWS_PER_PAGE = 5;
 const EXCLUDED_STATUSES = new Set(["Lost"]);
 const DEFAULT_SUBPHASE_STATUS = "New RFQ";
@@ -2038,9 +2039,7 @@ export default function Dashboard() {
   }, [page, pageCount]);
 
   useEffect(() => {
-    if (viewMode === "history") {
-      setRowsPerPage(HISTORY_DEFAULT_ROWS_PER_PAGE);
-    }
+    setRowsPerPage(viewMode === "history" ? HISTORY_DEFAULT_ROWS_PER_PAGE : DEFAULT_ROWS_PER_PAGE);
   }, [viewMode]);
 
   useEffect(() => {
