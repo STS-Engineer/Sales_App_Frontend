@@ -473,7 +473,7 @@ function AutoExpandTextarea({ value, onChange, readOnly, disabled, className = "
     />
   );
 }
-function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [] }) {
+function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [], searchable = false, searchPlaceholder, showAddNewButton = false }) {
   const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
   const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
   // Suppresses autofocus for values that are already "Other" when this field
@@ -489,12 +489,15 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
     }
   }
   const selectValue = otherMode ? "__other__" : (value || "");
+  const activateOtherMode = () => {
+    skipAutoFocusRef.current = false;
+    setOtherMode(true);
+    if (isPredefined(value)) onChange({ target: { name, value: "" } });
+  };
   const handleSelectChange = (e) => {
     const v = e.target.value;
     if (v === "__other__") {
-      skipAutoFocusRef.current = false;
-      setOtherMode(true);
-      if (isPredefined(value)) onChange({ target: { name, value: "" } });
+      activateOtherMode();
     } else {
       setOtherMode(false);
       onChange({ target: { name, value: v } });
@@ -535,12 +538,17 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
       name={name}
       value={selectValue}
       onChange={handleSelectChange}
-      options={[
-        ...options,
-        { value: "__other__", label: "Other" }
-      ]}
+      options={
+        showAddNewButton
+          ? options
+          : [{ value: "__other__", label: "Other" }, ...options]
+      }
       required={required}
       optional={optional}
+      searchable={searchable}
+      searchPlaceholder={searchPlaceholder}
+      alwaysVisibleValues={showAddNewButton ? null : ["__other__"]}
+      onAddNew={showAddNewButton ? activateOtherMode : null}
     />
   );
 }
@@ -9330,7 +9338,7 @@ export default function NewRfq() {
                                   readOnly={rfqFormFieldReadOnly}
                                   {...getRfqFieldRequirementProps("automotiveType")}
                                 />
-                                <SearchableSelectField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchable searchPlaceholder="Search customer" readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
+                                <SelectOrOtherField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchable searchPlaceholder="Search customer" showAddNewButton readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                               </div>
                             </div>
