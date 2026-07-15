@@ -73,34 +73,34 @@ export default function RfqTable({
 }) {
   const minWidthClass =
     showValidatorColumn && showPhaseColumn
-      ? "min-w-[1080px]"
+      ? "min-w-[760px] sm:min-w-[1080px]"
       : showValidatorColumn || showPhaseColumn
-        ? "min-w-[1000px]"
-        : "min-w-[880px]";
+        ? "min-w-[700px] sm:min-w-[1000px]"
+        : "min-w-[620px] sm:min-w-[880px]";
 
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className={`w-full text-left text-sm ${minWidthClass}`}>
-          <thead className="bg-slate-100/80 text-xs uppercase tracking-widest text-slate-500">
+        <table className={`w-full text-left text-xs sm:text-sm ${minWidthClass}`}>
+          <thead className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 sm:text-xs">
             <tr>
-              <th className="px-3 py-3">Document ID</th>
-              <th className="px-3 py-3">Type</th>
-              <th className="px-3 py-3">Sector</th>
-              <th className="px-3 py-3">Customer</th>
-              <th className="px-3 py-3">Creator</th>
-              <th className="px-3 py-3">Product name</th>
-              <th className="px-3 py-3">Product line</th>
-              <th className="px-3 py-3">TO Total</th>
-              <th className="px-3 py-3">Creation Date</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Document ID</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Type</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Sector</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Customer</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Creator</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Product name</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Product line</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">TO Total</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Creation Date</th>
               {showPhaseColumn ? (
-                <th className="px-3 py-3">Phase</th>
+                <th className="px-2 py-2 sm:px-3 sm:py-3">Phase</th>
               ) : null}
               {showValidatorColumn ? (
-                <th className="px-3 py-3">Validator</th>
+                <th className="px-2 py-2 sm:px-3 sm:py-3">Validator</th>
               ) : null}
-              <th className="px-3 py-3">Status</th>
-              <th className="px-3 py-3" aria-label="Actions" />
+              <th className="px-2 py-2 sm:px-3 sm:py-3">Status</th>
+              <th className="px-2 py-2 sm:px-3 sm:py-3" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -109,14 +109,14 @@ export default function RfqTable({
                 key={row.id}
                 className="border-t border-slate-200/60 text-slate-600 transition hover:bg-white/70"
               >
-                <td className="px-3 py-3 font-semibold text-ink">
-                  <span className="block max-w-[120px] truncate">
+                <td className="px-2 py-2 sm:px-3 sm:py-3 font-semibold text-ink">
+                  <span className="block max-w-[90px] sm:max-w-[120px] truncate">
                     {row.displayId || row.id}
                   </span>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-2 py-2 sm:px-3 sm:py-3">
                   <span
-                    className={`badge ${
+                    className={`badge text-[10px] sm:text-xs ${
                       documentTypeStyles[row.documentType] ||
                       "border-slate-300 bg-slate-100 text-slate-600"
                     }`}
@@ -124,10 +124,10 @@ export default function RfqTable({
                     {documentTypeLabels[row.documentType] || row.documentType || "RFQ"}
                   </span>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-2 py-2 sm:px-3 sm:py-3">
                   {row.sector ? (
                     <span
-                      className={`badge whitespace-nowrap ${
+                      className={`badge whitespace-nowrap text-[10px] sm:text-xs ${
                         row.sector.toLowerCase().includes("non")
                           ? "border-orange-300 bg-orange-50 text-orange-600"
                           : "border-tide/30 bg-tide/10 text-tide"
@@ -139,38 +139,38 @@ export default function RfqTable({
                     "-"
                   )}
                 </td>
-                <td className="px-3 py-3 font-medium text-slate-700">
-                  <span className="block max-w-[120px] truncate">
+                <td className="px-2 py-2 sm:px-3 sm:py-3 font-medium text-slate-700">
+                  <span className="block max-w-[90px] sm:max-w-[120px] truncate">
                     {row.customer || row.client || "-"}
                   </span>
                 </td>
-                <td className="px-3 py-3 font-medium text-slate-700">
-                  <span className="block max-w-[150px] truncate">
+                <td className="px-2 py-2 sm:px-3 sm:py-3 font-medium text-slate-700">
+                  <span className="block max-w-[110px] truncate sm:max-w-[150px]">
                     {row.creator || "-"}
                   </span>
                 </td>
-                <td className="px-3 py-3">
-                  <span className="block max-w-[120px] truncate">
+                <td className="px-2 py-2 sm:px-3 sm:py-3">
+                  <span className="block max-w-[90px] sm:max-w-[120px] truncate">
                     {row.productName || "-"}
                   </span>
                 </td>
-                <td className="px-3 py-3">
-                  <span className="block max-w-[90px] truncate">
+                <td className="px-2 py-2 sm:px-3 sm:py-3">
+                  <span className="block max-w-[70px] truncate sm:max-w-[90px]">
                     {row.productLine || row.item || "-"}
                   </span>
                 </td>
-                <td className="px-3 py-3 whitespace-nowrap font-medium text-slate-700">
-                  <span className="block max-w-[95px] truncate">
+                <td className="px-2 py-2 sm:px-3 sm:py-3 whitespace-nowrap font-medium text-slate-700">
+                  <span className="block max-w-[75px] truncate sm:max-w-[95px]">
                     {formatToTotal(row.toTotal ?? row.budget)}
                   </span>
                 </td>
-                <td className="px-3 py-3 whitespace-nowrap text-slate-500 text-sm">
+                <td className="px-2 py-2 sm:px-3 sm:py-3 whitespace-nowrap text-xs text-slate-500 sm:text-sm">
                   {row.createdAt
                     ? new Date(row.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
                     : "-"}
                 </td>
                 {showPhaseColumn ? (
-                  <td className="px-3 py-3">
+                  <td className="px-2 py-2 sm:px-3 sm:py-3">
                     <span
                       className={`badge ${
                         statusStyles[formatPhase(row)] ||
@@ -182,15 +182,15 @@ export default function RfqTable({
                   </td>
                 ) : null}
                 {showValidatorColumn ? (
-                  <td className="px-3 py-3 font-medium text-slate-700">
-                    <span className="block max-w-[130px] truncate">
+                  <td className="px-2 py-2 sm:px-3 sm:py-3 font-medium text-slate-700">
+                    <span className="block max-w-[100px] truncate sm:max-w-[130px]">
                       {formatValidator(row)}
                     </span>
                   </td>
                 ) : null}
-                <td className="px-3 py-3">
+                <td className="px-2 py-2 sm:px-3 sm:py-3">
                   <span
-                    className={`badge ${
+                    className={`badge text-[10px] sm:text-xs ${
                       statusStyles[row.status] ||
                       "border-slate-300 bg-slate-100 text-slate-600"
                     }`}
@@ -198,10 +198,10 @@ export default function RfqTable({
                     {statusLabels[row.status] || row.status}
                   </span>
                 </td>
-                <td className="px-3 py-3 text-right">
+                <td className="px-2 py-2 sm:px-3 sm:py-3 text-right">
                   <Link
                     to={`/rfqs/new?id=${encodeURIComponent(row.id)}`}
-                    className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:shadow-sm"
+                    className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-2 py-1.5 text-[10px] font-semibold text-white transition hover:shadow-sm sm:px-3 sm:py-2 sm:text-xs"
                     style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
                   >
                     Open

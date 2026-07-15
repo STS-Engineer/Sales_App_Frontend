@@ -102,6 +102,8 @@ const GROUPED_PHASE_MAP = {
 const phaseKeys = PHASES.map((phase) => phase.key);
 const knownStatuses = new Set(PHASES.flatMap((phase) => phase.statuses));
 const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50];
+const DEFAULT_ROWS_PER_PAGE = 10;
+const HISTORY_DEFAULT_ROWS_PER_PAGE = 5;
 const EXCLUDED_STATUSES = new Set(["Lost"]);
 const DEFAULT_SUBPHASE_STATUS = "New RFQ";
 const requestLabel = (value) => Math.abs(Number(value || 0)) === 1 ? "Request" : "Requests";
@@ -230,6 +232,8 @@ const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
   "import_source_row",
   "button",
   "subitems_count",
+  "updated_at",
+  "updated_by",
 ]);
 
 const OLD_RFQ_PROJECT_COLUMN_ORDER = [
@@ -242,7 +246,7 @@ const OLD_RFQ_PROJECT_COLUMN_ORDER = [
   "application",
   "customer_application",
   "project_condition",
-  "explication",
+  "explanation",
   "importance",
   "comment",
   "total_qty",
@@ -449,6 +453,8 @@ const HIDDEN_OLD_RFQ_SUBITEM_COLUMNS = new Set([
   "year9_value",
   "year10_value",
   "volume_title",
+  "updated_at",
+  "updated_by",
 ]);
 
 const QTY_YEAR_COLUMNS = Array.from({ length: 10 }, (_, i) => `qty_year_${i + 1}`);
@@ -2037,6 +2043,10 @@ export default function Dashboard() {
   }, [page, pageCount]);
 
   useEffect(() => {
+    setRowsPerPage(viewMode === "history" ? HISTORY_DEFAULT_ROWS_PER_PAGE : DEFAULT_ROWS_PER_PAGE);
+  }, [viewMode]);
+
+  useEffect(() => {
     if (!canSeeTeamView && viewMode === "team") {
       setViewMode("detailed");
     }
@@ -2214,7 +2224,7 @@ export default function Dashboard() {
                       <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-tide">
                         Views
                       </p>
-                      <p className="font-display text-lg text-ink">Switch view</p>
+                      <p className="font-display text-base text-ink">Switch view</p>
                     </div>
                     <button
                       type="button"
@@ -2241,7 +2251,7 @@ export default function Dashboard() {
                             setMobileViewMenuOpen(false);
                           }}
                           className={[
-                            "group flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition",
+                            "group flex items-center gap-3 rounded-2xl px-3 py-3 text-left text-xs font-semibold transition",
                             isActive ? "text-white shadow-sm" : "text-ink hover:bg-slate-100"
                           ].join(" ")}
                           style={isActive ? { backgroundColor: "#ef7807" } : undefined}
@@ -2393,7 +2403,7 @@ export default function Dashboard() {
                             }))}
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2418,7 +2428,7 @@ export default function Dashboard() {
                           ]}
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -2444,7 +2454,7 @@ export default function Dashboard() {
                           ]}
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -2468,13 +2478,13 @@ export default function Dashboard() {
                             ]}
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
                         </div>
                       )}
-                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-3 py-1.5 text-xs font-semibold text-sun shadow-soft sm:mt-4 sm:px-4 sm:py-2 sm:text-sm">
                         {formatRequestCount(finalDetailedRfqs.length)}
                       </span>
                     </div>
@@ -2540,7 +2550,7 @@ export default function Dashboard() {
                           }))}
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -2563,7 +2573,7 @@ export default function Dashboard() {
                           ]}
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -2587,7 +2597,7 @@ export default function Dashboard() {
                           ]}
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -2611,13 +2621,13 @@ export default function Dashboard() {
                             ]}
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
                         </div>
                       )}
-                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-3 py-1.5 text-xs font-semibold text-sun shadow-soft sm:mt-4 sm:px-4 sm:py-2 sm:text-sm">
                         {formatRequestCount(finalGlobalRfqs.length)}
                       </span>
                     </div>
@@ -2672,7 +2682,7 @@ export default function Dashboard() {
                             searchPlaceholder="Search customer"
                             portal
                             menuMinWidth={280}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2695,7 +2705,7 @@ export default function Dashboard() {
                             searchPlaceholder="Search KAM"
                             portal
                             menuMinWidth={280}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2716,7 +2726,7 @@ export default function Dashboard() {
                             placeholder="All Sectors"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2737,7 +2747,7 @@ export default function Dashboard() {
                             placeholder="All Applications"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2758,7 +2768,7 @@ export default function Dashboard() {
                             placeholder="All Business Types"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
@@ -2779,13 +2789,13 @@ export default function Dashboard() {
                             placeholder="All Conditions"
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
                         </div>
                       )}
-                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-3 py-1.5 text-xs font-semibold text-sun shadow-soft sm:mt-4 sm:px-4 sm:py-2 sm:text-sm">
                         {formatRequestCount(filteredOldRfqs.length)}
                       </span>
                       <div className="ml-auto flex items-center gap-2 sm:self-end sm:mt-0 mt-3">
@@ -3263,7 +3273,7 @@ export default function Dashboard() {
                           placeholder="All types"
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -3290,7 +3300,7 @@ export default function Dashboard() {
                           placeholder="All statuses"
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -3312,13 +3322,13 @@ export default function Dashboard() {
                             searchPlaceholder="Search KAM"
                             portal
                             menuMinWidth={280}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
                         </div>
                       )}
-                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-3 py-1.5 text-xs font-semibold text-sun shadow-soft sm:mt-4 sm:px-4 sm:py-2 sm:text-sm">
                         {formatRequestCount(filteredMarketData.length)}
                       </span>
                     </div>
@@ -3394,7 +3404,7 @@ export default function Dashboard() {
                           searchPlaceholder="Search person"
                           portal
                           menuMinWidth={260}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -3418,7 +3428,7 @@ export default function Dashboard() {
                           ]}
                           portal
                           menuMinWidth={220}
-                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                          buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                           valueClassName="truncate text-tide"
                           chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                         />
@@ -3442,13 +3452,13 @@ export default function Dashboard() {
                             ]}
                             portal
                             menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-4 sm:py-3 sm:text-sm"
+                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
                             valueClassName="truncate text-tide"
                             chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
                           />
                         </div>
                       )}
-                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-4 py-2 text-sm font-semibold text-sun shadow-soft sm:mt-4">
+                      <span className="badge mt-3 border-sun/40 bg-gradient-to-r from-sun/20 to-sun/5 px-3 py-1.5 text-xs font-semibold text-sun shadow-soft sm:mt-4 sm:px-4 sm:py-2 sm:text-sm">
                         {formatRequestCount(finalTeamData.length)}
                       </span>
                     </div>

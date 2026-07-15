@@ -952,8 +952,6 @@ body {
 .history-table-scroll {
   width: 100%;
   overflow-x: auto;
-  overflow-y: auto;
-  max-height: 70vh;
 }
 
 .history-table {
@@ -985,9 +983,6 @@ body {
 }
 
 .history-table th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   background: #e9eef5;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1144,6 +1139,39 @@ body {
     position: static;
     left: auto;
     box-shadow: none;
+  }
+
+  /* RFQ History View tables (project + subitems) — smaller columns and
+     text on mobile only, so the table itself takes up less room. */
+  .history-table th,
+  .history-table td,
+  .history-subitems-table th,
+  .history-subitems-table td {
+    min-width: 120px;
+    max-width: 200px;
+    padding: 6px 8px;
+  }
+
+  .history-table th:first-child,
+  .history-table td:first-child,
+  .history-subitems-table th:first-child,
+  .history-subitems-table td:first-child {
+    min-width: 120px;
+  }
+
+  .history-table th:nth-child(7),
+  .history-table td:nth-child(7) {
+    min-width: 160px;
+  }
+
+  .history-table td,
+  .history-subitems-table td {
+    font-size: 0.72rem;
+  }
+
+  .history-table th,
+  .history-subitems-table th {
+    font-size: 0.6rem;
   }
 
   /* Header buttons (Update / Columns / Close) were getting clipped by the
@@ -1864,5 +1892,271 @@ body {
     border-radius: 0;
     box-shadow: none;
     padding: 0;
+  }
+
+  /* Pricing "view files" popups (upload BOM / upload final price) — shrink
+     everything (text, inputs, buttons) on mobile only. Scoped selectors so
+     the shared .chat-modal classes used by other popups stay untouched. */
+  .pricing-files-modal .chat-modal-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .pricing-files-modal .chat-modal-title {
+    font-size: 0.75rem;
+  }
+
+  .pricing-files-modal .chat-modal-close {
+    width: 26px;
+    height: 26px;
+  }
+
+  .pricing-files-modal .chat-modal-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .pricing-files-modal .chat-modal-body {
+    padding: 12px;
+  }
+
+  .pricing-files-modal .chat-modal-fallback {
+    font-size: 0.7rem;
+    gap: 10px;
+  }
+
+  .pricing-files-modal label {
+    font-size: 0.6rem;
+  }
+
+  .pricing-files-modal .input-field {
+    font-size: 0.7rem;
+    padding: 8px 10px;
+  }
+
+  .pricing-files-modal .textarea-field {
+    min-height: 100px;
+    font-size: 0.7rem;
+  }
+
+  .pricing-files-modal ul li span {
+    font-size: 0.6rem;
+  }
+
+  .pricing-files-modal .chat-modal-actions {
+    gap: 8px;
+  }
+
+  .pricing-files-modal .chat-modal-actions button {
+    padding: 6px 10px;
+    font-size: 0.65rem;
+  }
+
+  /* File preview popup (eye icon on any "Files" list, incl. Final price
+     costing package received) — shrink header/footer text and buttons. */
+  .file-preview-modal .chat-modal-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .file-preview-modal .chat-modal-title {
+    font-size: 0.75rem;
+  }
+
+  .file-preview-modal .chat-modal-close {
+    width: 26px;
+    height: 26px;
+  }
+
+  .file-preview-modal .chat-modal-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .file-preview-modal .chat-modal-fallback {
+    font-size: 0.7rem;
+    gap: 10px;
+  }
+
+  .file-preview-modal .chat-modal-footer {
+    padding: 10px 12px;
+  }
+
+  .file-preview-modal .chat-modal-footer button {
+    padding: 8px 12px;
+    font-size: 0.7rem;
+    gap: 6px;
+  }
+
+  .file-preview-modal .chat-modal-footer button svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .file-preview-modal .chat-modal-actions button {
+    padding: 6px 10px;
+    font-size: 0.65rem;
+  }
+
+  /* Feasibility "RFQ Data" → Preview PDF popup — shrink header text/buttons. */
+  .template-preview-modal .chat-modal-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .template-preview-modal .chat-modal-header > div {
+    gap: 6px;
+  }
+
+  .template-preview-modal .chat-modal-title {
+    font-size: 0.75rem;
+  }
+
+  .template-preview-modal .chat-modal-header button.outline-button {
+    padding: 4px 8px;
+    font-size: 0.6rem;
+  }
+
+  .template-preview-modal .chat-modal-close {
+    width: 26px;
+    height: 26px;
+  }
+
+  .template-preview-modal .chat-modal-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .template-preview-modal .chat-modal-fallback {
+    font-size: 0.7rem;
+    gap: 10px;
+  }
+
+  /* Discussion popups (RFQ discussion + Costing discussion) — shrink every
+     component and text size on mobile only. Scoped under the existing
+     .chat-modal--discussion modifier, unique to these two popups. */
+  .chat-modal--discussion .chat-modal-header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .chat-modal--discussion .chat-modal-title {
+    font-size: 0.8rem;
+  }
+
+  .chat-modal--discussion .chat-modal-header > div > p:not(.chat-modal-title) {
+    font-size: 0.65rem;
+  }
+
+  .chat-modal--discussion .chat-modal-header span {
+    padding: 2px 8px;
+    font-size: 0.6rem;
+    white-space: nowrap;
+  }
+
+  .chat-modal--discussion .chat-modal-close {
+    height: 28px;
+    width: 28px;
+  }
+
+  .chat-modal--discussion .chat-modal-close svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .chat-modal--discussion .chat-modal-body {
+    font-size: 0.7rem;
+  }
+
+  .chat-modal--discussion .chat-modal-body > div > div:first-child {
+    padding: 14px;
+  }
+
+  .chat-modal--discussion .h-14.w-14 {
+    height: 40px;
+    width: 40px;
+  }
+
+  .chat-modal--discussion .h-6.w-6 {
+    height: 16px;
+    width: 16px;
+  }
+
+  .chat-modal--discussion .text-base {
+    font-size: 0.75rem;
+  }
+
+  .chat-modal--discussion {
+    width: 96vw;
+    max-height: 92vh;
+  }
+
+  .chat-modal--discussion article {
+    max-width: 90%;
+    padding: 12px 14px;
+  }
+
+  .chat-modal--discussion article > div {
+    gap: 4px;
+  }
+
+  .chat-modal--discussion article > p {
+    margin-top: 4px;
+  }
+
+  .chat-modal--discussion article p {
+    font-size: 0.78rem;
+  }
+
+  .chat-modal--discussion article .text-xs {
+    font-size: 0.65rem;
+  }
+
+  .chat-modal--discussion form {
+    padding: 12px 8px;
+  }
+
+  .chat-modal--discussion form label {
+    font-size: 0.55rem;
+  }
+
+  .chat-modal--discussion form > div > p {
+    font-size: 0.65rem;
+  }
+
+  .chat-modal--discussion .textarea-field {
+    min-height: 70px;
+    width: 100%;
+    font-size: 0.75rem;
+    padding: 10px 12px;
+  }
+
+  .chat-modal--discussion .input-field {
+    width: 100%;
+    font-size: 0.75rem;
+    padding: 10px 12px;
+  }
+
+  .chat-modal--discussion button[type="submit"] {
+    padding: 6px 12px;
+    font-size: 0.7rem;
+  }
+
+  .chat-modal--discussion button[type="submit"] svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* New Request (NewRfq) step header — tablet band (640px–1049px). Below
+   1050px the 3-column desktop grid is disabled (see NewRfq.jsx) because it
+   crowds the Update/Change Index buttons into the step title; this band
+   keeps the mobile stacked layout but with medium-sized icon-only
+   Previous/Next buttons instead of the very compact mobile padding. */
+@media (min-width: 640px) and (max-width: 1049px) {
+  .prev-button,
+  .next-button {
+    padding: 8px 10px;
+    gap: 4px;
   }
 }

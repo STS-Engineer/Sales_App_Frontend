@@ -178,7 +178,8 @@ export default function ChatPanel({
   readOnlyMessage = "Chat is locked once the RFQ enters validation",
   eyebrow = "Chatbot",
   title = "RFQ Assistant",
-  showVoiceInput = true
+  showVoiceInput = true,
+  compact = false
 }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -516,8 +517,20 @@ export default function ChatPanel({
             </button>
           ) : null}
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">{eyebrow}</p>
-            <h2 className="font-display text-2xl text-ink">{title}</h2>
+            <p
+              className={`uppercase tracking-[0.35em] text-slate-400 ${
+                compact ? "text-[9px] sm:text-xs" : "text-xs"
+              }`}
+            >
+              {eyebrow}
+            </p>
+            <h2
+              className={`font-display text-ink ${
+                compact ? "text-base sm:text-2xl" : "text-2xl"
+              }`}
+            >
+              {title}
+            </h2>
           </div>
         </div>
       </div>

@@ -69,7 +69,7 @@ export default function Login() {
         email: profile.email,
         role: profile.role,
         roles: profile.roles || [profile.role].filter(Boolean),
-        name: profile.email?.split("@")[0]
+        name: profile.full_name || profile.email?.split("@")[0]
       });
       setCurrentUserRole(profile.role);
       navigate("/dashboard");
