@@ -7,8 +7,8 @@ import {
   deleteRoutingConfig,
   deleteViewer,
   listAllUsers,
-  listProducts,
   listRoutingConfig,
+  listRoutingProductLines,
   listViewers,
   setRoutingAssignment,
   setViewerAssignment
@@ -145,7 +145,7 @@ export default function RoutingSettings() {
 
   const [routingEntries, setRoutingEntries] = useState([]);
   const [viewerEntries, setViewerEntries] = useState([]);
-  const [productOptions, setProductOptions] = useState([]);
+  const [productLineOptions, setProductLineOptions] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -165,24 +165,22 @@ export default function RoutingSettings() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [routingResponse, viewersResponse, productsResponse, usersResponse] = await Promise.all([
+      const [routingResponse, viewersResponse, productLinesResponse, usersResponse] = await Promise.all([
         listRoutingConfig(),
         listViewers(),
-        listProducts(),
+        listRoutingProductLines(),
         listAllUsers()
       ]);
       setRoutingEntries(Array.isArray(routingResponse) ? routingResponse : []);
       setViewerEntries(Array.isArray(viewersResponse) ? viewersResponse : []);
-      setProductOptions(
-        Array.isArray(productsResponse?.products) ? productsResponse.products : []
-      );
+      setProductLineOptions(Array.isArray(productLinesResponse) ? productLinesResponse : []);
       setAllUsers(
         Array.isArray(usersResponse) ? usersResponse.filter((u) => u.is_approved) : []
       );
     } catch {
       setRoutingEntries([]);
       setViewerEntries([]);
-      setProductOptions([]);
+      setProductLineOptions([]);
       setAllUsers([]);
       showToast("Unable to load routing settings. Please refresh.", {
         type: "error",
@@ -198,27 +196,22 @@ export default function RoutingSettings() {
     void loadData();
   }, [isOwner]);
 
-  const sortedProductOptions = useMemo(
-    () =>
-      [...productOptions].sort((a, b) =>
-        String(a?.product_line || "").localeCompare(String(b?.product_line || ""))
-      ),
-    [productOptions]
-  );
-
-  // Unique product line names for dropdowns (no duplicates)
+  // Unique product line names for dropdowns (no duplicates) — sourced from the
+  // validation_matrix catalog (all known product lines), not the external
+  // products/costing catalog, so lines with no products listed there (e.g.
+  // Friction) still show up here.
   const uniqueProductLineNames = useMemo(() => {
     const seen = new Set();
     const result = [];
-    for (const p of sortedProductOptions) {
+    for (const p of productLineOptions) {
       const pl = String(p?.product_line || "").trim();
       if (pl && !seen.has(pl.toLowerCase())) {
         seen.add(pl.toLowerCase());
         result.push(pl);
       }
     }
-    return result;
-  }, [sortedProductOptions]);
+    return result.sort((a, b) => a.localeCompare(b));
+  }, [productLineOptions]);
 
   // Helper: currently-assigned leader emails for a group
   const getLeaderEmails = (productLine, role) => {

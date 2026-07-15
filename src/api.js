@@ -675,6 +675,10 @@ export async function listRoutingConfig(productLine = "") {
   return request(`/api/owner/routing-config${query}`);
 }
 
+export async function listRoutingProductLines() {
+  return request("/api/owner/routing-config/product-lines");
+}
+
 export async function createRoutingConfig(payload) {
   return request("/api/owner/routing-config", {
     method: "POST",
