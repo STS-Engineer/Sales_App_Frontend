@@ -42,7 +42,14 @@ export default function TopBar({ title, action }) {
   const storedRole = getCurrentUserRole();
   const storedName = profile.name || storedEmail;
   const displayName = storedName || "User";
-  const displayRole = storedRole ? formatRoleLabel(storedRole) : "";
+  const storedRoles = Array.isArray(profile.roles) && profile.roles.length
+    ? profile.roles
+    : storedRole
+      ? [storedRole]
+      : [];
+  const displayRole = Array.from(new Set(storedRoles))
+    .map(formatRoleLabel)
+    .join(" / ");
   const isOwner = hasRole("OWNER");
   const initials = displayName
     .split(" ")

@@ -2661,6 +2661,12 @@ export default function NewRfq() {
     currentUserProfile?.name || currentUserProfile?.email || "You";
   const currentUserEmail = String(currentUserProfile?.email || "").trim();
   const currentUserRole = String(currentUserProfile?.role || "").trim();
+  const currentUserRoles = Array.isArray(currentUserProfile?.roles) && currentUserProfile.roles.length
+    ? currentUserProfile.roles
+    : currentUserRole
+      ? [currentUserRole]
+      : [];
+  const hasCurrentUserRole = (role) => currentUserRoles.includes(role);
   const normalizedCurrentUserEmail = normalizeEmailValue(currentUserEmail);
   const rfqIdParam = useMemo(() => searchParams.get("id"), [searchParams]);
   const openAgentConversationPopup = (conversationUrl) => {
@@ -3054,7 +3060,7 @@ export default function NewRfq() {
     rfqSnapshotCreatorEmail &&
     normalizedCurrentUserEmail === rfqSnapshotCreatorEmail
   );
-  const isCostingReadOnlyRole = COSTING_READ_ONLY_ROLES.includes(currentUserRole);
+  const isCostingReadOnlyRole = COSTING_READ_ONLY_ROLES.some(hasCurrentUserRole);
   const canCreateRfqDraft = RFQ_CREATOR_ROLES.includes(currentUserRole);
   const canEditRfqPhase = Boolean(
     currentUserRole === "OWNER" || isRfqCreatorUser || isAssignedValidatorUser
@@ -3409,16 +3415,16 @@ export default function NewRfq() {
     rfqId &&
     canUseCostingActions &&
     isCostingfeasibilityView &&
-    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM" || currentUserRole === "PLM")
+    (hasCurrentUserRole("OWNER") || hasCurrentUserRole("COSTING_TEAM") || hasCurrentUserRole("PLM"))
   );
   const canManageCostingFeasibilityHandoff = Boolean(
     rfqId &&
     canUseCostingActions &&
     isCostingfeasibilityView &&
     (
-      currentUserRole === "OWNER" ||
-      currentUserRole === "RND" ||
-      currentUserRole === "PLM"
+      hasCurrentUserRole("OWNER") ||
+      hasCurrentUserRole("RND") ||
+      hasCurrentUserRole("PLM")
     )
   );
   const canAdvanceCostingfeasibility = Boolean(
@@ -3426,10 +3432,10 @@ export default function NewRfq() {
     canUseCostingActions &&
     isCostingfeasibilityView &&
     (
-      currentUserRole === "OWNER" ||
-      currentUserRole === "COSTING_TEAM" ||
-      currentUserRole === "PLM" ||
-      currentUserRole === "RND"
+      hasCurrentUserRole("OWNER") ||
+      hasCurrentUserRole("COSTING_TEAM") ||
+      hasCurrentUserRole("PLM") ||
+      hasCurrentUserRole("RND")
     )
   );
   const hasSelectedCostingFeasibilityStatus = Boolean(
@@ -3468,7 +3474,7 @@ export default function NewRfq() {
     canUseCostingActions &&
     isCostingPricingView &&
     pricingWorkflowState === PRICING_WORKFLOW_STATE_WAITING_BOM &&
-    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM")
+    (hasCurrentUserRole("OWNER") || hasCurrentUserRole("COSTING_TEAM"))
   );
   const canManagePricingFinalPrice = Boolean(
     rfqId &&
@@ -3480,7 +3486,7 @@ export default function NewRfq() {
       pricingWorkflowState === PRICING_WORKFLOW_STATE_PRICING_UPLOADED ||
       pricingWorkflowState === PRICING_WORKFLOW_STATE_REJECTED
     ) &&
-    (currentUserRole === "OWNER" || currentUserRole === "COSTING_TEAM" || currentUserRole === "PLM")
+    (hasCurrentUserRole("OWNER") || hasCurrentUserRole("COSTING_TEAM") || hasCurrentUserRole("PLM"))
   );
   const canSavePricingFinalPrice = Boolean(
     canManagePricingFinalPrice &&
@@ -3495,7 +3501,7 @@ export default function NewRfq() {
     hasPricingFinalPriceUpload &&
     pricingWorkflowState === PRICING_WORKFLOW_STATE_PRICING_UPLOADED &&
     !hasRecordedPricingFileDecision &&
-    (currentUserRole === "OWNER" || currentUserRole === "PLM")
+    (hasCurrentUserRole("OWNER") || hasCurrentUserRole("PLM"))
   );
   const pricingFileValidationButtonsDisabled = Boolean(
     !canValidatePricingFile || pricingFileValidationActionId || hasRecordedPricingFileDecision
