@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 
 const getOptionValue = (option) => (typeof option === "string" ? option : option.value);
 const getOptionLabel = (option) => (typeof option === "string" ? option : option.label);
@@ -43,7 +43,15 @@ export default function SearchableSelectField({
   menuWidth = null,
   // Override the option list's text size/weight/case classes. Defaults
   // reproduce this component's original look exactly.
-  optionListClassName = null
+  optionListClassName = null,
+  // Option values that stay in the filtered list regardless of the search
+  // query — e.g. an "Other" escape hatch that must stay reachable even when
+  // the typed search doesn't match its label.
+  alwaysVisibleValues = null,
+  // When set, renders a "+" button next to the trigger that calls this
+  // directly instead of opening the dropdown — a one-click shortcut to add
+  // a new value instead of hunting for an "Other" row inside the list.
+  onAddNew = null
 }) {
   const isLocked = readOnly || disabled;
   const normalizedValue = value ?? "";
@@ -133,10 +141,17 @@ export default function SearchableSelectField({
   const filteredOptions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return source;
-    return source
+    const matched = source
       .filter((option) => getOptionLabel(option).toLowerCase().includes(normalizedQuery))
       .slice(0, maxResults);
-  }, [source, query, maxResults]);
+    if (!alwaysVisibleValues || alwaysVisibleValues.length === 0) return matched;
+    const pinned = source.filter(
+      (option) =>
+        alwaysVisibleValues.includes(getOptionValue(option)) &&
+        !matched.some((m) => getOptionValue(m) === getOptionValue(option))
+    );
+    return [...matched, ...pinned];
+  }, [source, query, maxResults, alwaysVisibleValues]);
 
   const emitChange = (nextValue) => {
     onChange({ target: { name, value: nextValue } });
@@ -221,37 +236,50 @@ export default function SearchableSelectField({
           {displayValue || "—"}
         </div>
       ) : (
-        <div className="relative">
-          <button
-            ref={buttonRef}
-            id={id}
-            type="button"
-            className={`${buttonClassName || "input-field flex w-full items-center justify-between gap-2 text-left normal-case tracking-normal text-xs sm:text-sm"} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
-            onClick={() => {
-              if (!open && onBeforeOpen && onBeforeOpen() === false) return;
-              setOpen((prev) => !prev);
-            }}
-          >
-            <span className={valueClassName || "truncate text-slate-800"}>
-              {displayValue || placeholder}
-            </span>
-            <ChevronDown
-              className={`${chevronClassName || "h-4 w-4 flex-shrink-0 text-slate-500"} transition-transform ${open ? "rotate-180" : ""}`}
-            />
-          </button>
-          {open && !portal ? (
-            <div
-              className="absolute z-20 mt-1 w-full"
-              style={
-                menuWidth === "content"
-                  ? { width: "max-content", minWidth: "100%" }
-                  : (menuMinWidth ? { minWidth: menuMinWidth } : undefined)
-              }
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <button
+              ref={buttonRef}
+              id={id}
+              type="button"
+              className={`${buttonClassName || "input-field flex w-full items-center justify-between gap-2 text-left normal-case tracking-normal text-xs sm:text-sm"} ${error ? "border-red-400 focus:ring-red-300" : ""}`}
+              onClick={() => {
+                if (!open && onBeforeOpen && onBeforeOpen() === false) return;
+                setOpen((prev) => !prev);
+              }}
             >
-              {menuContent}
-            </div>
+              <span className={valueClassName || "truncate text-slate-800"}>
+                {displayValue || placeholder}
+              </span>
+              <ChevronDown
+                className={`${chevronClassName || "h-4 w-4 flex-shrink-0 text-slate-500"} transition-transform ${open ? "rotate-180" : ""}`}
+              />
+            </button>
+            {open && !portal ? (
+              <div
+                className="absolute z-20 mt-1 w-full"
+                style={
+                  menuWidth === "content"
+                    ? { width: "max-content", minWidth: "100%" }
+                    : (menuMinWidth ? { minWidth: menuMinWidth } : undefined)
+                }
+              >
+                {menuContent}
+              </div>
+            ) : null}
+            {open && portal ? createPortal(menuContent, document.body) : null}
+          </div>
+          {onAddNew ? (
+            <button
+              type="button"
+              onClick={onAddNew}
+              className="flex h-[2.6rem] w-[2.6rem] flex-shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-tide/40 hover:text-tide hover:shadow-md sm:h-11 sm:w-11"
+              aria-label="Add new"
+              title="Add new"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           ) : null}
-          {open && portal ? createPortal(menuContent, document.body) : null}
         </div>
       )}
       {error ? (
