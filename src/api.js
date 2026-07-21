@@ -391,6 +391,10 @@ export async function createRfq(payload = {}) {
   return request("/api/rfq", { method: "POST", body: payload });
 }
 
+export async function submitSupportTicket(payload = {}) {
+  return request("/api/support/tickets", { method: "POST", body: payload });
+}
+
 export async function updateRfqData(rfqId, rfqData, updateType = "simple", changedFields = null) {
   return request(`/api/rfq/${encodeURIComponent(rfqId)}/data`, {
     method: "PUT",

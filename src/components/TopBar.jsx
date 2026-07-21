@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../assets/logo.png";
-import { getMe } from "../api";
+import { getMe, submitSupportTicket } from "../api";
+import { useToast } from "./ToastProvider.jsx";
 import {
   clearSession,
   getCurrentUserRole,
@@ -34,9 +35,14 @@ const formatRoleLabel = (role) =>
 
 export default function TopBar({ title, action }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportSubject, setReportSubject] = useState("");
+  const [reportDescription, setReportDescription] = useState("");
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const menuRef = useRef(null);
   const triggerRef = useRef(null);
   const location = useLocation();
+  const { showToast } = useToast();
   const [profile, setProfile] = useState(() => getUserProfile());
   const storedEmail = profile.email;
   const storedRole = getCurrentUserRole();
@@ -61,6 +67,37 @@ export default function TopBar({ title, action }) {
 
   const handleSignOut = () => {
     clearSession();
+  };
+
+  const closeReportModal = () => {
+    if (isSubmittingReport) return;
+    setReportOpen(false);
+    setReportSubject("");
+    setReportDescription("");
+  };
+
+  const handleSubmitReport = async (event) => {
+    event.preventDefault();
+    if (!reportSubject.trim() || !reportDescription.trim()) return;
+    setIsSubmittingReport(true);
+    try {
+      await submitSupportTicket({
+        subject: reportSubject.trim(),
+        description: reportDescription.trim()
+      });
+      showToast("Thanks — your report has been sent to the support team.", {
+        type: "success"
+      });
+      setReportOpen(false);
+      setReportSubject("");
+      setReportDescription("");
+    } catch (error) {
+      showToast(error?.message || "Unable to send the report. Please try again.", {
+        type: "error"
+      });
+    } finally {
+      setIsSubmittingReport(false);
+    }
   };
 
   const isKpiRoute = location.pathname.startsWith("/kpis");
@@ -114,6 +151,7 @@ export default function TopBar({ title, action }) {
   }, [menuOpen]);
 
   return (
+    <>
     <div className="sticky top-0 z-50 w-full border-b border-slate-200/70 bg-white/85 backdrop-blur">
       <div className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 sm:flex-nowrap sm:gap-4 sm:px-5 lg:px-10">
         <div className="flex items-center gap-2 sm:gap-4">
@@ -146,6 +184,15 @@ export default function TopBar({ title, action }) {
               <span className="hidden min-[1050px]:inline">Dashboard</span>
             </Link>
           )}
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-tide/40 hover:text-tide hover:shadow-md sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs min-[1050px]:gap-2 min-[1050px]:px-4 min-[1050px]:py-2.5 min-[1050px]:text-sm"
+            aria-haspopup="dialog"
+          >
+            <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden min-[1050px]:inline">Help</span>
+          </button>
           <div className="relative ml-auto w-[85%] flex-none sm:ml-0 sm:w-auto sm:min-w-0 sm:shrink">
             <button
               type="button"
@@ -153,13 +200,13 @@ export default function TopBar({ title, action }) {
               ref={triggerRef}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:gap-3 sm:px-3 min-[1050px]:min-w-[340px]"
+              className="flex w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-2 py-1.5 shadow-sm transition hover:border-tide/40 hover:shadow-md sm:gap-3 sm:px-3 min-[1050px]:min-w-[220px]"
             >
               <span className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-tide/10 text-[11px] font-bold text-tide sm:h-8 sm:w-8 sm:text-xs">
                 {initials || "U"}
                 <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-mint sm:h-3 sm:w-3" />
               </span>
-              <div className="min-w-0 flex-1 text-left leading-tight min-[1050px]:max-w-[190px] min-[1050px]:flex-none">
+              <div className="min-w-0 flex-1 text-left leading-tight min-[1050px]:max-w-[130px] min-[1050px]:flex-none">
                 <p className="truncate text-xs font-semibold text-ink sm:text-sm">{displayName}</p>
                 {displayRole ? (
                   <span className="mt-0.5 inline-flex max-w-full items-center rounded-full bg-tide/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-tide">
@@ -266,5 +313,90 @@ export default function TopBar({ title, action }) {
         </div>
       </div>
     </div>
+    {reportOpen ? (
+      <div className="chat-modal-backdrop" onClick={closeReportModal} role="presentation">
+        <div
+          className="chat-modal max-w-[520px] border border-slate-200/80 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.35)]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="report-problem-modal-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="chat-modal-header">
+            <div>
+              <p id="report-problem-modal-title" className="chat-modal-title">
+                Report a problem
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Let us know what went wrong — we&apos;ll get an email right away.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="chat-modal-close"
+              onClick={closeReportModal}
+              aria-label="Close report a problem"
+              disabled={isSubmittingReport}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 6l12 12" />
+                <path d="M18 6l-12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="chat-modal-body">
+            <form className="space-y-4" onSubmit={handleSubmitReport}>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Subject
+                </span>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={reportSubject}
+                  onChange={(event) => setReportSubject(event.target.value)}
+                  placeholder="Brief summary of the issue"
+                  maxLength={200}
+                  disabled={isSubmittingReport}
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  What happened?
+                </span>
+                <textarea
+                  className="input-field min-h-[140px] resize-y"
+                  value={reportDescription}
+                  onChange={(event) => setReportDescription(event.target.value)}
+                  placeholder="Describe the problem, what you expected, and the steps to reproduce it."
+                  maxLength={5000}
+                  disabled={isSubmittingReport}
+                  required
+                />
+              </label>
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="button"
+                  className="outline-button px-4 py-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={closeReportModal}
+                  disabled={isSubmittingReport}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="gradient-button rounded-xl px-4 py-2.5 text-xs font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isSubmittingReport || !reportSubject.trim() || !reportDescription.trim()}
+                >
+                  {isSubmittingReport ? "Sending..." : "Send report"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
