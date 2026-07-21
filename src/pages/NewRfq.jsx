@@ -5838,6 +5838,11 @@ export default function NewRfq() {
           const newId = created.rfq_id;
           setRfqId(newId);
           setRfqCreatedInThisSession(true);
+          // Without this, canUseRfqActions re-derives hasPersistedDraft=true but
+          // isRfqCreatorUser stays false (rfqCreatorEmail is still ""), so canEditRfqPhase
+          // fails for non-OWNER users and every field locks via rfqFormFieldReadOnly
+          // until a reload re-fetches the RFQ and repopulates rfqCreatorEmail.
+          setRfqCreatorEmail(String(created.created_by_email || ""));
           // Use replaceState instead of navigate() to update the URL without triggering
           // React Router's init effect (which would applyRfq → reset form → cause a ghost save)
           window.history.replaceState(null, "", `/rfqs/new?id=${encodeURIComponent(newId)}`);
