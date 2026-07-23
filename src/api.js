@@ -381,6 +381,10 @@ export async function getAuditLogs() {
   return request("/api/audit-logs", { auth: false });
 }
 
+export async function getNotificationLogs() {
+  return request("/api/notification-logs", { auth: false });
+}
+
 export async function getRfqDiscussion(rfqId, phase) {
   return request(
     `/api/rfq/${encodeURIComponent(rfqId)}/discussion?phase=${encodeURIComponent(phase)}`

@@ -6,6 +6,7 @@ import ResetPassword from "./pages/ResetPassword.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import KpiDashboard from "./pages/KpiDashboard.jsx";
 import Logger from "./pages/Logger.jsx";
+import NotificationLogs from "./pages/NotificationLogs.jsx";
 import NewRfq from "./pages/NewRfq.jsx";
 import RoutingSettings from "./pages/RoutingSettings.jsx";
 import UserValidation from "./pages/UserValidation.jsx";
@@ -84,6 +85,7 @@ export default function App() {
             }
           />
           <Route path="/logger" element={<Logger />} />
+          <Route path="/notification-logs" element={<NotificationLogs />} />
         </Routes>
       </BrowserRouter>
     </ToastProvider>

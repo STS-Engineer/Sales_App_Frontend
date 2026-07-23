@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { Globe, History, LayoutList, Menu, Pencil, TrendingUp, Trash2, Users, X } from "lucide-react";
+import ExcelJS from "exceljs";
+import { Download, Globe, History, LayoutList, Menu, Pencil, TrendingUp, Trash2, Users, X } from "lucide-react";
 import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
@@ -1235,8 +1236,10 @@ export default function Dashboard() {
   const [showSubitemColsMenu, setShowSubitemColsMenu] = useState(false);
   const [compactedProjectColumns, setCompactedProjectColumns] = useState(new Set());
   const [compactedSubitemColumns, setCompactedSubitemColumns] = useState(new Set());
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const projectColsMenuRef = useRef(null);
   const subitemColsMenuRef = useRef(null);
+  const exportMenuRef = useRef(null);
 
   useEffect(() => {
     const load = async () => {
@@ -1432,6 +1435,17 @@ export default function Dashboard() {
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, [showSubitemColsMenu]);
+
+  useEffect(() => {
+    if (!showExportMenu) return undefined;
+    const handle = (e) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [showExportMenu]);
 
   useEffect(() => {
     if (viewMode !== "history") {
@@ -1699,6 +1713,157 @@ export default function Dashboard() {
     oldSectorFilter,
     oldStatusFilter
   ]);
+
+  // Export the RFQ History table exactly as currently filtered (all active
+  // filters + search) and displayed (visible columns only) — not the full,
+  // unfiltered dataset, and not limited to the current page.
+  const buildOldRfqExportRows = () => {
+    const header = visibleProjectColumns.map((col) => getOldRfqProjectColumnLabel(col));
+    const rows = filteredOldRfqs.map((project) =>
+      visibleProjectColumns.map((col) => {
+        const value = project[col];
+        if (value === null || value === undefined) return "";
+        if (Array.isArray(value) || typeof value === "object") return "";
+        return value;
+      })
+    );
+    return [header, ...rows];
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportOldRfqsCsv = () => {
+    const data = buildOldRfqExportRows();
+    const escapeCsvCell = (cell) => {
+      const str = String(cell ?? "");
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const csvContent = data.map((row) => row.map(escapeCsvCell).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const timestamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(blob, `RFQ_History_${timestamp}.csv`);
+    setShowExportMenu(false);
+  };
+
+  const handleExportOldRfqsExcel = async () => {
+    const [header, ...rows] = buildOldRfqExportRows();
+    const columnCount = header.length;
+    const TIDE = "FF046EAF";
+    const HEADER_BORDER = "FFCBD5E1";
+    const ROW_BORDER = "FFE2E8F0";
+    const ROW_BAND = "FFF8FAFC";
+    const INK = "FF585858";
+    const MIST = "FF94A3B8";
+
+    // Freeze the "Name" column (wherever it currently sits among the visible
+    // columns) alongside the title/subtitle/header rows, matching the
+    // sticky-name-column behavior already used in the on-screen table.
+    const nameColumnIndex = visibleProjectColumns.indexOf("name");
+    const xSplit = nameColumnIndex >= 0 ? nameColumnIndex + 1 : 0;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "AVO Carbon Sales Management";
+    workbook.created = new Date();
+    const worksheet = workbook.addWorksheet("RFQ History", {
+      views: [{ state: "frozen", xSplit, ySplit: 3 }]
+    });
+
+    // A single merged cell spanning across the frozen-column split makes Excel
+    // flicker/duplicate-paint that row while scrolling. Split the merge in two
+    // at the freeze boundary instead, so no merged cell straddles it.
+    const mergeAcrossFreezeBoundary = (rowIndex) => {
+      if (xSplit > 0 && xSplit < columnCount) {
+        worksheet.mergeCells(rowIndex, 1, rowIndex, xSplit);
+        worksheet.mergeCells(rowIndex, xSplit + 1, rowIndex, columnCount);
+      } else {
+        worksheet.mergeCells(rowIndex, 1, rowIndex, columnCount);
+      }
+    };
+
+    // Title
+    mergeAcrossFreezeBoundary(1);
+    const titleCell = worksheet.getCell(1, 1);
+    titleCell.value = "RFQ History Export";
+    titleCell.font = { bold: true, size: 16, color: { argb: INK } };
+    titleCell.alignment = { horizontal: "left", vertical: "middle" };
+    worksheet.getRow(1).height = 26;
+
+    // Subtitle
+    mergeAcrossFreezeBoundary(2);
+    const subtitleCell = worksheet.getCell(2, 1);
+    subtitleCell.value = `Generated ${new Date().toLocaleString()} — ${rows.length} RFQ${rows.length === 1 ? "" : "s"}`;
+    subtitleCell.font = { italic: true, size: 10, color: { argb: MIST } };
+    worksheet.getRow(2).height = 18;
+
+    // Header row
+    const headerRowIndex = 3;
+    const headerRow = worksheet.getRow(headerRowIndex);
+    header.forEach((label, idx) => {
+      const cell = headerRow.getCell(idx + 1);
+      cell.value = label;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TIDE } };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      cell.border = {
+        top: { style: "thin", color: { argb: HEADER_BORDER } },
+        bottom: { style: "thin", color: { argb: HEADER_BORDER } },
+        left: { style: "thin", color: { argb: HEADER_BORDER } },
+        right: { style: "thin", color: { argb: HEADER_BORDER } }
+      };
+    });
+    headerRow.height = 22;
+
+    // Data rows — banded to match the on-screen table's zebra striping
+    rows.forEach((rowValues, rowIdx) => {
+      const excelRow = worksheet.getRow(headerRowIndex + 1 + rowIdx);
+      const isBanded = rowIdx % 2 === 1;
+      rowValues.forEach((value, colIdx) => {
+        const cell = excelRow.getCell(colIdx + 1);
+        cell.value = value;
+        cell.alignment = { vertical: "middle" };
+        cell.border = {
+          top: { style: "thin", color: { argb: ROW_BORDER } },
+          bottom: { style: "thin", color: { argb: ROW_BORDER } },
+          left: { style: "thin", color: { argb: ROW_BORDER } },
+          right: { style: "thin", color: { argb: ROW_BORDER } }
+        };
+        if (isBanded) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ROW_BAND } };
+        }
+      });
+    });
+
+    // Auto-size columns to fit their longest value
+    header.forEach((label, idx) => {
+      const longest = rows.reduce(
+        (max, row) => Math.max(max, String(row[idx] ?? "").length),
+        label.length
+      );
+      worksheet.getColumn(idx + 1).width = Math.min(Math.max(longest + 4, 10), 45);
+    });
+
+    worksheet.autoFilter = {
+      from: { row: headerRowIndex, column: 1 },
+      to: { row: headerRowIndex, column: columnCount }
+    };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+    const timestamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(blob, `RFQ_History_${timestamp}.xlsx`);
+    setShowExportMenu(false);
+  };
 
   const handleOpenSubitemsModal = (project) => {
     setSelectedOldProject(project);
@@ -2837,6 +3002,39 @@ export default function Dashboard() {
                             </div>
                           )}
                         </div>
+                        {!isEditingAllRows && (
+                          <div className="relative" ref={exportMenuRef}>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={filteredOldRfqs.length === 0}
+                              onClick={() => setShowExportMenu((v) => !v)}
+                            >
+                              <Download size={13} />
+                              Export
+                            </button>
+                            {showExportMenu && (
+                              <div className="col-picker-dropdown">
+                                <div className="col-picker-list">
+                                  <button
+                                    type="button"
+                                    className="col-picker-item w-full text-left"
+                                    onClick={handleExportOldRfqsExcel}
+                                  >
+                                    <span>Download as Excel (.xlsx)</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="col-picker-item w-full text-left"
+                                    onClick={handleExportOldRfqsCsv}
+                                  >
+                                    <span>Download as CSV</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {isEditingAllRows ? (
                           <>
                             <button
