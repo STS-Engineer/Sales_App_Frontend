@@ -1204,7 +1204,6 @@ export default function Dashboard() {
   const [oldKamFilter, setOldKamFilter] = useState("");
   const [oldSectorFilter, setOldSectorFilter] = useState("");
   const [oldApplicationFilter, setOldApplicationFilter] = useState("");
-  const [oldBusinessTypeFilter, setOldBusinessTypeFilter] = useState("");
   const [oldStatusFilter, setOldStatusFilter] = useState("");
   const [selectedOldProject, setSelectedOldProject] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -1673,10 +1672,6 @@ export default function Dashboard() {
     () => filterOldOpts(oldRfqProjects.map((p) => p.application)),
     [oldRfqProjects]
   );
-  const oldBusinessTypeOptions = useMemo(
-    () => filterOldOpts(oldRfqProjects.map((p) => p.type_business)),
-    [oldRfqProjects]
-  );
   const oldStatusOptions = useMemo(
     () => filterOldOpts(oldRfqProjects.map((p) => p.project_condition)),
     [oldRfqProjects]
@@ -1690,7 +1685,6 @@ export default function Dashboard() {
       if (oldKamFilter && wordSortKey(project.kam) !== wordSortKey(oldKamFilter)) return false;
       if (oldSectorFilter && wordSortKey(project.sector) !== wordSortKey(oldSectorFilter)) return false;
       if (oldApplicationFilter && wordSortKey(project.application) !== wordSortKey(oldApplicationFilter)) return false;
-      if (oldBusinessTypeFilter && wordSortKey(project.type_business) !== wordSortKey(oldBusinessTypeFilter)) return false;
       if (oldStatusFilter && wordSortKey(project.project_condition) !== wordSortKey(oldStatusFilter)) return false;
       if (!search) return true;
       const projectText = Object.values(project)
@@ -1705,7 +1699,6 @@ export default function Dashboard() {
     });
   }, [
     oldApplicationFilter,
-    oldBusinessTypeFilter,
     oldCustomerFilter,
     oldKamFilter,
     oldRfqProjects,
@@ -2199,7 +2192,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, marketTypeFilter, marketStatusFilter, marketKamFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldApplicationFilter, oldBusinessTypeFilter, oldStatusFilter]);
+  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, marketTypeFilter, marketStatusFilter, marketKamFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldApplicationFilter, oldStatusFilter]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -2910,27 +2903,6 @@ export default function Dashboard() {
                               ...oldApplicationOptions.map((opt) => ({ value: opt, label: opt }))
                             ]}
                             placeholder="All Applications"
-                            portal
-                            menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
-                            valueClassName="truncate text-tide"
-                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
-                          />
-                        </div>
-                      )}
-                      {oldBusinessTypeOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-44">
-                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldBusinessTypeFilter">Business Type</label>
-                          <SearchableSelectField
-                            id="oldBusinessTypeFilter"
-                            name="oldBusinessTypeFilter"
-                            value={oldBusinessTypeFilter}
-                            onChange={(event) => setOldBusinessTypeFilter(event.target.value)}
-                            options={[
-                              { value: "", label: "All Business Types" },
-                              ...oldBusinessTypeOptions.map((opt) => ({ value: opt, label: opt }))
-                            ]}
-                            placeholder="All Business Types"
                             portal
                             menuMinWidth={220}
                             buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
