@@ -2986,7 +2986,7 @@ export default function Dashboard() {
                               Export
                             </button>
                             {showExportMenu && (
-                              <div className="col-picker-dropdown">
+                              <div className="col-picker-dropdown export-menu-dropdown">
                                 <div className="col-picker-list">
                                   <button
                                     type="button"

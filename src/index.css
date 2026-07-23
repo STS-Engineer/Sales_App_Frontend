@@ -1572,6 +1572,13 @@ body {
   right: 0;
 }
 
+/* Export menu — size to its options' text instead of the shared fixed
+   240px used by the Columns picker (which needs the extra room for its
+   checkbox list of column names). */
+.export-menu-dropdown {
+  width: max-content;
+}
+
 .col-picker-header {
   display: flex;
   align-items: center;
@@ -1634,7 +1641,7 @@ body {
 }
 
 .col-picker-item:hover {
-  background: #f8fafc;
+  background: #046eaf1a;
 }
 
 .col-picker-item input[type="checkbox"] {
@@ -1664,7 +1671,7 @@ body {
     color: #cbd5e1;
   }
   .col-picker-item:hover {
-    background: #243044;
+    background: #046eaf1a;
   }
   .col-picker-actions button {
     color: #60a5fa;
