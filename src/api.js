@@ -302,6 +302,20 @@ export async function getOldRfqs() {
   return request("/api/old-rfqs");
 }
 
+export async function createOldRfq(payload = {}) {
+  return request("/api/old-rfqs", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function createOldRfqSubitem(oldRfqId, payload = {}) {
+  return request("/api/old-rfq-subitems", {
+    method: "POST",
+    body: { ...payload, old_rfq_id: oldRfqId },
+  });
+}
+
 export async function updateOldRfq(oldRfqId, payload) {
   return request(`/api/old-rfqs/${oldRfqId}`, {
     method: "PUT",

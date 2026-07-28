@@ -7,7 +7,7 @@ import TopBar from "../components/TopBar.jsx";
 import { useToast } from "../components/ToastProvider.jsx";
 import RfqTable from "../components/RfqTable.jsx";
 import SearchableSelectField from "../components/SearchableSelectField.jsx";
-import { listRfqs, getTeamView, getTeamMembers, getMarketViewSegment, getMarketView, getOldRfqs, updateOldRfq, updateOldRfqSubitem, deleteOldRfq, deleteOldRfqSubitem, listAllUsers, getKamOptions, getCustomerOptions } from "../api";
+import { listRfqs, getTeamView, getTeamMembers, getMarketViewSegment, getMarketView, getOldRfqs, createOldRfq, createOldRfqSubitem, updateOldRfq, updateOldRfqSubitem, deleteOldRfq, deleteOldRfqSubitem, listAllUsers, getKamOptions, getCustomerOptions } from "../api";
 import { mapRfqToRow } from "../utils/rfq.js";
 import { getUserProfile, hasRole } from "../utils/session.js";
 
@@ -225,7 +225,6 @@ const buildPageItems = (currentPage, totalPages) => {
 
 const HIDDEN_OLD_RFQ_PROJECT_COLUMNS = new Set([
   "old_rfq_id",
-  "excel_row_number",
   "creation_log",
   "monday_id",
   "import_batch",
@@ -427,7 +426,6 @@ const getOldRfqProjectColumnLabel = (columnName) =>
 const HIDDEN_OLD_RFQ_SUBITEM_COLUMNS = new Set([
   "old_rfq_subitem_id",
   "old_rfq_id",
-  "excel_row_number",
   "subitem_order",
   "parent_id",
   "import_batch",
@@ -1197,13 +1195,17 @@ export default function Dashboard() {
   const [focusedFillCell, setFocusedFillCell] = useState(null);
   const [deletingOldRfqId, setDeletingOldRfqId] = useState(null);
   const [deletingSubitemId, setDeletingSubitemId] = useState(null);
+  const [creatingOldRfq, setCreatingOldRfq] = useState(false);
+  const [creatingSubitem, setCreatingSubitem] = useState(false);
+  const [draftOldRfqIds, setDraftOldRfqIds] = useState(() => new Set());
+  const [draftSubitemIds, setDraftSubitemIds] = useState(() => new Set());
+  const [savingSubitemId, setSavingSubitemId] = useState(null);
   const [deleteRowConfirm, setDeleteRowConfirm] = useState(null);
   const [deleteSubitemConfirm, setDeleteSubitemConfirm] = useState(null);
   const [oldSearchTerm, setOldSearchTerm] = useState("");
   const [oldCustomerFilter, setOldCustomerFilter] = useState("");
   const [oldKamFilter, setOldKamFilter] = useState("");
   const [oldSectorFilter, setOldSectorFilter] = useState("");
-  const [oldApplicationFilter, setOldApplicationFilter] = useState("");
   const [oldStatusFilter, setOldStatusFilter] = useState("");
   const [selectedOldProject, setSelectedOldProject] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -1317,14 +1319,19 @@ export default function Dashboard() {
     load();
   }, [marketSegment, showToast]);
 
-  // Load commercial names from v_sales_organisation (KPI_DB_Final) for KAM dropdown
+  // Load commercial names from v_sales_organisation.person (KPI_DB_Final) for the KAM dropdown.
   useEffect(() => {
     getKamOptions()
       .then((data) => {
-        const names = Array.isArray(data?.names) ? data.names.filter(Boolean) : [];
+        const names = Array.isArray(data?.names)
+          ? data.names.filter(Boolean).map((name) => String(name).toUpperCase())
+          : [];
         setCommercialUsers(names);
       })
-      .catch(() => setCommercialUsers([]));
+      .catch((error) => {
+        console.error("Unable to load KAM options from v_sales_organisation:", error);
+        setCommercialUsers([]);
+      });
   }, []);
 
   // Load customer names from v_sales_customer_directory (KPI_DB_Final) for Customer dropdown
@@ -1579,9 +1586,22 @@ export default function Dashboard() {
     [oldRfqSubitemColumns, hiddenSubitemColumns]
   );
 
+  // Pin subitems just added via "Add subitem" (not yet saved) to the top so
+  // they're immediately visible instead of at the bottom of the list.
+  const orderedSubitems = useMemo(() => {
+    const subitems = selectedOldProject?.subitems || [];
+    if (draftSubitemIds.size === 0) return subitems;
+    const drafts = [];
+    const rest = [];
+    subitems.forEach((s) => {
+      (draftSubitemIds.has(s.old_rfq_subitem_id) ? drafts : rest).push(s);
+    });
+    return [...drafts, ...rest];
+  }, [selectedOldProject, draftSubitemIds]);
+
   const subitemRowIds = useMemo(
-    () => (selectedOldProject?.subitems || []).map((s) => s.old_rfq_subitem_id),
-    [selectedOldProject]
+    () => orderedSubitems.map((s) => s.old_rfq_subitem_id),
+    [orderedSubitems]
   );
 
   const toggleProjectColumn = (col) => {
@@ -1668,10 +1688,6 @@ export default function Dashboard() {
     () => filterOldOpts(oldRfqProjects.map((p) => p.sector)),
     [oldRfqProjects]
   );
-  const oldApplicationOptions = useMemo(
-    () => filterOldOpts(oldRfqProjects.map((p) => p.application)),
-    [oldRfqProjects]
-  );
   const oldStatusOptions = useMemo(
     () => filterOldOpts(oldRfqProjects.map((p) => p.project_condition)),
     [oldRfqProjects]
@@ -1680,11 +1696,10 @@ export default function Dashboard() {
   const filteredOldRfqs = useMemo(() => {
     const search = oldSearchTerm.trim().toLowerCase();
 
-    return oldRfqProjects.filter((project) => {
+    const matches = oldRfqProjects.filter((project) => {
       if (oldCustomerFilter && wordSortKey(project.customers) !== wordSortKey(oldCustomerFilter)) return false;
       if (oldKamFilter && wordSortKey(project.kam) !== wordSortKey(oldKamFilter)) return false;
       if (oldSectorFilter && wordSortKey(project.sector) !== wordSortKey(oldSectorFilter)) return false;
-      if (oldApplicationFilter && wordSortKey(project.application) !== wordSortKey(oldApplicationFilter)) return false;
       if (oldStatusFilter && wordSortKey(project.project_condition) !== wordSortKey(oldStatusFilter)) return false;
       if (!search) return true;
       const projectText = Object.values(project)
@@ -1697,8 +1712,19 @@ export default function Dashboard() {
         .toLowerCase();
       return projectText.includes(search) || subitemsText.includes(search);
     });
+
+    // Pin rows just added via "Add Old RFQ" (not yet saved) to the front so
+    // they're immediately visible on page 1 instead of at the real end of
+    // the (potentially huge) history table.
+    if (draftOldRfqIds.size === 0) return matches;
+    const drafts = [];
+    const rest = [];
+    matches.forEach((project) => {
+      (draftOldRfqIds.has(project.old_rfq_id) ? drafts : rest).push(project);
+    });
+    return [...drafts, ...rest];
   }, [
-    oldApplicationFilter,
+    draftOldRfqIds,
     oldCustomerFilter,
     oldKamFilter,
     oldRfqProjects,
@@ -1866,11 +1892,11 @@ export default function Dashboard() {
     setSelectedOldProject(null);
   };
 
-  const NON_EDITABLE_OLD_RFQ_COLUMNS = new Set(["old_rfq_id", "excel_row_number", "subitems_count"]);
+  const NON_EDITABLE_OLD_RFQ_COLUMNS = new Set(["old_rfq_id", "subitems_count"]);
 
   const isOldRfqColumnEditable = (columnName) => !NON_EDITABLE_OLD_RFQ_COLUMNS.has(columnName);
 
-  const NON_EDITABLE_SUBITEM_COLUMNS = new Set(["old_rfq_subitem_id", "old_rfq_id", "excel_row_number", "subitem_order", "parent_id"]);
+  const NON_EDITABLE_SUBITEM_COLUMNS = new Set(["old_rfq_subitem_id", "old_rfq_id", "subitem_order", "parent_id"]);
 
   const isSubitemColumnEditable = (columnName) => !NON_EDITABLE_SUBITEM_COLUMNS.has(columnName);
 
@@ -1895,36 +1921,86 @@ export default function Dashboard() {
     setSubitemGlobalEditData({});
   };
 
+  // Shared by "Save all" and the per-row Save button in the subitems table.
+  const saveSubitemRow = async (subitem) => {
+    const editData = subitemGlobalEditData[subitem.old_rfq_subitem_id];
+    if (!editData) return true;
+    try {
+      const payload = {};
+      oldRfqSubitemColumns.forEach((col) => {
+        if (isSubitemColumnEditable(col) && !QTY_YEAR_COLUMNS.includes(col)) {
+          payload[col] = editData[col] ?? null;
+        }
+      });
+      for (let n = 1; n <= 10; n++) {
+        payload[`year${n}`] = editData[`year${n}`] ?? null;
+        payload[`year${n}_value`] = editData[`year${n}_value`] ?? null;
+      }
+      const response = await updateOldRfqSubitem(subitem.old_rfq_subitem_id, payload);
+      const updatedItem = response?.item || editData;
+      setSelectedOldProject((prev) =>
+        prev ? { ...prev, subitems: (prev.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) } : prev
+      );
+      setOldRfqs((prev) =>
+        prev.map((p) =>
+          p.old_rfq_id === selectedOldProject.old_rfq_id
+            ? { ...p, subitems: (p.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) }
+            : p
+        )
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleSaveDraftSubitemRow = async (subitem) => {
+    setSavingSubitemId(subitem.old_rfq_subitem_id);
+    const ok = await saveSubitemRow(subitem);
+    setSavingSubitemId(null);
+    if (ok) {
+      setDraftSubitemIds((prev) => {
+        const next = new Set(prev);
+        next.delete(subitem.old_rfq_subitem_id);
+        return next;
+      });
+      showToast("Subitem saved.", { type: "success", title: "Saved" });
+    } else {
+      showToast("Unable to save this subitem.", { type: "error", title: "Save failed" });
+    }
+  };
+
+  const handleAddSubitem = async () => {
+    if (!selectedOldProject) return;
+    setCreatingSubitem(true);
+    try {
+      const response = await createOldRfqSubitem(selectedOldProject.old_rfq_id, {});
+      const newSubitem = response?.item || {};
+      setSelectedOldProject((prev) =>
+        prev ? { ...prev, subitems: [...(prev.subitems || []), newSubitem] } : prev
+      );
+      setOldRfqs((prev) =>
+        prev.map((p) =>
+          p.old_rfq_id === selectedOldProject.old_rfq_id
+            ? { ...p, subitems: [...(p.subitems || []), newSubitem], subitems_count: (p.subitems_count || 0) + 1 }
+            : p
+        )
+      );
+      setSubitemGlobalEditData((prev) => ({ ...prev, [newSubitem.old_rfq_subitem_id]: { ...newSubitem } }));
+      setDraftSubitemIds((prev) => new Set(prev).add(newSubitem.old_rfq_subitem_id));
+      showToast("New subitem added — fill it in, then Save or Delete.", { type: "success", title: "Subitem added" });
+    } catch {
+      showToast("Unable to add a new subitem.", { type: "error", title: "Add failed" });
+    } finally {
+      setCreatingSubitem(false);
+    }
+  };
+
   const handleSaveSubitemsGlobal = async () => {
     setSavingSubitemsGlobal(true);
     try {
       await Promise.all(
-        (selectedOldProject?.subitems || []).map(async (subitem) => {
-          const editData = subitemGlobalEditData[subitem.old_rfq_subitem_id];
-          if (!editData) return;
-          const payload = {};
-          oldRfqSubitemColumns.forEach((col) => {
-            if (isSubitemColumnEditable(col) && !QTY_YEAR_COLUMNS.includes(col)) {
-              payload[col] = editData[col] ?? null;
-            }
-          });
-          for (let n = 1; n <= 10; n++) {
-            payload[`year${n}`] = editData[`year${n}`] ?? null;
-            payload[`year${n}_value`] = editData[`year${n}_value`] ?? null;
-          }
-          const response = await updateOldRfqSubitem(subitem.old_rfq_subitem_id, payload);
-          const updatedItem = response?.item || editData;
-          setSelectedOldProject((prev) =>
-            prev ? { ...prev, subitems: (prev.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) } : prev
-          );
-          setOldRfqs((prev) =>
-            prev.map((p) =>
-              p.old_rfq_id === selectedOldProject.old_rfq_id
-                ? { ...p, subitems: (p.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) }
-                : p
-            )
-          );
-        })
+        (selectedOldProject?.subitems || []).map((subitem) => saveSubitemRow(subitem))
       );
       setSubitemGlobalEditMode(false);
       setSubitemGlobalEditData({});
@@ -2003,6 +2079,62 @@ export default function Dashboard() {
     return () => window.removeEventListener("mouseup", commitFillDrag);
   }, [fillDrag]);
 
+  // Shared by "Save all" and the per-row Save button in the last column.
+  const saveOldRfqRow = async (id) => {
+    setSavingOldRfqId(id);
+    try {
+      const editData = editingAllRowsData[id] || editingAllRowsData[String(id)];
+      if (!editData) return true;
+      const payload = {};
+      oldRfqProjectColumns.forEach((columnName) => {
+        if (isOldRfqColumnEditable(columnName)) {
+          payload[columnName] = editData[columnName] ?? null;
+        }
+      });
+      const response = await updateOldRfq(id, payload);
+      const updatedItem = response?.item || editData;
+      setOldRfqs((prev) =>
+        prev.map((p) => p.old_rfq_id === id ? { ...p, ...updatedItem } : p)
+      );
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setSavingOldRfqId(null);
+    }
+  };
+
+  const handleSaveDraftOldRfqRow = async (id) => {
+    const ok = await saveOldRfqRow(id);
+    if (ok) {
+      setDraftOldRfqIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      showToast("History row saved.", { type: "success", title: "Saved" });
+    } else {
+      showToast("Unable to save this row.", { type: "error", title: "Save failed" });
+    }
+  };
+
+  const handleAddOldRfq = async () => {
+    setCreatingOldRfq(true);
+    try {
+      const response = await createOldRfq({});
+      const newItem = { ...(response?.item || {}), subitems: [], subitems_count: 0 };
+      setOldRfqs((prev) => [...prev, newItem]);
+      setEditingAllRowsData((prev) => ({ ...prev, [newItem.old_rfq_id]: { ...newItem } }));
+      setDraftOldRfqIds((prev) => new Set(prev).add(newItem.old_rfq_id));
+      setPage(1);
+      showToast("New history row added at the top — fill it in, then Save or Delete.", { type: "success", title: "Row added" });
+    } catch {
+      showToast("Unable to add a new history row.", { type: "error", title: "Add failed" });
+    } finally {
+      setCreatingOldRfq(false);
+    }
+  };
+
   const handleSaveAllRows = async () => {
     setIsSavingAll(true);
     const originalById = {};
@@ -2030,25 +2162,8 @@ export default function Dashboard() {
     let errorCount = 0;
     for (const idStr of modifiedIds) {
       const id = Number(idStr);
-      setSavingOldRfqId(id);
-      try {
-        const editData = editingAllRowsData[idStr];
-        const payload = {};
-        oldRfqProjectColumns.forEach((columnName) => {
-          if (isOldRfqColumnEditable(columnName)) {
-            payload[columnName] = editData[columnName] ?? null;
-          }
-        });
-        const response = await updateOldRfq(id, payload);
-        const updatedItem = response?.item || editData;
-        setOldRfqs((prev) =>
-          prev.map((p) => p.old_rfq_id === id ? { ...p, ...updatedItem } : p)
-        );
-        savedCount++;
-      } catch {
-        errorCount++;
-      }
-      setSavingOldRfqId(null);
+      const ok = await saveOldRfqRow(id);
+      if (ok) savedCount++; else errorCount++;
     }
 
     setIsEditingAllRows(false);
@@ -2073,6 +2188,18 @@ export default function Dashboard() {
     try {
       await deleteOldRfq(rfqId);
       setOldRfqs((prev) => prev.filter((p) => p.old_rfq_id !== rfqId));
+      setEditingAllRowsData((prev) => {
+        if (!(rfqId in prev)) return prev;
+        const next = { ...prev };
+        delete next[rfqId];
+        return next;
+      });
+      setDraftOldRfqIds((prev) => {
+        if (!prev.has(rfqId)) return prev;
+        const next = new Set(prev);
+        next.delete(rfqId);
+        return next;
+      });
       showToast("History row deleted.", { type: "success", title: "Deleted" });
     } catch {
       showToast("Unable to delete history row.", { type: "error", title: "Delete failed" });
@@ -2104,6 +2231,18 @@ export default function Dashboard() {
             : project
         )
       );
+      setSubitemGlobalEditData((prev) => {
+        if (!(subitemId in prev)) return prev;
+        const next = { ...prev };
+        delete next[subitemId];
+        return next;
+      });
+      setDraftSubitemIds((prev) => {
+        if (!prev.has(subitemId)) return prev;
+        const next = new Set(prev);
+        next.delete(subitemId);
+        return next;
+      });
       showToast("Subitem deleted.", { type: "success", title: "Deleted" });
     } catch {
       showToast("Unable to delete subitem.", { type: "error", title: "Delete failed" });
@@ -2192,7 +2331,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, marketTypeFilter, marketStatusFilter, marketKamFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldApplicationFilter, oldStatusFilter]);
+  }, [activeSubStatus, activeTypeFilter, detailedSectorFilter, globalPhaseFilter, globalSectorFilter, teamKamFilter, teamPersonFilter, teamSectorFilter, marketTypeFilter, marketStatusFilter, marketKamFilter, selectedDetailedProductLine, selectedGlobalProductLine, selectedTeamProductLine, rowsPerPage, searchTerm, viewMode, oldSearchTerm, oldCustomerFilter, oldKamFilter, oldSectorFilter, oldStatusFilter]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -2354,12 +2493,14 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Link
-                    to="/rfqs/new"
-                    className="gradient-button rounded-xl px-3 py-2.5 text-xs font-semibold shadow-soft sm:px-4 sm:py-3 sm:text-sm"
-                  >
-                    + New request
-                  </Link>
+                  {viewMode !== "history" && (
+                    <Link
+                      to="/rfqs/new"
+                      className="gradient-button rounded-xl px-3 py-2.5 text-xs font-semibold shadow-soft sm:px-4 sm:py-3 sm:text-sm"
+                    >
+                      + New request
+                    </Link>
+                  )}
                 </div>
               </div>
 
@@ -2890,27 +3031,6 @@ export default function Dashboard() {
                           />
                         </div>
                       )}
-                      {oldApplicationOptions.length > 0 && (
-                        <div className="flex flex-col gap-1 sm:self-end sm:w-40">
-                          <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px]" htmlFor="oldApplicationFilter">Application</label>
-                          <SearchableSelectField
-                            id="oldApplicationFilter"
-                            name="oldApplicationFilter"
-                            value={oldApplicationFilter}
-                            onChange={(event) => setOldApplicationFilter(event.target.value)}
-                            options={[
-                              { value: "", label: "All Applications" },
-                              ...oldApplicationOptions.map((opt) => ({ value: opt, label: opt }))
-                            ]}
-                            placeholder="All Applications"
-                            portal
-                            menuMinWidth={220}
-                            buttonClassName="w-full flex items-center justify-between gap-2 rounded-2xl border border-tide/40 bg-gradient-to-r from-tide/20 to-tide/5 px-3 py-2 text-xs font-semibold shadow-soft transition hover:border-tide/60 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-tide/30 text-left normal-case tracking-normal sm:px-3.5 sm:py-2.5 sm:text-[13px] min-[1050px]:px-4 min-[1050px]:py-3 min-[1050px]:text-sm"
-                            valueClassName="truncate text-tide"
-                            chevronClassName="h-4 w-4 flex-shrink-0 text-tide"
-                          />
-                        </div>
-                      )}
                       {oldStatusOptions.length > 0 && (
                         <div className="flex flex-col gap-1 sm:self-end sm:w-40">
                           <label className="text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-[10px] whitespace-nowrap" htmlFor="oldStatusFilter">Project Condition</label>
@@ -3007,6 +3127,15 @@ export default function Dashboard() {
                             )}
                           </div>
                         )}
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                          style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
+                          disabled={creatingOldRfq || isSavingAll}
+                          onClick={handleAddOldRfq}
+                        >
+                          {creatingOldRfq ? "Adding..." : "+ Add Old RFQ"}
+                        </button>
                         {isEditingAllRows ? (
                           <>
                             <button
@@ -3097,11 +3226,12 @@ export default function Dashboard() {
                           <tbody>
                             {paginatedRfqs.length > 0 ? paginatedRfqs.map((project) => {
                               const rowEditData = editingAllRowsData[project.old_rfq_id] || {};
+                              const isRowEditable = isEditingAllRows || draftOldRfqIds.has(project.old_rfq_id);
                               return (
                               <tr
                                 key={project.old_rfq_id ?? project.name}
                                 onMouseEnter={() => fillDrag && handleFillDragEnter("project", project.old_rfq_id)}
-                                className={`border-t border-slate-200/60 text-slate-600 transition ${isEditingAllRows ? "bg-blue-50/40" : "hover:bg-white/70"}`}
+                                className={`border-t border-slate-200/60 text-slate-600 transition ${isRowEditable ? "bg-blue-50/40" : "hover:bg-white/70"}`}
                               >
                                 {visibleProjectColumns.map((colName) => {
                                   if (compactedProjectColumns.has(colName)) {
@@ -3122,7 +3252,7 @@ export default function Dashboard() {
                                     onFocus={() => setFocusedFillCell({ table: "project", colName, rowId: project.old_rfq_id })}
                                     onBlur={() => setFocusedFillCell(null)}
                                   >
-                                    {isEditingAllRows && isEditableColumn ? (
+                                    {isRowEditable && isEditableColumn ? (
                                       colName === "project_condition" ? (
                                         <SearchableSelectField
                                           value={rowEditData[colName] ?? ""}
@@ -3322,7 +3452,7 @@ export default function Dashboard() {
                                     ) : (
                                       <TruncatedCell value={project[colName]} />
                                     )}
-                                    {isEditingAllRows && isEditableColumn && isFillFocused && (
+                                    {isRowEditable && isEditableColumn && isFillFocused && (
                                       <div
                                         className="fill-handle"
                                         onMouseDown={(e) => startFillDrag(e, "project", colName, project.old_rfq_id, rowEditData[colName] ?? "", paginatedRfqRowIds)}
@@ -3334,17 +3464,26 @@ export default function Dashboard() {
                                 })}
                                 <td className="history-action-cell">
                                   <div className="flex flex-row items-center gap-1 pr-2">
-                                    {(project.subitems?.length ?? 0) > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="history-subitems-btn inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
+                                      style={{ borderColor: "#94a3b8", backgroundColor: "#94a3b8" }}
+                                      onClick={() => handleOpenSubitemsModal(project)}
+                                    >
+                                      {(project.subitems?.length ?? 0) > 0
+                                        ? `View subitems (${project.subitems.length})`
+                                        : "Add subitems"}
+                                    </button>
+                                    {draftOldRfqIds.has(project.old_rfq_id) && (
                                       <button
                                         type="button"
-                                        className="history-subitems-btn inline-flex items-center justify-center whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm"
-                                        style={{ borderColor: "#94a3b8", backgroundColor: "#94a3b8" }}
-                                        onClick={() => handleOpenSubitemsModal(project)}
+                                        className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                        style={{ borderColor: "#059669", backgroundColor: "#059669" }}
+                                        disabled={savingOldRfqId === project.old_rfq_id}
+                                        onClick={() => handleSaveDraftOldRfqRow(project.old_rfq_id)}
                                       >
-                                        View subitems ({project.subitems.length})
+                                        {savingOldRfqId === project.old_rfq_id ? "Saving..." : "Save"}
                                       </button>
-                                    ) : (
-                                      <span className="history-muted text-xs font-medium text-slate-400">No subitems</span>
                                     )}
                                     <button
                                       type="button"
@@ -3680,6 +3819,15 @@ export default function Dashboard() {
                 </p>
               </div>
               <div className="flex items-center gap-3 subitems-modal-actions">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
+                  disabled={creatingSubitem}
+                  onClick={handleAddSubitem}
+                >
+                  {creatingSubitem ? "Adding..." : "+ Add subitem"}
+                </button>
                 {subitemGlobalEditMode ? (
                   <>
                     <button
@@ -3805,8 +3953,8 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(selectedOldProject.subitems || []).map((subitem, index) => {
-                        const isInEditMode = subitemGlobalEditMode;
+                      {orderedSubitems.map((subitem, index) => {
+                        const isInEditMode = subitemGlobalEditMode || draftSubitemIds.has(subitem.old_rfq_subitem_id);
                         const subitemEditData = subitemGlobalEditData[subitem.old_rfq_subitem_id];
                         const subitemOnChange = (colName, val) =>
                           handleSubitemGlobalFieldChange(subitem.old_rfq_subitem_id, colName, val);
@@ -4021,7 +4169,7 @@ export default function Dashboard() {
                                   ) : (
                                     <TruncatedCell value={subitem[colName]} />
                                   )}
-                                  {subitemGlobalEditMode && editable && isFillFocused && (
+                                  {isInEditMode && editable && isFillFocused && (
                                     <div
                                       className="fill-handle"
                                       onMouseDown={(e) => startFillDrag(e, "subitem", colName, subitem.old_rfq_subitem_id, subitemEditData?.[colName] ?? "", subitemRowIds)}
@@ -4033,6 +4181,17 @@ export default function Dashboard() {
                             })}
                             <td className="history-subitem-action-cell">
                               <div className="flex flex-row items-center gap-1 pr-2">
+                                {draftSubitemIds.has(subitem.old_rfq_subitem_id) && (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                    style={{ borderColor: "#059669", backgroundColor: "#059669" }}
+                                    disabled={savingSubitemId === subitem.old_rfq_subitem_id}
+                                    onClick={() => handleSaveDraftSubitemRow(subitem)}
+                                  >
+                                    {savingSubitemId === subitem.old_rfq_subitem_id ? "Saving..." : "Save"}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
