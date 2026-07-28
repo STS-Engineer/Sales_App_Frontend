@@ -833,6 +833,7 @@ export const mapRfqToRow = (rfq) => {
     toTotal: Number.isFinite(toTotal) ? toTotal : explicitToTotalRaw,
     createdAt: rfq?.created_at || null,
     status: mapBackendStatusToUi(rfq),
+    rawSubStatus: rfq?.sub_status || "",
     pipelineStage: mapBackendStatusToPipelineStage(rfq),
     potentialSystematicId: potential.potential_systematic_id || "",
     potentialCustomer: potential.customer || "",

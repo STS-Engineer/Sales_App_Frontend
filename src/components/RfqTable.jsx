@@ -191,11 +191,15 @@ export default function RfqTable({
                 <td className="px-2 py-2 sm:px-3 sm:py-3">
                   <span
                     className={`badge text-[10px] sm:text-xs ${
-                      statusStyles[row.status] ||
-                      "border-slate-300 bg-slate-100 text-slate-600"
+                      row.rawSubStatus === "REVISION_REQUESTED"
+                        ? "border-sun/40 bg-sun/15 text-sun"
+                        : statusStyles[row.status] ||
+                          "border-slate-300 bg-slate-100 text-slate-600"
                     }`}
                   >
-                    {statusLabels[row.status] || row.status}
+                    {row.rawSubStatus === "REVISION_REQUESTED"
+                      ? "Revision Requested"
+                      : statusLabels[row.status] || row.status}
                   </span>
                 </td>
                 <td className="px-2 py-2 sm:px-3 sm:py-3 text-right">
