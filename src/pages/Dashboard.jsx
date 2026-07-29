@@ -709,6 +709,13 @@ const formatCreationJournal = (value) => {
   return str;
 };
 
+// Used to auto-fill "Creation Date" when a new old RFQ row is saved without one.
+const formatNowForCreationJournal = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+};
+
 // Canonical key for name deduplication: sort words so "John Doe" === "Doe John"
 const wordSortKey = (s) => String(s ?? "").trim().toLowerCase().split(/\s+/).sort().join(" ");
 
@@ -1902,6 +1909,17 @@ export default function Dashboard() {
 
   const isSubitemColumnEditable = (columnName) => !NON_EDITABLE_SUBITEM_COLUMNS.has(columnName);
 
+  // Rows added via "+ Add Old RFQ" / "+ Add subitem" only get a local id and are
+  // never sent to the backend until at least one field is filled in and saved.
+  const isLocalDraftId = (id) => typeof id === "string" && id.startsWith("new-");
+
+  const makeLocalDraftId = () => `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const hasAnyFilledValue = (payload) =>
+    Object.values(payload).some(
+      (value) => value !== null && value !== undefined && String(value).trim() !== ""
+    );
+
   const handleStartSubitemGlobalEdit = () => {
     const data = {};
     (selectedOldProject?.subitems || []).forEach((s) => {
@@ -1925,7 +1943,8 @@ export default function Dashboard() {
 
   // Shared by "Save all" and the per-row Save button in the subitems table.
   const saveSubitemRow = async (subitem) => {
-    const editData = subitemGlobalEditData[subitem.old_rfq_subitem_id];
+    const subitemId = subitem.old_rfq_subitem_id;
+    const editData = subitemGlobalEditData[subitemId];
     if (!editData) return true;
     try {
       const payload = {};
@@ -1938,15 +1957,43 @@ export default function Dashboard() {
         payload[`year${n}`] = editData[`year${n}`] ?? null;
         payload[`year${n}_value`] = editData[`year${n}_value`] ?? null;
       }
-      const response = await updateOldRfqSubitem(subitem.old_rfq_subitem_id, payload);
+
+      if (isLocalDraftId(subitemId)) {
+        if (!hasAnyFilledValue(payload)) return "empty";
+        const response = await createOldRfqSubitem(subitem.old_rfq_id, payload);
+        const createdItem = response?.item || { ...payload, old_rfq_id: subitem.old_rfq_id };
+        setSelectedOldProject((prev) =>
+          prev ? { ...prev, subitems: (prev.subitems || []).map((s) => s.old_rfq_subitem_id === subitemId ? createdItem : s) } : prev
+        );
+        setOldRfqs((prev) =>
+          prev.map((p) =>
+            p.old_rfq_id === subitem.old_rfq_id
+              ? { ...p, subitems: (p.subitems || []).map((s) => s.old_rfq_subitem_id === subitemId ? createdItem : s) }
+              : p
+          )
+        );
+        setSubitemGlobalEditData((prev) => {
+          const next = { ...prev };
+          delete next[subitemId];
+          return next;
+        });
+        setDraftSubitemIds((prev) => {
+          const next = new Set(prev);
+          next.delete(subitemId);
+          return next;
+        });
+        return true;
+      }
+
+      const response = await updateOldRfqSubitem(subitemId, payload);
       const updatedItem = response?.item || editData;
       setSelectedOldProject((prev) =>
-        prev ? { ...prev, subitems: (prev.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) } : prev
+        prev ? { ...prev, subitems: (prev.subitems || []).map((s) => s.old_rfq_subitem_id === subitemId ? { ...s, ...updatedItem } : s) } : prev
       );
       setOldRfqs((prev) =>
         prev.map((p) =>
           p.old_rfq_id === selectedOldProject.old_rfq_id
-            ? { ...p, subitems: (p.subitems || []).map((s) => s.old_rfq_subitem_id === subitem.old_rfq_subitem_id ? { ...s, ...updatedItem } : s) }
+            ? { ...p, subitems: (p.subitems || []).map((s) => s.old_rfq_subitem_id === subitemId ? { ...s, ...updatedItem } : s) }
             : p
         )
       );
@@ -1958,9 +2005,13 @@ export default function Dashboard() {
 
   const handleSaveDraftSubitemRow = async (subitem) => {
     setSavingSubitemId(subitem.old_rfq_subitem_id);
-    const ok = await saveSubitemRow(subitem);
+    const result = await saveSubitemRow(subitem);
     setSavingSubitemId(null);
-    if (ok) {
+    if (result === "empty") {
+      showToast("Fill in at least one field before saving.", { type: "info", title: "Nothing to save" });
+      return;
+    }
+    if (result) {
       setDraftSubitemIds((prev) => {
         const next = new Set(prev);
         next.delete(subitem.old_rfq_subitem_id);
@@ -1972,24 +2023,27 @@ export default function Dashboard() {
     }
   };
 
-  const handleAddSubitem = async () => {
+  const handleAddSubitem = () => {
     if (!selectedOldProject) return;
     setCreatingSubitem(true);
     try {
-      const response = await createOldRfqSubitem(selectedOldProject.old_rfq_id, {});
-      const newSubitem = response?.item || {};
+      const tempId = makeLocalDraftId();
+      const newSubitem = { old_rfq_subitem_id: tempId, old_rfq_id: selectedOldProject.old_rfq_id };
+      oldRfqSubitemColumns.forEach((col) => {
+        if (isSubitemColumnEditable(col)) newSubitem[col] = "";
+      });
       setSelectedOldProject((prev) =>
-        prev ? { ...prev, subitems: [...(prev.subitems || []), newSubitem] } : prev
+        prev ? { ...prev, subitems: [newSubitem, ...(prev.subitems || [])] } : prev
       );
       setOldRfqs((prev) =>
         prev.map((p) =>
           p.old_rfq_id === selectedOldProject.old_rfq_id
-            ? { ...p, subitems: [...(p.subitems || []), newSubitem], subitems_count: (p.subitems_count || 0) + 1 }
+            ? { ...p, subitems: [newSubitem, ...(p.subitems || [])], subitems_count: (p.subitems_count || 0) + 1 }
             : p
         )
       );
-      setSubitemGlobalEditData((prev) => ({ ...prev, [newSubitem.old_rfq_subitem_id]: { ...newSubitem } }));
-      setDraftSubitemIds((prev) => new Set(prev).add(newSubitem.old_rfq_subitem_id));
+      setSubitemGlobalEditData((prev) => ({ ...prev, [tempId]: { ...newSubitem } }));
+      setDraftSubitemIds((prev) => new Set(prev).add(tempId));
       showToast("New subitem added — fill it in, then Save or Delete.", { type: "success", title: "Subitem added" });
     } catch {
       showToast("Unable to add a new subitem.", { type: "error", title: "Add failed" });
@@ -2093,6 +2147,28 @@ export default function Dashboard() {
           payload[columnName] = editData[columnName] ?? null;
         }
       });
+
+      if (isLocalDraftId(id)) {
+        if (!hasAnyFilledValue(payload)) return "empty";
+        if (!payload.creation_journal || String(payload.creation_journal).trim() === "") {
+          payload.creation_journal = formatNowForCreationJournal();
+        }
+        const response = await createOldRfq(payload);
+        const createdItem = { ...(response?.item || payload), subitems: [], subitems_count: 0 };
+        setOldRfqs((prev) => prev.map((p) => (p.old_rfq_id === id ? createdItem : p)));
+        setEditingAllRowsData((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setDraftOldRfqIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        return true;
+      }
+
       const response = await updateOldRfq(id, payload);
       const updatedItem = response?.item || editData;
       setOldRfqs((prev) =>
@@ -2107,8 +2183,12 @@ export default function Dashboard() {
   };
 
   const handleSaveDraftOldRfqRow = async (id) => {
-    const ok = await saveOldRfqRow(id);
-    if (ok) {
+    const result = await saveOldRfqRow(id);
+    if (result === "empty") {
+      showToast("Fill in at least one field before saving.", { type: "info", title: "Nothing to save" });
+      return;
+    }
+    if (result) {
       setDraftOldRfqIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -2120,14 +2200,17 @@ export default function Dashboard() {
     }
   };
 
-  const handleAddOldRfq = async () => {
+  const handleAddOldRfq = () => {
     setCreatingOldRfq(true);
     try {
-      const response = await createOldRfq({});
-      const newItem = { ...(response?.item || {}), subitems: [], subitems_count: 0 };
-      setOldRfqs((prev) => [...prev, newItem]);
-      setEditingAllRowsData((prev) => ({ ...prev, [newItem.old_rfq_id]: { ...newItem } }));
-      setDraftOldRfqIds((prev) => new Set(prev).add(newItem.old_rfq_id));
+      const tempId = makeLocalDraftId();
+      const newItem = { old_rfq_id: tempId, subitems: [], subitems_count: 0 };
+      oldRfqProjectColumns.forEach((col) => {
+        if (isOldRfqColumnEditable(col)) newItem[col] = "";
+      });
+      setOldRfqs((prev) => [newItem, ...prev]);
+      setEditingAllRowsData((prev) => ({ ...prev, [tempId]: { ...newItem } }));
+      setDraftOldRfqIds((prev) => new Set(prev).add(tempId));
       setPage(1);
       showToast("New history row added at the top — fill it in, then Save or Delete.", { type: "success", title: "Row added" });
     } catch {
@@ -2143,8 +2226,7 @@ export default function Dashboard() {
     oldRfqProjects.forEach((p) => { originalById[p.old_rfq_id] = p; });
 
     const modifiedIds = Object.keys(editingAllRowsData).filter((idStr) => {
-      const id = Number(idStr);
-      const original = originalById[id];
+      const original = originalById[idStr];
       const edited = editingAllRowsData[idStr];
       if (!original) return false;
       return oldRfqProjectColumns.some(
@@ -2163,9 +2245,10 @@ export default function Dashboard() {
     let savedCount = 0;
     let errorCount = 0;
     for (const idStr of modifiedIds) {
-      const id = Number(idStr);
-      const ok = await saveOldRfqRow(id);
-      if (ok) savedCount++; else errorCount++;
+      const id = isLocalDraftId(idStr) ? idStr : Number(idStr);
+      const result = await saveOldRfqRow(id);
+      if (result === true) savedCount++;
+      else if (result !== "empty") errorCount++;
     }
 
     setIsEditingAllRows(false);
@@ -2188,7 +2271,9 @@ export default function Dashboard() {
     setDeletingOldRfqId(rfqId);
     setDeleteRowConfirm(null);
     try {
-      await deleteOldRfq(rfqId);
+      if (!isLocalDraftId(rfqId)) {
+        await deleteOldRfq(rfqId);
+      }
       setOldRfqs((prev) => prev.filter((p) => p.old_rfq_id !== rfqId));
       setEditingAllRowsData((prev) => {
         if (!(rfqId in prev)) return prev;
@@ -2220,7 +2305,9 @@ export default function Dashboard() {
     setDeletingSubitemId(subitemId);
     setDeleteSubitemConfirm(null);
     try {
-      await deleteOldRfqSubitem(subitemId);
+      if (!isLocalDraftId(subitemId)) {
+        await deleteOldRfqSubitem(subitemId);
+      }
       setSelectedOldProject((prev) =>
         prev
           ? { ...prev, subitems: (prev.subitems || []).filter((s) => s.old_rfq_subitem_id !== subitemId) }
