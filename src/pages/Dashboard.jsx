@@ -1056,6 +1056,7 @@ const PROJECT_CONDITION_OPTIONS = [
   "10 APQP Process",
   "11 In production",
   "12 On Hold",
+  "13 Close WON",
   "Base Line",
 ];
 
@@ -1126,6 +1127,7 @@ const getHistoryBadgeClass = (columnName, value) => {
     if (normalized.includes("apqp")) return "badge border-orange-300 bg-orange-50 text-orange-600";
     if (normalized.includes("in production")) return "badge border-emerald-200 bg-emerald-50 text-emerald-700";
     if (normalized.includes("on hold")) return "badge border-amber-300 bg-amber-50 text-amber-700";
+    if (normalized.includes("close won")) return "badge border-green-300 bg-green-50 text-green-700";
     if (normalized.includes("base line") || normalized.includes("baseline")) return "badge border-rose-300 bg-rose-50 text-rose-600";
     return "badge border-slate-300 bg-slate-100 text-slate-600";
   }
