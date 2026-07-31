@@ -70,11 +70,13 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
   const [employees, setEmployees] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     if (!open) return;
     setForm(EMPTY_FORM);
     setError("");
+    setFieldErrors({});
     getCustomerFormOptions().then((data) => {
       if (data) setLookups((prev) => ({ ...prev, ...data }));
     }).catch(() => {});
@@ -89,6 +91,13 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   const isLegalEntity = form.customer_type === "Customer Legal Entity";
@@ -119,6 +128,7 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
       return setError("Parent customer group is required for a Customer Legal Entity.");
     }
     setError("");
+    setFieldErrors({});
     setSaving(true);
     try {
       const payload = {
@@ -141,7 +151,12 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
       const created = await createSalesCustomer(payload);
       onCreated(created.customer_name);
     } catch (err) {
-      setError(err?.message || "Failed to create customer.");
+      const backendFieldErrors = err?.data?.detail?.field_errors;
+      if (backendFieldErrors && typeof backendFieldErrors === "object") {
+        setFieldErrors(backendFieldErrors);
+      } else {
+        setError(err?.message || "Failed to create customer.");
+      }
     } finally {
       setSaving(false);
     }
@@ -176,6 +191,7 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
               name="customer_name"
               value={form.customer_name}
               onChange={handleChange}
+              error={fieldErrors.customer_name}
               required
             />
             <FormField
@@ -183,6 +199,7 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
               name="customer_code"
               value={form.customer_code}
               onChange={handleChange}
+              error={fieldErrors.customer_code}
               required
             />
             <SearchableSelectField
