@@ -162,7 +162,7 @@ export default function AddCustomerModal({ open, onClose, onCreated }) {
           <div>
             <p className="chat-modal-title">Add new customer</p>
             <p className="mt-1 text-sm text-slate-500">
-              This record will be created with status "To review" pending validation.
+              Create a new customer record in the sales customer directory. Please fill in the fields correctly.
             </p>
           </div>
           <button type="button" className="chat-modal-close" onClick={onClose} aria-label="Close">
