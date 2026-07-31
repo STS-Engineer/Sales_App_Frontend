@@ -363,6 +363,27 @@ export async function listSalesCustomers(search = "") {
   return request(`/api/actions/customers${query}`);
 }
 
+export async function getCustomerFormOptions() {
+  return request("/api/actions/customer-form-options");
+}
+
+export async function searchEmployees(search = "") {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return request(`/api/actions/employees${query}`);
+}
+
+export async function searchCustomerGroups(search = "") {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return request(`/api/actions/customer-groups${query}`);
+}
+
+export async function createSalesCustomer(payload = {}) {
+  return request("/api/actions/customers", {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function listRfqs(documentType = "") {
   const values = Array.isArray(documentType) ? documentType : [documentType];
   const params = values

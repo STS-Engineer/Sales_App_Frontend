@@ -5,6 +5,7 @@ import { getUserProfile } from "../utils/session.js";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import costingTemplate from "../assets/costing_template.xlsm?url";
 import feasibilityTemplate from "../assets/feasibility_template.xlsm?url";
+import AddCustomerModal from "../components/AddCustomerModal.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import FormField from "../components/FormField.jsx";
 import SearchableSelectField from "../components/SearchableSelectField.jsx";
@@ -473,7 +474,7 @@ function AutoExpandTextarea({ value, onChange, readOnly, disabled, className = "
     />
   );
 }
-function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [], searchable = false, searchPlaceholder, showAddNewButton = false }) {
+function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [], searchable = false, searchPlaceholder, showAddNewButton = false, onClickAddNew = null }) {
   const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
   const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
   // Suppresses autofocus for values that are already "Other" when this field
@@ -548,7 +549,7 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
       searchable={searchable}
       searchPlaceholder={searchPlaceholder}
       alwaysVisibleValues={showAddNewButton ? null : ["__other__"]}
-      onAddNew={showAddNewButton ? activateOtherMode : null}
+      onAddNew={showAddNewButton ? (onClickAddNew || activateOtherMode) : null}
     />
   );
 }
@@ -2730,6 +2731,7 @@ export default function NewRfq() {
   const [chatWidth, setChatWidth] = useState(420);
   const [productOptions, setProductOptions] = useState([]);
   const [customerOptions, setCustomerOptions] = useState([]);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [productDrawings, setProductDrawings] = useState({});
   const [serverFiles, setServerFiles] = useState([]);
   const [localFiles, setLocalFiles] = useState([]);
@@ -9356,7 +9358,7 @@ export default function NewRfq() {
                                   readOnly={rfqFormFieldReadOnly}
                                   {...getRfqFieldRequirementProps("automotiveType")}
                                 />
-                                <SelectOrOtherField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchable searchPlaceholder="Search customer" showAddNewButton readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
+                                <SelectOrOtherField label="Customer" name="customer" value={form.customer} onChange={handleChange} options={customerOptions} searchable searchPlaceholder="Search customer" showAddNewButton onClickAddNew={() => setShowAddCustomerModal(true)} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("customer")} />
                                 <FormField label="Project name" name="projectName" value={form.projectName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("projectName")} />
                               </div>
                             </div>
@@ -11828,6 +11830,15 @@ export default function NewRfq() {
           </div>
         </div>
       ) : null}
+      <AddCustomerModal
+        open={showAddCustomerModal}
+        onClose={() => setShowAddCustomerModal(false)}
+        onCreated={(customerName) => {
+          setCustomerOptions((prev) => (prev.includes(customerName) ? prev : [...prev, customerName]));
+          handleChange({ target: { name: "customer", value: customerName } });
+          setShowAddCustomerModal(false);
+        }}
+      />
     </div>
   );
 }

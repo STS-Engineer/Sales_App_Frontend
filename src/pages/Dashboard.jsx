@@ -1706,6 +1706,12 @@ export default function Dashboard() {
     const search = oldSearchTerm.trim().toLowerCase();
 
     const matches = oldRfqProjects.filter((project) => {
+      // A row just added via "Add Old RFQ" has every field blank — it would
+      // never match an active filter/search and would vanish from view
+      // right after being added, leaving the (now-disabled) Add button
+      // stuck with no visible row to save or delete. Always show it until
+      // it's saved or deleted.
+      if (draftOldRfqIds.has(project.old_rfq_id)) return true;
       if (oldCustomerFilter && wordSortKey(project.customers) !== wordSortKey(oldCustomerFilter)) return false;
       if (oldKamFilter && wordSortKey(project.kam) !== wordSortKey(oldKamFilter)) return false;
       if (oldSectorFilter && wordSortKey(project.sector) !== wordSortKey(oldSectorFilter)) return false;
@@ -2201,6 +2207,10 @@ export default function Dashboard() {
   };
 
   const handleAddOldRfq = () => {
+    if (draftOldRfqIds.size > 0) {
+      showToast("Finish (save or delete) the new row already at the top before adding another.", { type: "error", title: "A new row is already pending" });
+      return;
+    }
     setCreatingOldRfq(true);
     try {
       const tempId = makeLocalDraftId();
@@ -3220,7 +3230,7 @@ export default function Dashboard() {
                           type="button"
                           className="inline-flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ borderColor: "#ef7807", backgroundColor: "#ef7807" }}
-                          disabled={creatingOldRfq || isSavingAll}
+                          disabled={creatingOldRfq || isSavingAll || draftOldRfqIds.size > 0}
                           onClick={handleAddOldRfq}
                         >
                           {creatingOldRfq ? "Adding..." : "+ Add Old RFQ"}

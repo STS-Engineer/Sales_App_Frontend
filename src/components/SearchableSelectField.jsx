@@ -67,7 +67,7 @@ export default function SearchableSelectField({
     if (!open) return;
     setQuery("");
     if (!searchable) return;
-    const frame = requestAnimationFrame(() => searchInputRef.current?.focus());
+    const frame = requestAnimationFrame(() => searchInputRef.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
   }, [open, searchable]);
 
@@ -166,7 +166,7 @@ export default function SearchableSelectField({
     <div
       ref={menuRef}
       className="flex max-w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
-      style={portal ? menuStyle || { visibility: "hidden" } : undefined}
+      style={portal ? menuStyle || { position: "fixed", top: 0, left: 0, visibility: "hidden" } : undefined}
     >
       {searchable ? (
         <div className="flex-shrink-0 border-b border-slate-100 p-1.5 sm:p-2">

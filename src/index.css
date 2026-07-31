@@ -904,6 +904,13 @@ body {
     0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
+.chat-modal--customer-form {
+  width: min(96vw, 1080px);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .chat-modal--discussion {
   width: min(90vw, 760px);
   max-height: 82vh;
