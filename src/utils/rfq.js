@@ -6,7 +6,7 @@ const STATUS_MAP = {
   POTENTIAL: "New RFQ",
   NEW_RFQ: "New RFQ",
   PENDING_FOR_VALIDATION: "Validation",
-  PENDING_AI_APPROVAL: "Validation",
+  PENDING_AI_APPROVAL: "Pending for AI validation",
   REJECTED_BY_AI: "Rejected by AI",
   REVISION_REQUESTED: "Validation",
   IN_COSTING_FEASIBILITY: "feasibility",
@@ -1007,8 +1007,9 @@ export const sanitizeAssistantChatContent = (content) => {
  
 export const mapChatHistory = (history = [], documentType = "RFQ") => {
   let firstAssistantChecked = false;
- 
-  return history.reduce((messages, entry) => {
+  const entries = Array.isArray(history) ? history : [];
+
+  return entries.reduce((messages, entry) => {
     if (
       (entry?.role !== "assistant" && entry?.role !== "user") ||
       (entry?.role === "assistant" && Array.isArray(entry?.tool_calls) && entry.tool_calls.length > 0) ||

@@ -119,7 +119,7 @@ const mapStatusToProgressSubPhase = (phaseKey, status) => {
     if (status === "New RFQ") {
       return "Request form";
     }
-    if (status === "Validation" || status === "Rejected by AI") {
+    if (status === "Validation" || status === "Pending for AI validation" || status === "Rejected by AI") {
       return "Validation";
     }
   }
@@ -407,11 +407,9 @@ const OLD_RFQ_PROJECT_COLUMN_LABELS = {
 };
 
 const buildOrderedOldRfqProjectColumns = (apiColumns = []) => {
-  // Columns defined in the order list are always shown (unless explicitly hidden)
   const orderedColumns = OLD_RFQ_PROJECT_COLUMN_ORDER.filter(
     (col) => !HIDDEN_OLD_RFQ_PROJECT_COLUMNS.has(col)
   );
-  // Any extra columns returned by the API but not in the defined order are appended
   const remainingColumns = apiColumns.filter(
     (col) =>
       !HIDDEN_OLD_RFQ_PROJECT_COLUMNS.has(col) &&
@@ -598,7 +596,6 @@ const buildOrderedOldRfqSubitemColumns = (apiColumns = []) => {
   const visibleColumns = apiColumns.filter(
     (col) => !HIDDEN_OLD_RFQ_SUBITEM_COLUMNS.has(col)
   );
-  // Inject the 10 virtual qty_year columns (always present)
   QTY_YEAR_COLUMNS.forEach((col) => {
     if (!visibleColumns.includes(col)) visibleColumns.push(col);
   });
@@ -698,32 +695,26 @@ const TruncatedCell = ({ value }) => {
 const formatCreationJournal = (value) => {
   if (!value || String(value).trim() === "") return "-";
   const str = String(value).trim();
-  // Format: "Name Month DD, YYYY H:MM AM/PM"  e.g. "Taha Khiari Sep 5, 2024 4:09 PM"
   const namedMatch = str.match(
     /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)/i
   );
   if (namedMatch) return namedMatch[0].trim();
-  // Format: "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DDTHH:MM:SS"
   const isoMatch = str.match(/\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}(?::\d{2})?/);
   if (isoMatch) return isoMatch[0].replace("T", " ");
   return str;
 };
 
-// Used to auto-fill "Creation Date" when a new old RFQ row is saved without one.
 const formatNowForCreationJournal = () => {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 };
 
-// Canonical key for name deduplication: sort words so "John Doe" === "Doe John"
 const wordSortKey = (s) => String(s ?? "").trim().toLowerCase().split(/\s+/).sort().join(" ");
 
-// Date columns that should use a date picker in edit mode
 const OLD_RFQ_DATE_COLUMNS = new Set(["sop", "date_of_approval", "expected_date_of_answer", "calculated_date"]);
 const SUBITEM_DATE_COLUMNS = new Set(["created", "modified"]);
 
-// Convert any stored date string to YYYY-MM-DD for <input type="date">
 const toDateInputValue = (val) => {
   if (!val) return "";
   const s = String(val).trim();
@@ -1292,7 +1283,6 @@ export default function Dashboard() {
     load();
   }, [canSeeTeamView, showToast]);
 
-  // Load team members for Zone Manager's Team View Person filter
   useEffect(() => {
     if (!canSeeTeamView) return;
     getTeamMembers()
@@ -1300,8 +1290,6 @@ export default function Dashboard() {
       .catch(() => setTeamMembers([]));
   }, [canSeeTeamView]);
 
-  // Determine whether the current user has a market segment (automotive /
-  // industry / large accounts) — controls whether the Market View tab shows.
   useEffect(() => {
     getMarketViewSegment()
       .then((data) => setMarketSegment(data?.segment || null))
@@ -1328,7 +1316,6 @@ export default function Dashboard() {
     load();
   }, [marketSegment, showToast]);
 
-  // Load commercial names from v_sales_organisation.person (KPI_DB_Final) for the KAM dropdown.
   useEffect(() => {
     getKamOptions()
       .then((data) => {
@@ -1343,7 +1330,6 @@ export default function Dashboard() {
       });
   }, []);
 
-  // Load customer names from v_sales_customer_directory (KPI_DB_Final) for Customer dropdown
   useEffect(() => {
     getCustomerOptions()
       .then((data) => {
@@ -1353,7 +1339,6 @@ export default function Dashboard() {
       .catch(() => setCustomerDbNames([]));
   }, []);
 
-  // Load costing team users for Costing Leader dropdown (best-effort)
   useEffect(() => {
     if (!isOwner) return;
     listAllUsers()
@@ -1370,7 +1355,6 @@ export default function Dashboard() {
       .catch(() => setCostingUsers([]));
   }, [isOwner]);
 
-  // Load R&D users for Feasibility Leader dropdown (best-effort)
   useEffect(() => {
     if (!isOwner) return;
     listAllUsers()
@@ -1595,8 +1579,6 @@ export default function Dashboard() {
     [oldRfqSubitemColumns, hiddenSubitemColumns]
   );
 
-  // Pin subitems just added via "Add subitem" (not yet saved) to the top so
-  // they're immediately visible instead of at the bottom of the list.
   const orderedSubitems = useMemo(() => {
     const subitems = selectedOldProject?.subitems || [];
     if (draftSubitemIds.size === 0) return subitems;
@@ -1673,22 +1655,18 @@ export default function Dashboard() {
     () => filterOldOpts(marketData.map((rfq) => rfq.creator)),
     [marketData]
   );
-  // KAM edit options: prefer commercial users from API, fall back to unique KAMs from data
   const kamEditOptions = useMemo(
     () => commercialUsers.length > 0 ? commercialUsers : oldKamOptions,
     [commercialUsers, oldKamOptions]
   );
-  // Customer edit options: prefer DB names, fall back to unique customers from data
   const customerEditOptions = useMemo(
     () => customerDbNames.length > 0 ? customerDbNames : filterOldOpts(oldRfqProjects.map((p) => p.customers)),
     [customerDbNames, oldRfqProjects]
   );
-  // Costing Leader edit options: prefer costing team users from API, fall back to unique values from data
   const costingLeaderOptions = useMemo(
     () => costingUsers.length > 0 ? costingUsers : filterOldOpts(oldRfqProjects.map((p) => p.costing_leader)),
     [costingUsers, oldRfqProjects]
   );
-  // Feasibility Leader edit options: prefer R&D users from API, fall back to unique values from data
   const feasibilityLeaderOptions = useMemo(
     () => rndUsers.length > 0 ? rndUsers : filterOldOpts(oldRfqProjects.map((p) => p.feasibility_leader)),
     [rndUsers, oldRfqProjects]
@@ -1706,11 +1684,6 @@ export default function Dashboard() {
     const search = oldSearchTerm.trim().toLowerCase();
 
     const matches = oldRfqProjects.filter((project) => {
-      // A row just added via "Add Old RFQ" has every field blank — it would
-      // never match an active filter/search and would vanish from view
-      // right after being added, leaving the (now-disabled) Add button
-      // stuck with no visible row to save or delete. Always show it until
-      // it's saved or deleted.
       if (draftOldRfqIds.has(project.old_rfq_id)) return true;
       if (oldCustomerFilter && wordSortKey(project.customers) !== wordSortKey(oldCustomerFilter)) return false;
       if (oldKamFilter && wordSortKey(project.kam) !== wordSortKey(oldKamFilter)) return false;
@@ -1728,9 +1701,6 @@ export default function Dashboard() {
       return projectText.includes(search) || subitemsText.includes(search);
     });
 
-    // Pin rows just added via "Add Old RFQ" (not yet saved) to the front so
-    // they're immediately visible on page 1 instead of at the real end of
-    // the (potentially huge) history table.
     if (draftOldRfqIds.size === 0) return matches;
     const drafts = [];
     const rest = [];
@@ -1748,9 +1718,6 @@ export default function Dashboard() {
     oldStatusFilter
   ]);
 
-  // Export the RFQ History table exactly as currently filtered (all active
-  // filters + search) and displayed (visible columns only) — not the full,
-  // unfiltered dataset, and not limited to the current page.
   const buildOldRfqExportRows = () => {
     const header = visibleProjectColumns.map((col) => getOldRfqProjectColumnLabel(col));
     const rows = filteredOldRfqs.map((project) =>
@@ -1798,9 +1765,6 @@ export default function Dashboard() {
     const INK = "FF585858";
     const MIST = "FF94A3B8";
 
-    // Freeze the "Name" column (wherever it currently sits among the visible
-    // columns) alongside the title/subtitle/header rows, matching the
-    // sticky-name-column behavior already used in the on-screen table.
     const nameColumnIndex = visibleProjectColumns.indexOf("name");
     const xSplit = nameColumnIndex >= 0 ? nameColumnIndex + 1 : 0;
 
@@ -1811,9 +1775,6 @@ export default function Dashboard() {
       views: [{ state: "frozen", xSplit, ySplit: 3 }]
     });
 
-    // A single merged cell spanning across the frozen-column split makes Excel
-    // flicker/duplicate-paint that row while scrolling. Split the merge in two
-    // at the freeze boundary instead, so no merged cell straddles it.
     const mergeAcrossFreezeBoundary = (rowIndex) => {
       if (xSplit > 0 && xSplit < columnCount) {
         worksheet.mergeCells(rowIndex, 1, rowIndex, xSplit);
@@ -1823,7 +1784,6 @@ export default function Dashboard() {
       }
     };
 
-    // Title
     mergeAcrossFreezeBoundary(1);
     const titleCell = worksheet.getCell(1, 1);
     titleCell.value = "RFQ History Export";
@@ -1831,14 +1791,12 @@ export default function Dashboard() {
     titleCell.alignment = { horizontal: "left", vertical: "middle" };
     worksheet.getRow(1).height = 26;
 
-    // Subtitle
     mergeAcrossFreezeBoundary(2);
     const subtitleCell = worksheet.getCell(2, 1);
     subtitleCell.value = `Generated ${new Date().toLocaleString()} — ${rows.length} RFQ${rows.length === 1 ? "" : "s"}`;
     subtitleCell.font = { italic: true, size: 10, color: { argb: MIST } };
     worksheet.getRow(2).height = 18;
 
-    // Header row
     const headerRowIndex = 3;
     const headerRow = worksheet.getRow(headerRowIndex);
     header.forEach((label, idx) => {
@@ -1856,7 +1814,6 @@ export default function Dashboard() {
     });
     headerRow.height = 22;
 
-    // Data rows — banded to match the on-screen table's zebra striping
     rows.forEach((rowValues, rowIdx) => {
       const excelRow = worksheet.getRow(headerRowIndex + 1 + rowIdx);
       const isBanded = rowIdx % 2 === 1;
@@ -1876,7 +1833,6 @@ export default function Dashboard() {
       });
     });
 
-    // Auto-size columns to fit their longest value
     header.forEach((label, idx) => {
       const longest = rows.reduce(
         (max, row) => Math.max(max, String(row[idx] ?? "").length),
@@ -1915,8 +1871,6 @@ export default function Dashboard() {
 
   const isSubitemColumnEditable = (columnName) => !NON_EDITABLE_SUBITEM_COLUMNS.has(columnName);
 
-  // Rows added via "+ Add Old RFQ" / "+ Add subitem" only get a local id and are
-  // never sent to the backend until at least one field is filled in and saved.
   const isLocalDraftId = (id) => typeof id === "string" && id.startsWith("new-");
 
   const makeLocalDraftId = () => `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1947,7 +1901,6 @@ export default function Dashboard() {
     setSubitemGlobalEditData({});
   };
 
-  // Shared by "Save all" and the per-row Save button in the subitems table.
   const saveSubitemRow = async (subitem) => {
     const subitemId = subitem.old_rfq_subitem_id;
     const editData = subitemGlobalEditData[subitemId];
@@ -2141,7 +2094,6 @@ export default function Dashboard() {
     return () => window.removeEventListener("mouseup", commitFillDrag);
   }, [fillDrag]);
 
-  // Shared by "Save all" and the per-row Save button in the last column.
   const saveOldRfqRow = async (id) => {
     setSavingOldRfqId(id);
     try {

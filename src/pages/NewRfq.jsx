@@ -367,11 +367,8 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
   const [otherMode, setOtherMode] = useState(
     () => Boolean(value && !isPredefinedValue(value))
   );
-  // Suppresses autofocus for values that are already "Other" when this field
-  // mounts (e.g. loading a saved RFQ) — only a fresh user-triggered switch
-  // into Other mode should steal focus.
+
   const skipAutoFocusRef = useRef(otherMode);
-  // Sync when value changes externally (e.g. loading a saved RFQ)
   const prevValueRef = useRef(value);
   if (prevValueRef.current !== value) {
     prevValueRef.current = value;
@@ -417,7 +414,6 @@ function ResponsibilityField({ label, name, value, customer, onChange, readOnly,
           <AutoExpandTextarea
             placeholder="Please specify..."
             value={value}
-            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus={!skipAutoFocusRef.current}
             onChange={(e) => {
               const v = e.target.value;
@@ -477,9 +473,6 @@ function AutoExpandTextarea({ value, onChange, readOnly, disabled, className = "
 function SelectOrOtherField({ label, name, value, onChange, readOnly, required, optional, options = [], searchable = false, searchPlaceholder, showAddNewButton = false, onClickAddNew = null }) {
   const isPredefined = (v) => !v || options.some(o => (typeof o === "string" ? o : o.value) === v);
   const [otherMode, setOtherMode] = useState(() => Boolean(value && !isPredefined(value)));
-  // Suppresses autofocus for values that are already "Other" when this field
-  // mounts (e.g. loading a saved RFQ) — only a fresh user-triggered switch
-  // into Other mode should steal focus.
   const skipAutoFocusRef = useRef(otherMode);
   const prevValueRef = useRef(value);
   if (prevValueRef.current !== value) {
@@ -519,7 +512,6 @@ function SelectOrOtherField({ label, name, value, onChange, readOnly, required, 
           <AutoExpandTextarea
             placeholder="Please specify..."
             value={value}
-            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus={!skipAutoFocusRef.current}
             onChange={(e) => {
               const v = e.target.value;
@@ -600,6 +592,7 @@ const SUBPHASE_ALIASES = {
   RFQ: "RFQ form",
   Potential: "RFQ form",
   "New RFQ": "RFQ form",
+  "Pending for AI validation": "Validation",
   "Rejected by AI": "Validation",
   "RFI completed": "Pricing",
   "Mission accepted": "Mission status",
@@ -897,6 +890,12 @@ const isAvocarbonEmail = (value) =>
   typeof value === "string" && value.trim().toLowerCase().endsWith("@avocarbon.com");
 const isValidEmailFormat = (value) =>
   typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+const isValidInternationalPhoneFormat = (value) =>
+  typeof value === "string" && /^\+\d/.test(value.trim());
+const countWords = (value) =>
+  String(value || "").trim().split(/\s+/).filter(Boolean).length;
+const RFQ_MIN_WORD_COUNT_FIELDS = new Set(["strategicNote", "finalRecommendation"]);
+const RFQ_MIN_WORD_COUNT = 3;
 const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => {
   if (fieldName === "rfqFiles") {
     return Array.isArray(mergedFiles) && mergedFiles.length > 0;
@@ -910,6 +909,13 @@ const isRfqFieldComplete = (form = {}, fieldName, { mergedFiles = [] } = {}) => 
   if (fieldName === "contactEmail") {
     const v = form?.contactEmail;
     return hasMeaningfulValue(v) && isValidEmailFormat(v) && !isAvocarbonEmail(v);
+  }
+  if (fieldName === "contactPhone") {
+    const v = form?.contactPhone;
+    return hasMeaningfulValue(v) && isValidInternationalPhoneFormat(v);
+  }
+  if (RFQ_MIN_WORD_COUNT_FIELDS.has(fieldName)) {
+    return countWords(form?.[fieldName]) >= RFQ_MIN_WORD_COUNT;
   }
   return hasMeaningfulValue(form?.[fieldName]);
 };
@@ -943,7 +949,6 @@ const getChangedRfqFormFields = (previousForm = {}, nextForm = {}) => {
       : String(nextValue ?? "").trim();
     return previousComparable !== nextComparable;
   });
-  // volumes is not in RFQ_STEP_REQUIREMENTS but must be tracked for scroll targeting
   if (JSON.stringify(previousForm?.volumes || []) !== JSON.stringify(nextForm?.volumes || [])) {
     changedFields.push("volumes");
   }
@@ -1316,17 +1321,7 @@ const buildRfqChatFocusRevealTarget = (
   rawRfqData = {},
   latestAssistantContent = ""
 ) => {
-  // When a chat response updates `products`, keep the viewport anchored on the
-  // table — bypassing both buildRfqAutofillRevealTarget (which returns null for
-  // products) and the step-fallback (which would incorrectly scroll to the top
-  // of step-client).
   const changedFields = getChangedRfqFormFields(previousForm, nextForm);
-  // Volumes changes take priority over products changes — the LLM updates both
-  // when saving qty/target price, but we want to show the Volumes table.
-  // Exception: if the assistant is asking a products-collection question (including
-  // costing data, application, part number, drawing, SOP year), a coincidental volumes
-  // touch must not hijack the scroll. Note: costing_data is a top-level field so
-  // changedFields won't include "products" — check the prompt alone is sufficient.
   if (
     changedFields.includes("volumes") &&
     !isProductsCollectionPrompt(latestAssistantContent)
@@ -1340,10 +1335,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  // Logistics/contact fields take priority over a coincident products update (e.g. when the LLM
-  // saves dates while also touching the products array), so evaluate the products check only when
-  // no logistics/contact fields changed.
-  // costingData can be saved top-level (not inside products array) — treat it as a products-table change.
+  
   const PRODUCT_TABLE_FIELDS = new Set(["costingData"]);
   if (
     (changedFields.includes("products") || changedFields.some((f) => PRODUCT_TABLE_FIELDS.has(f))) &&
@@ -1380,10 +1372,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  // Volumes-question prompts anchor to the Volumes table.
-  // "For Product N (Part Number: ...)" → scroll to that product's specific row.
-  // Guard: if the message is also a Products-table prompt (e.g. costing data question
-  // whose parameter list happens to mention "target price"), Products wins.
+  
   if (isVolumesCollectionPrompt(latestAssistantContent) && !isProductsCollectionPrompt(latestAssistantContent)) {
     const productMatch = latestAssistantContent.match(/for\s+\*{0,2}product\s+(\d+)\*{0,2}/i);
     const rowIndex = productMatch ? parseInt(productMatch[1], 10) - 1 : null;
@@ -1395,9 +1384,8 @@ const buildRfqChatFocusRevealTarget = (
       updatedFields: changedFields,
       highlight: false
     };
-  }
-  // Products-question prompts always anchor to the Products table.
-  if (isProductsCollectionPrompt(latestAssistantContent)) {
+
+  }  if (isProductsCollectionPrompt(latestAssistantContent)) {
     return {
       stepId: "step-client",
       elementId: "rfq-products",
@@ -1407,7 +1395,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  // Logistics-question prompts anchor to the Logistics details section.
+
   if (isLogisticsCollectionPrompt(latestAssistantContent)) {
     return {
       stepId: "step-client",
@@ -1418,7 +1406,7 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  // Contact-question prompts anchor to the Contact details section.
+
   if (isContactCollectionPrompt(latestAssistantContent)) {
     return {
       stepId: "step-client",
@@ -1429,16 +1417,12 @@ const buildRfqChatFocusRevealTarget = (
       highlight: false
     };
   }
-  // Basic-info fields (customer, project name, automotive type, delivery zone at
-  // top-level) are at the very top of step-client — don't let autofill redirect
-  // to rfq-products just because application/productName aren't filled yet.
+ 
   const BASIC_INFO_FIELDS = new Set(["automotiveType", "customer", "projectName", "deliveryZone", "plant", "country"]);
   if (changedFields.length > 0 && changedFields.every((f) => BASIC_INFO_FIELDS.has(f))) {
     return null;
   }
-  // Form-state anchor: when message-text matching above didn't catch the context
-  // (unusual LLM phrasing, concurrent field saves, etc.), use the next incomplete
-  // workflow field to decide which section needs attention.
+  
   const nextIncompleteField = getFirstIncompleteWorkflowField(
     "step-client",
     nextForm,
@@ -1924,8 +1908,7 @@ const parseServerTimestamp = (value) => {
   if (!text) {
     return null;
   }
-  // If no timezone info is present, the backend stored it in UTC — append Z so
-  // JavaScript's Date constructor treats it as UTC rather than local time.
+  
   const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(text);
   const normalized = hasTimezone ? text : `${text}Z`;
   const parsed = new Date(normalized);
@@ -2862,7 +2845,12 @@ export default function NewRfq() {
   useEffect(() => {
     const aiValidation = rfqSnapshot?.rfq_data?.ai_validation;
     const aiStatus = String(aiValidation?.status || "").trim().toLowerCase();
-    if (!rfqId || !aiValidation || !["queued", "processing"].includes(aiStatus)) {
+    if (
+      !rfqId ||
+      !aiValidation ||
+      isSubmittingToValidator ||
+      !["queued", "processing"].includes(aiStatus)
+    ) {
       return undefined;
     }
     let cancelled = false;
@@ -2893,6 +2881,7 @@ export default function NewRfq() {
     };
   }, [
     rfqId,
+    isSubmittingToValidator,
     rfqSnapshot?.rfq_data?.ai_validation?.status,
     rfqSnapshot?.rfq_data?.ai_validation?.checked_at,
   ]);
@@ -3171,7 +3160,7 @@ export default function NewRfq() {
   const aiValidationBlocksAction = Boolean(
     _aiValData &&
     !_aiValStatus.includes("skip") &&
-    (_aiValStatus === "queued" || !_aiValData.approved)
+    (_aiValStatus === "queued" || _aiValStatus === "processing" || !_aiValData.approved)
   );
   const validationButtonsDisabled = Boolean(
     validationActionId ||
@@ -3642,15 +3631,11 @@ export default function NewRfq() {
       const nextSubPhase =
         getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || "";
       setSelectedStage(nextSelectedStage);
-      // If the user has already been navigated to Validation (rfqValidationReached=true),
-      // don't let background syncs (file uploads, auto-saves) force them back to "Validation"
-      // when they may have navigated to the form editor.
-      if (rfqValidationReachedRef.current && nextSubPhase === "Validation") {
+      if (rfqValidationReachedRef.current) {
         return;
       }
       setSelectedSubPhase(nextSubPhase);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeStage,
     firstPipelineStageKey,
@@ -3697,9 +3682,11 @@ export default function NewRfq() {
       const nextStage = pipelineStages.find((entry) => entry.key === nextSelectedStage);
       const nextSubPhase =
         getActiveDisplaySubPhase(nextSelectedStage) || nextStage?.subPhases?.[0] || "";
-      // Don't force-navigate back to Validation when the user is editing the form:
-      // file/drawing changes trigger this effect via mergedFiles → allStepsComplete.
-      if (rfqValidationReached && nextSubPhase === "Validation") {
+      // Once the user has been navigated to Validation (rfqValidationReached=true), don't
+      // let file/drawing changes (which retrigger this effect via mergedFiles →
+      // allStepsComplete) or the submit's own pre-response re-render recompute and
+      // override selectedSubPhase back to the form.
+      if (rfqValidationReached) {
         return;
       }
       setSelectedSubPhase(nextSubPhase);
@@ -4032,6 +4019,34 @@ export default function NewRfq() {
   const canGoNext = Boolean(!isLastStep);
   const prevStepId = stepIndex > 0 ? stepIds[stepIndex - 1] : "";
   const canGoPrev = Boolean(prevStepId);
+  const setRfqSnapshotPreservingNewerAiValidation = (nextRfq) => {
+    if (!nextRfq) return;
+    setRfqSnapshot((prev) => {
+      const prevAiValidation = prev?.rfq_data?.ai_validation;
+      const nextAiValidation = nextRfq?.rfq_data?.ai_validation;
+      // Several independent background calls (autosave, validator assignment,
+      // SharePoint polling) each fetch/patch their own copy of the RFQ and
+      // then replace rfqSnapshot wholesale. None of them own ai_validation —
+      // if one of these started before the AI verdict was (re)computed but
+      // its response lands after, a naive replace would silently revert the
+      // AI Validation card to stale/missing data. Keep whichever verdict was
+      // checked more recently. Parsed to milliseconds rather than compared as
+      // raw strings since the backend (Python isoformat, "+00:00", micros)
+      // and the optimistic frontend placeholder (JS toISOString, "Z", millis)
+      // produce differently-shaped ISO strings that don't always order
+      // correctly under plain string comparison.
+      const prevCheckedAtMs = Date.parse(prevAiValidation?.checked_at || "") || -Infinity;
+      const nextCheckedAtMs = Date.parse(nextAiValidation?.checked_at || "") || -Infinity;
+      const effectiveAiValidation = prevCheckedAtMs > nextCheckedAtMs ? prevAiValidation : nextAiValidation;
+      return {
+        ...nextRfq,
+        rfq_data: {
+          ...(nextRfq.rfq_data || {}),
+          ...(effectiveAiValidation ? { ai_validation: effectiveAiValidation } : {})
+        }
+      };
+    });
+  };
   const applyRfq = (
     rfq,
     {
@@ -4045,7 +4060,7 @@ export default function NewRfq() {
     if (!rfq) return;
     const hasProvidedAuditLogs = Array.isArray(auditLogs);
     const effectiveAuditLogs = hasProvidedAuditLogs ? auditLogs : rfqAuditLogsRef.current;
-    setRfqSnapshot(rfq);
+    setRfqSnapshotPreservingNewerAiValidation(rfq);
     if (hasProvidedAuditLogs) {
       rfqAuditLogsRef.current = effectiveAuditLogs;
       setRfqAuditLogs(effectiveAuditLogs);
@@ -4226,7 +4241,11 @@ export default function NewRfq() {
       setRfqValidationReached(false);
       setRfqFormEditEnabled(true);
       setPersistValidationView(false);
-    } else if (!preserveNavigationState && nextPipelineStage === "RFQ" && nextUiStatus === "Validation") {
+    } else if (
+      !preserveNavigationState &&
+      nextPipelineStage === "RFQ" &&
+      (nextUiStatus === "Validation" || nextUiStatus === "Pending for AI validation")
+    ) {
       setSelectedStage("RFQ");
       setSelectedSubPhase(shouldOpenSelfValidationPrompt ? "RFQ form" : "Validation");
       setActiveStep("step-notes");
@@ -4257,13 +4276,22 @@ export default function NewRfq() {
       );
     }
   };
-  const syncRfq = async (targetId, options = {}) => {
+  const syncRfq = async (targetId, options = {}, rfqDataOverrides = null) => {
     const idToLoad = targetId || rfqId;
     if (!idToLoad) return false;
     setRfqError("");
     try {
       const { rfq, auditLogs } = await loadRfqSnapshot(idToLoad);
-      applyRfq(rfq, { auditLogs, preserveActiveTab: true, preserveNavigationState: true, ...options });
+      // Merge trusted overrides (e.g. the AI verdict this same submit request
+      // just returned) into the fetched snapshot BEFORE it reaches state, in
+      // the same update as the rest of the sync — applying them as a separate
+      // setRfqSnapshot call afterward would render the fetched (possibly
+      // stale/racing) data for one frame first, flickering the AI Validation
+      // card before the correct value lands.
+      const effectiveRfq = rfqDataOverrides
+        ? { ...rfq, rfq_data: { ...(rfq?.rfq_data || {}), ...rfqDataOverrides } }
+        : rfq;
+      applyRfq(effectiveRfq, { auditLogs, preserveActiveTab: true, preserveNavigationState: true, ...options });
       return true;
     } catch (error) {
       setRfqError(`Unable to refresh this ${formalDocumentLabel}. Please try again.`);
@@ -4307,7 +4335,7 @@ export default function NewRfq() {
           sharePointUrl: url,
         });
         if (url) {
-          setRfqSnapshot(rfq);
+          setRfqSnapshotPreservingNewerAiValidation(rfq);
           return;
         }
       } catch {
@@ -5633,9 +5661,7 @@ export default function NewRfq() {
     setSaving(true);
     try {
       const updatedRfq = await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form));
-      // Update snapshot from response without calling applyRfq — applyRfq resets
-      // the entire form (losing local file selections and the user's in-progress edits).
-      if (updatedRfq) setRfqSnapshot(updatedRfq);
+      if (updatedRfq) setRfqSnapshotPreservingNewerAiValidation(updatedRfq);
     } catch {
       setRfqError("Unable to auto-save. Please try again.");
     } finally {
@@ -5704,10 +5730,6 @@ export default function NewRfq() {
     }
     const isChangeIndexSubmit = rfqEditSubmitType === "change_index";
     const hasPendingAttachmentChanges = pendingUpdateFiles.length > 0 || pendingDeleteFiles.length > 0;
-    // For "simple" the diff drives the whole email field list; for "change_index" the
-    // backend already computes its own field diff, so only the attachments flag is sent
-    // (the backend unions it in — attachments/drawings are uploaded separately and would
-    // otherwise never show up in either email's "Fields changed" list).
     const changedFieldsForEmail = isChangeIndexSubmit
       ? (hasPendingAttachmentChanges ? ["attachments"] : [])
       : (() => {
@@ -5718,11 +5740,6 @@ export default function NewRfq() {
     setSaving(true);
     try {
       await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), rfqEditSubmitType, changedFieldsForEmail);
-      // The main data update above already performs the single index increment
-      // (when rfqEditSubmitType === "change_index"), so every queued file in this
-      // same submit is uploaded as "simple" — it will still be tagged with the
-      // now-current (already incremented) revision. This avoids incrementing
-      // once per file on top of the increment already applied above.
       let changeIndexConsumed = isChangeIndexSubmit;
       for (const { file, updateType } of pendingUpdateFiles) {
         let effectiveUpdateType = updateType;
@@ -5840,13 +5857,7 @@ export default function NewRfq() {
           const newId = created.rfq_id;
           setRfqId(newId);
           setRfqCreatedInThisSession(true);
-          // Without this, canUseRfqActions re-derives hasPersistedDraft=true but
-          // isRfqCreatorUser stays false (rfqCreatorEmail is still ""), so canEditRfqPhase
-          // fails for non-OWNER users and every field locks via rfqFormFieldReadOnly
-          // until a reload re-fetches the RFQ and repopulates rfqCreatorEmail.
           setRfqCreatorEmail(String(created.created_by_email || ""));
-          // Use replaceState instead of navigate() to update the URL without triggering
-          // React Router's init effect (which would applyRfq → reset form → cause a ghost save)
           window.history.replaceState(null, "", `/rfqs/new?id=${encodeURIComponent(newId)}`);
           await updateRfqData(newId, buildRfqDataPayloadFromForm(_latestFormRef.current));
         } catch {
@@ -5865,10 +5876,7 @@ export default function NewRfq() {
     setSaving(true);
     try {
       const updatedRfq = await updateRfqData(rfqId, buildRfqDataPayloadFromForm(_latestFormRef.current));
-      // Update snapshot only — do NOT call syncRfq/applyRfq here, as that resets the entire
-      // form from the backend and would overwrite any in-progress user edits (e.g. a recently
-      // cleared qty/year that hasn't been auto-saved yet).
-      if (updatedRfq) setRfqSnapshot(updatedRfq);
+      if (updatedRfq) setRfqSnapshotPreservingNewerAiValidation(updatedRfq);
       const result = await assignValidator(rfqId);
       setForm((prev) => ({ ...prev, validatorEmail: result.zone_manager_email || prev.validatorEmail }));
     } catch {
@@ -5890,8 +5898,6 @@ export default function NewRfq() {
       .sort()
       .join(",");
     const toTotalStr = String(form.toTotal || "").trim();
-    // When toTotal is cleared, reset the assignment signature so the next valid value
-    // triggers a fresh re-assignment, but don't call handleAssignValidator with empty data.
     if (!toTotalStr) {
       _lastValidatorAssignmentRef.current = null;
       return;
@@ -5926,13 +5932,29 @@ export default function NewRfq() {
         })();
     setSaving(true);
     setIsSubmittingToValidator(true);
+    setSelectedStage("RFQ");
+    setSelectedSubPhase("Validation");
+    setActiveStep("step-notes");
+    setRfqValidationReached(true);
+    setRfqFormEditEnabled(false);
+    setRfqSnapshot((prev) => ({
+      ...(prev || {}),
+      rfq_data: {
+        ...((prev && prev.rfq_data) || {}),
+        ai_validation: {
+          approved: true,
+          status: "processing",
+          message: "",
+          discussion: "",
+          fields_to_correct: [],
+          conversation_url: "",
+          checked_at: new Date().toISOString(),
+          source: ""
+        }
+      }
+    }));
     try {
       await updateRfqData(rfqId, buildRfqDataPayloadFromForm(form), rfqEditSubmitType, changedFieldsForEmail);
-      // The main data update above already performs the single index increment
-      // (when rfqEditSubmitType === "change_index"), so every queued file in this
-      // same submit is uploaded as "simple" — it still picks up the now-current
-      // (already incremented) revision. This avoids incrementing once per file
-      // on top of the increment already applied above.
       let changeIndexConsumed = isChangeIndexSubmit;
       for (const { file, updateType } of pendingUpdateFiles) {
         let effectiveUpdateType = updateType;
@@ -5962,13 +5984,16 @@ export default function NewRfq() {
         const result = await assignValidator(rfqId);
         setForm((prev) => ({ ...prev, validatorEmail: result.zone_manager_email || prev.validatorEmail }));
       }
-      await submitRfq(rfqId);
-      await syncRfq(rfqId);
-      setSelectedStage("RFQ");
-      setSelectedSubPhase("Validation");
-      setActiveStep("step-notes");
-      setRfqValidationReached(true);
-      setRfqFormEditEnabled(false);
+      const submitResult = await submitRfq(rfqId);
+      // We're already on the Validation view (moved there optimistically above);
+      // syncRfq refreshes everything else, but the AI verdict is passed in
+      // directly (rather than trusting whatever syncRfq's own GET returns)
+      // since that GET can race with another writer (chat, autofill, file
+      // upload/delete) that read rfq_data before this submit committed its
+      // verdict and only overwrites the row afterwards. Passing it as an
+      // override folds it into the SAME state update as the sync, so the
+      // card never flickers through an in-between state missing it.
+      await syncRfq(rfqId, {}, submitResult?.ai_validation ? { ai_validation: submitResult.ai_validation } : null);
       const wasUpdateMode = isRfqUpdateModeActive;
       setIsRfqUpdateModeActive(false);
       setRfqEditSubmitType("simple");
@@ -5983,9 +6008,17 @@ export default function NewRfq() {
         }
       );
     } catch (error) {
-      await syncRfq(rfqId).catch(() => {});
       const isAiBlock = error?.status === 422 && error?.data?.detail?.ai_blocked;
-      if (!isAiBlock) {
+      const blockedAiValidation = isAiBlock ? error?.data?.detail?.ai_validation : null;
+      await syncRfq(rfqId, {}, blockedAiValidation ? { ai_validation: blockedAiValidation } : null).catch(() => {});
+      if (isAiBlock) {
+        setIsRfqUpdateModeActive(false);
+        setRfqEditSubmitType("simple");
+        _preUpdateSnapshotRef.current = null;
+      } else {
+        setSelectedSubPhase("RFQ form");
+        setRfqValidationReached(false);
+        setRfqFormEditEnabled(isRfqUpdateModeActive);
         setRfqError(error?.message || "Unable to submit. Please check all required fields.");
       }
     } finally {
@@ -6067,8 +6100,6 @@ export default function NewRfq() {
       });
       return;
     }
-    // When the validator and the creator are different people, the validator
-    // specifies which fields the creator must update via the revision modal.
     if (!validatorIsCreator) {
       setRevisionComment("");
       setRevisionRequestModalOpen(true);
@@ -9892,7 +9923,7 @@ export default function NewRfq() {
                               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                 <FormField label="Contact name" name="contactName" value={form.contactName} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactName")} />
                                 <FormField label="Contact function" name="contactFunction" value={form.contactFunction} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactFunction")} />
-                                <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} />
+                                <FormField label="Contact phone" name="contactPhone" value={form.contactPhone} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactPhone")} error={form.contactPhone && !isValidInternationalPhoneFormat(form.contactPhone) ? "Please start with a country code, e.g. +33, +216, +86." : null} />
                                 <FormField label="Contact email" name="contactEmail" type="email" value={form.contactEmail} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("contactEmail")} error={isAvocarbonEmail(form.contactEmail) ? "Internal Avocarbon emails are not allowed." : (form.contactEmail && !isValidEmailFormat(form.contactEmail) ? "Please enter a valid email address." : null)} />
                               </div>
                             </div>
@@ -9935,8 +9966,8 @@ export default function NewRfq() {
                             <ResponsibilityField label="Development costs" name="developmentCosts" value={form.developmentCosts} customer={form.customer} onChange={handleChange} readOnly={rfqFormFieldReadOnly} {...getRfqFieldRequirementProps("developmentCosts")} />
                             <SelectOrOtherField label="Technical capacity" name="technicalCapacity" value={form.technicalCapacity} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={["Yes", "No"]} {...getRfqFieldRequirementProps("technicalCapacity")} />
                             <SelectOrOtherField label="Scope" name="scope" value={form.scope} onChange={handleChange} readOnly={rfqFormFieldReadOnly} options={["Yes", "No"]} {...getRfqFieldRequirementProps("scope")} />
-                            <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("strategicNote")} />
-                            <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("finalRecommendation")} />
+                            <FormField label="Strategic note" name="strategicNote" value={form.strategicNote} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("strategicNote")} error={form.strategicNote && countWords(form.strategicNote) < RFQ_MIN_WORD_COUNT ? `Please provide at least ${RFQ_MIN_WORD_COUNT} words.` : null} />
+                            <FormField label="Final recommendation" name="finalRecommendation" value={form.finalRecommendation} onChange={handleChange} readOnly={rfqFormFieldReadOnly} autoExpand {...getRfqFieldRequirementProps("finalRecommendation")} error={form.finalRecommendation && countWords(form.finalRecommendation) < RFQ_MIN_WORD_COUNT ? `Please provide at least ${RFQ_MIN_WORD_COUNT} words.` : null} />
                           </div>
                         </div>
                       ) : null}
@@ -9995,9 +10026,9 @@ export default function NewRfq() {
                                   type="button"
                                   className="gradient-button rounded-xl px-6 py-3 text-sm font-semibold shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
                                   onClick={handleSubmitToValidator}
-                                  disabled={saving || !rfqId || !allStepsComplete}
+                                  disabled={saving || isSubmittingToValidator || !rfqId || !allStepsComplete}
                                 >
-                                  {saving ? "Submitting..." : "Submit"}
+                                  {isSubmittingToValidator ? "Submitting..." : "Submit"}
                                 </button>
                                 {!allStepsComplete && (
                                   <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg group-hover:block">
@@ -10075,7 +10106,7 @@ export default function NewRfq() {
                           <div className={`flex flex-wrap items-start justify-between gap-4 border-b ${innerBorderCls} pb-4`}>
                             <div className="space-y-1">
                               <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">AI pre-validation</p>
-                              <h4 className="text-sm font-semibold text-ink sm:text-lg">Workspace Agent review</h4>
+                              <h4 className="text-sm font-semibold text-ink sm:text-lg">AI Validation</h4>
                             </div>
                             <div className="flex flex-wrap items-center justify-end gap-3">
                               <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${badgeCls}`}>
@@ -10100,7 +10131,9 @@ export default function NewRfq() {
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                                   </svg>
                                 )}
-                                {isQueued ? "Queued in Workspace Agent" : isProcessing ? "Review in progress" : isSkipped ? "AI validation skipped" : aiApproved ? "Approved by AI" : "Rejected by AI"}
+                                {isQueued || isProcessing
+                                  ? (isSubmittingToValidator ? "Processing..." : "Pending for AI validation")
+                                  : isSkipped ? "AI validation skipped" : aiApproved ? "Approved by AI" : "Rejected by AI"}
                               </span>
                             </div>
                           </div>
